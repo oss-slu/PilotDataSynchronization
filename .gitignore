@@ -1,0 +1,10 @@
+.vscode
+.github
+
+./bin
+
+*.dll
+*.obj
+*.lib
+*.exp
+
