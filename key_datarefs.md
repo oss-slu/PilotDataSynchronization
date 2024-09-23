@@ -1,101 +1,119 @@
 # Identifying Key DataRefs for Pilot Performance
 
-##### Preliminary Notes
-1. Automatic type conversion is NOT done for you. You need to know the exact data types of the data you reference.
-2. Data types are found as a SET which means you can choose which one you want to use, i.e. double or float.
-3. Detailed DataRef information can be found at the following links:
-    - "https://www.siminnovations.com/xplane/dataref/?name=&type=&writable=&units=&description=&submit=Search"
-    - "https://developer.x-plane.com/datarefs/"
-4. The values listed may not be the ones we actually want for our plugin, as these all correspond to the true flightmodel readings. There is an argument that DataRefs from gauges and instruments (which may be faulty in the simulator purposefully/accidentally) should be read instead to provide the data the pilot using to fly. I plan to discuss this with my group on Monday during our code reviews and confirm.
-5. I am unsure what the github issue meant by finding the usage of these DataRefs. Am I to figure out what they are used for within XPlane itself? Or do I need to figure out what we will be using them for in our plugin? I plan on also raising this issue with my group during our Monday capstone meeting.
+
+## Notes and Important Information
+1. Automatic type conversion is NOT done for you. This means you need to know the EXACT data types, i.e. float or int, of the data you reference, as well as the type's respective "setter" and "getter" functions. DataRefs also often come as a set, so there can be multiple data types for each reference data, such as having the same altitude value available as a double or float DataRef.
+
+2. The DataRefs listed in this document are mainly those of which the pilot and copilot are reading in the cockpit, i.e. from the primary flight display. This means that these readings MAY OR MAY NOT be incorrect due to sensors, gyroscopes, etc. giving incorrect readings. As this project is focused on collecting data on the pilot's performance, these DataRefs are not the objective flight positions (though we hope the sensors are accurate enough for this to be the case either way).
+
+3. Because the DataRefs in this documentation refer to the sensors of the airplane rather than the physical position of the flightmodel, you may want to change the DataRefs in this folder "sim/flightmodel2/*" instead if you wish to change data relating to the physical position of the aircraft, i.e. changing the indicated airspeed of the aircraft, not the sensor, with DataRef "sim/flightmodel2/position/indicated_airspeed". This will probably not come up in this project, however I felt it prudent to discuss.
+
+4. These DataRefs are primarily found in the "sim/cockpit2" folder as these are the most up-to-date and modern DataRefs for XPlane. "sim/cockpit" is a legacy folder for older versions of the simulator (though I am unsure if it still recieves updates or not). The same holds true for "sim/flightmodel2" and any other applicable folders of XPlane DataRefs.
+
+5. Detailed DataRef information can be found at the following link:
+    - "https://developer.x-plane.com/datarefs/" (the official dev website)
+
+
 
 ## DataRefs
 
+
 ### Altitude
+
 #### Name
-1. "sim/flightmodel/position/elevation"
+1. "sim/cockpit2/gauges/indicators/altitude_ft_pilot"
+2. "sim/cockpit2/gauges/indicators/altitude_ft_copilot"
 
 #### Purpose
-1. The elevation above MSL (mean sea level) of the aircraft
-    - data units: m (meters)
+1. Indicated height, MSL (mean sea level), in feet, primary system, based on pilots barometric pressure input.
+    - data units: ft above MSL (mean sea level)
+2. Indicated height, MSL (mean sea level), in feet, primary system, based on co-pilots barometric pressure input.
+    - data units: ft above MSL (mean sea level)
 
 #### DataType
-1. double (read only)
+1. float (read/write)
+2. float (read/write)
 
 #### Usage
-tbd
+1. This is the primary indicator to see the plane's altitude for the pilot. 
 
 
 ### Airspeed
 
 #### Name
-1. "sim/flightmodel/position/indicated_airspeed"
-2. "sim/flightmodel/position/indicated_airspeed2"
-3. "sim/flightmodel/position/equivalent_airspeed"
-4. "sim/flightmodel/position/true_airspeed"
+1. "sim/cockpit2/gauges/indicators/true_airspeed_kts_pilot"
+2. "sim/cockpit2/gauges/indicators/true_airspeed_kts_copilot"
+3. "sim/cockpit2/gauges/indicators/airspeed_kts_pilot"
+4. "sim/cockpit2/gauges/indicators/airspeed_kts_copilot"
 
 #### Purpose
-1. Air speed indicated - this takes into account air density and wind direction
-    - data units: kias (knots-indicated airspeed)
-2. Air speed indicated - this takes into account air density and wind direction
-    - I believe this is just a duplicate of DataRef "sim/flightmodel/position/indicated_airspeed"
-    - data units: kias (knots-indicated airspeed)
-3. Air speed - equivalent airspeed - this takes compressibility into account
-    - data units: keas (knots-equivalent airspeed)
-4. Air speed true - this does not take into account air density at altitude!
-    - data units: m/s (meters per second)
+1. True airspeed in knots, for pilot pitot/static, calculated by ADC, requires pitot, static, oat sensor and ADC all to work correctly to give correct value
+    - data units: kts (knots) 
+    - [A knot is one nautical mile/hr, 1.15 m/hr, or 1.85 km/hr]
+2. True airspeed in knots, for copilot pitot/static, calculated by ADC, requires pitot, static, oat sensor and ADC all to work correctly to give correct value
+    - data units: kts (knots) 
+    - [A knot is one nautical mile/hr, 1.15 m/hr, or 1.85 km/hr]
+3. Indicated airspeed in knots, pilot. 
+    - data units: kts (knots) 
+    - [A knot is one nautical mile/hr, 1.15 m/hr, or 1.85 km/hr]
+    - Writeable with "override_IAS"
+4. Indicated airspeed in knots, copilot. 
+    - data units: kts (knots) 
+    - [A knot is one nautical mile/hr, 1.15 m/hr, or 1.85 km/hr]
+    - Writeable with "override_IAS"
 
 #### DataType
-1. float (read and write)
-2. float (read and write)
-3. float (read and write)
-4. float (read and write)
+1. float (read/write)
+2. float (read/write)
+3. float (read/write)
+4. float (read/write)
 
 #### Usage
-tbd
+1. True Airspeed is the airspeed shown on the airspeed indicator corrected for position installion error compressibility, temperature, and pressure altitude. It's basically how fast you are actually moving through the air. It is shown on the electronic flight display
+    - Airspeed Flow Chart: Indicated Airspeed (airspeed) --> Calibrated Airspeed (position install error) --> Equivalent Airspeed (compressibility) --> True Airspeed (temperature and pressure altitude)
+2. True Airspeed but for the copilot's EFD
+3. Indicated airspeed measures dynamic pressure and is the direct airspeed measurement from the plane. It's what speed your aircraft would feel like it's flying if it were at sea level. Indicated Airspeed is shown on the Airspeed Indicator and on the EFD.
+4. Indicated Airspeed but for the copilot's EFD
 
 
 ### Vertical Airspeed
 
 #### Name
-1. "sim/flightmodel/position/vh_ind"
-2. "sim/flightmodel/position/vh_ind_fpm"
-3. "sim/flightmodel/position/vh_ind_fpm2"
+1. "sim/cockpit2/gauges/indicators/vvi_fpm_pilot"
+2. "sim/cockpit2/gauges/indicators/vvi_fpm_copilot"
 
 #### Purpose
-1. VVI (vertical velocity in meters per second)
-2. VVI (vertical velocity in feet per minute)
-3. VVI (vertical velocity in feet per minute)
-    - I believe this is just a duplicate of DataRef "sim/flightmodel/position/vh_ind_fpm"
+1. Indicated vertical speed in feet per minute, pilot system.
+    - data units: ft/min (FPM)
+2. Indicated vertical speed in feet per minute, copilot system.
+    - data units: ft/min (FPM)
 
 #### DataType
-1. float (read only)
-2. float (read and write)
-3. float (read and write)
+1. float (read/write)
+2. float (read/write)
 
 #### Usage
-tbd
+1. VVI stands for "vertical velocity indicator" and is the instrument that displays the vertical airspeed in the cockpit. This is the masure of how fast the airplane is in the vertical direction, and can accordingly be a positive or negative value (positive for upwards, negative for downwards). This DataRef corresponds to the pilot's VVI in the cockpit.
+2. This is the same, but for the copilot's VVI.
 
 
 ### Heading
 
 #### Name
-1. "sim/flightmodel/position/mag_psi"
-2. "sim/flightmodel/position/psi"
-3. "sim/flightmodel/position/true_psi"
+1. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot"
+2. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot"
 
 #### Purpose
-1. The real magnetic heading of the aircraft - the old magpsi dataref was FUBAR
-    - data type: degrees
-2. The true heading of the aircraft in degrees from the Z axis - OpenGL coordinates
-    - data type: degrees
-3. The heading of the aircraft relative to the earth precisely below the aircraft - true degrees north, always
-    - data type: degrees
+1. Indicated magnetic heading, in degrees. Source: AHARS. Side: Pilot
+    - data type: degrees_magnetic (ºM)
+2. Indicated magnetic heading, in degrees. Source: AHARS. Side: Copilot
+    - data type: degrees_magnetic (ºM)
 
 #### DataType
-1. float (read only)
-2. float (read and write)
-3. float (read only)
+1. float (read/write)
+2. float (read/write)
 
 #### Usage
-tbd
+1. AHARS Magnetic Heading is used as the primary indication of heading and altitude for the pilot and integrated within the cockpit's primary flight display on the pilot's side.
+    - Definition of AHARS: "An attitude and heading reference system (AHRS) consists of sensors on three axes that provide attitude information for aircraft, including roll, pitch, and yaw. These are sometimes referred to as MARG (Magnetic, Angular Rate, and Gravity) sensors and consist of either solid-state or microelectromechanical systems (MEMS) gyroscopes, accelerometers and magnetometers. They are designed to replace traditional mechanical gyroscopic flight instruments." (Wikipedia)
+2. AHARS Magnetic Heading but for the copilot's indicator in the cockpit.
