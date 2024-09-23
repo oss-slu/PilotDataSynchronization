@@ -1,17 +1,16 @@
 #include <iostream>
 #include <WinSock2.h>
 #include <ws2tcpip.h>  // For IPv6-related structures
-
 #define PORT 9999  // Valid port number
 
 #pragma comment(lib, "Ws2_32.lib")
 
 class TCPServer {
 private:
-    struct sockaddr_in6 srv;  // sockaddr_in6 for IPv6
+    struct sockaddr_in6 srv;  // sockaddr_in6 for IPv6  
     int listeningSocket;
     int clientSocket;
-    WSADATA ws;
+    WSADATA ws;   ///client connect to test server 
 
 public:
     TCPServer() : listeningSocket(-1), clientSocket(-1) {}
