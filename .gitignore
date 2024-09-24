@@ -1,2 +1,11 @@
 .vscode
-bin
+*.exe
+*.ilk
+*.obj
+*.pdb
+.vscode
+./bin
+*.dll
+*.lib
+*.exp
+*.xpl
