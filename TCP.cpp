@@ -1,24 +1,23 @@
 #include <iostream>
 #include <WinSock2.h>
 #include <ws2tcpip.h> // For IPv6-related structures
-#define PORT 5000     // Valid port number
+#define PORT 5000     // The server's port number
 
 #pragma comment(lib, "Ws2_32.lib")
 
-class TCPServer
+class TCPClient
 {
 private:
-    struct sockaddr_in6 srv; // sockaddr_in6 for IPv6
-    int listeningSocket;
+    struct sockaddr_in6 server; // sockaddr_in6 for IPv6
     int clientSocket;
     WSADATA ws;
 
 public:
-    TCPServer() : listeningSocket(-1), clientSocket(-1) {}
+    TCPClient() : clientSocket(-1) {}
 
-    ~TCPServer()
+    ~TCPClient()
     {
-        closeSockets();
+        closeSocket();
         WSACleanup(); // Clean up Winsock
     }
 
@@ -34,122 +33,68 @@ public:
         return true;
     }
 
-    bool getHostName()
-    {
-        char sHostName[32];
-        int err = gethostname(sHostName, 32);
-        if (err != 0)
-        {
-            std::cout << "Hostname unavailable" << std::endl;
-            return false;
-        }
-        std::cout << "Hostname: " << sHostName << std::endl;
-        return true;
-    }
-
     bool createSocket()
     {
-        listeningSocket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-        if (listeningSocket < 0)
+        clientSocket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+        if (clientSocket < 0)
         {
             std::cout << "Failed to create socket." << std::endl;
             return false;
         }
 
-        // Set socket options
-        int opt = 1;
-        setsockopt(listeningSocket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
-
         std::cout << "Socket created successfully." << std::endl;
         return true;
     }
 
-    bool bindSocket()
+    bool connectToServer(const std::string &serverIP)
     {
-        srv.sin6_family = AF_INET6;
-        srv.sin6_port = htons(PORT);
-        srv.sin6_addr = in6addr_loopback; // Use loopback for testing (::1)
+        // Define the server address 
+        server.sin6_family = AF_INET6;
+        server.sin6_port = htons(PORT);
 
-        int err = bind(listeningSocket, (struct sockaddr *)&srv, sizeof(srv));
+        // Convert server IP from text to binary form
+        if (inet_pton(AF_INET6, serverIP.c_str(), &server.sin6_addr) <= 0)
+        {
+            std::cout << "Invalid server IP address." << std::endl;
+            return false;
+        }
+
+        // Connect to the server
+        int err = connect(clientSocket, (struct sockaddr *)&server, sizeof(server));
         if (err < 0)
         {
-            int errCode = WSAGetLastError();
-            std::cout << "Failed to bind socket to port. Error Code: " << errCode << std::endl;
-            return false;
-        }
-        std::cout << "Socket bound to port successfully." << std::endl;
-        return true;
-    }
-
-    bool listenForConnections(int backlog = 5)
-    {
-        int err = listen(listeningSocket, backlog);
-        if (err < 0)
-        {
-            std::cout << "Backlog full, cannot listen." << std::endl;
-            return false;
-        }
-        std::cout << "Listening for connections..." << std::endl;
-        return true;
-    }
-
-    bool acceptConnection()
-    {
-        struct sockaddr_in6 client; // Change to sockaddr_in6
-        int length = sizeof(client);
-
-        clientSocket = accept(listeningSocket, (struct sockaddr *)&client, &length);
-        if (clientSocket < 0)
-        {
-            std::cout << "Failed to accept connection." << std::endl;
+            std::cout << "Failed to connect to server." << std::endl;
             return false;
         }
 
-        char clientIP[INET6_ADDRSTRLEN]; // Buffer for client IP address
-        inet_ntop(AF_INET6, &client.sin6_addr, clientIP, sizeof(clientIP));
-        std::cout << "Connection accepted." << std::endl;
-        std::cout << "Client IP Address: " << clientIP << std::endl; // Use inet_ntop for IPv6
+        std::cout << "Connected to server: " << serverIP << std::endl;
         return true;
     }
 
-    void closeSockets()
+    void closeSocket()
     {
         if (clientSocket >= 0)
         {
             closesocket(clientSocket);
             std::cout << "Client socket closed." << std::endl;
         }
-
-        if (listeningSocket >= 0)
-        {
-            closesocket(listeningSocket);
-            std::cout << "Listening socket closed." << std::endl;
-        }
     }
 };
 
 int main()
 {
-    TCPServer server;
+     TCPClient client;
 
-    if (!server.initializeWinsock())
+    if (!client.initializeWinsock())
         return 1;
 
-    if (!server.getHostName())
+    if (!client.createSocket())
         return 1;
 
-    if (!server.createSocket())
+    std::string serverIP = "::1";  // IPv6 loopback address
+
+    if (!client.connectToServer(serverIP))
         return 1;
 
-    if (!server.bindSocket())
-        return 1;
-
-    if (!server.listenForConnections())
-        return 1;
-
-    if (!server.acceptConnection())
-        return 1;
-
-    // Clean up resources before exiting
     return 0;
 }

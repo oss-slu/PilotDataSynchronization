@@ -1,8 +1,7 @@
 Run and compile 'TCP.cpp" using cl 
 
-Expected output: 
 Winsock initialized successfully!
-Hostname: Clunker
 Socket created successfully.
-Failed to bind socket to port.
+Connected to server. 
+Client socket closed.
 Listening socket closed.
