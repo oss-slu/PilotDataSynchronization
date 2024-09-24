@@ -3,3 +3,8 @@
 *.obj
 *.pdb
 .vscode
+./bin
+*.dll
+*.lib
+*.exp
+*.xpl
