@@ -1,10 +1,10 @@
-.vscode
-.github
-
-./bin
-
-*.dll
+*.exe
+*.ilk
 *.obj
+*.pdb
+.vscode
+./bin
+*.dll
 *.lib
 *.exp
 *.xpl
