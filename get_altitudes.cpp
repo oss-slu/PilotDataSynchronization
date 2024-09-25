@@ -125,7 +125,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
     float currentElevationAgl =
         XPLMGetDataf(elevationAglRef) * metersToFeetRate;
     float currentVerticalVelocity = 
-        XPLMGetDataf(verticalVelocityRef) * metersToFeetRate; 
+        XPLMGetDataf(verticalVelocityRef); 
 
 
     std::string elevationMslStr =
