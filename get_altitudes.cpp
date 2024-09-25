@@ -133,7 +133,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
     std::string elevationAglStr =
         "Elevation (AGL): " + std::to_string(currentElevationAgl) + " ft";
     std::string verticalVelocityRef = 
-        "Vertical Velocity: " + std::to_string(currentVerticalVelocity) + " ft"; 
+        "Vertical Velocity: " + std::to_string(currentVerticalVelocity) + " ft/s"; 
 
     XPLMDrawString(col_white, l + 10, t - 20, elevationMslStr.c_str(), NULL,
                    xplmFont_Proportional);
