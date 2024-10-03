@@ -4,12 +4,12 @@
 
 #include <string.h>
 #include <windows.h>
-
 #include <string>
 
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
+#include <cmath>
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
                       LPVOID lpReserved) {
     switch (ul_reason_for_call) {
@@ -80,7 +80,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     // Obtain datarefs for MSL and AGL elevation, respectively
     elevationMslRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
     elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
-    verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind"); 
+    verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");  ///instruments for the flight --> cockp
 
     g_window = XPLMCreateWindowEx(&params);
 
@@ -132,8 +132,14 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         "Elevation (MSL): " + std::to_string(currentElevationMsl) + " ft";
     std::string elevationAglStr =
         "Elevation (AGL): " + std::to_string(currentElevationAgl) + " ft";
-    std::string verticalVelocityRef = 
-        "Vertical Velocity: " + std::to_string(currentVerticalVelocity) + " ft/s"; 
+
+     std::string verticalVelocityRef;
+
+    if (std::isnan(currentVerticalVelocity)){
+        verticalVelocityRef = "Vertical Velocity: (Error Reading Data)";
+    } else {
+        "Vertical Velocity: " + std::to_string(currentVerticalVelocity) + " ft/s";
+    } 
 
     XPLMDrawString(col_white, l + 10, t - 20, elevationMslStr.c_str(), NULL,
                    xplmFont_Proportional);
