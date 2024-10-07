@@ -26,16 +26,17 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
 #error This is made to be compiled against the XPLM300 SDK
 #endif
 
-# GETTING DATAREFS: 
-    # 1. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot"
-    # 2. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot"
+
+// GETTING DATAREFS: 
+// 1. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot"
+// 2. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot"
 
 
 // An opaque handle to the window we will create
-static XPLMWindowID g_window;
+static XPLMWindowID heading_window;
 
-static XPLMDataRef elevationMslRef;
-static XPLMDataRef elevationAglRef;
+static XPLMDataRef headingPilotRef;
+static XPLMDataRef headingCopilotRef;
 
 // Callbacks we will register when we create our window
 void    draw_heading_window(XPLMWindowID in_window_id, void* in_refcon);
@@ -82,10 +83,10 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     params.top = params.bottom + 200;
 
     // Obtain datarefs for MSL and AGL elevation, respectively
-    headingPilotRef =   XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
-    headingCopilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
+    headingPilotRef     = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
+    headingCopilotRef   = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
 
-    g_window = XPLMCreateWindowEx(&params);
+    heading_window      = XPLMCreateWindowEx(&params);
 
     // Position the window as a "free" floating window, which the user can drag around
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
@@ -93,12 +94,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMSetWindowResizingLimits(g_window, 200, 50, 300, 50);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
-    return g_window != NULL;
+    return heading_window != NULL;
 }
 
 PLUGIN_API void XPluginStop(void) {
     XPLMDestroyWindow(g_window);
-    g_window = NULL;
+    heading_window = NULL;
 }
 
 PLUGIN_API void XPluginDisable(void) {}
@@ -117,7 +118,6 @@ void draw_heading_window(XPLMWindowID in_window_id, void* in_refcon) {
 
     float col_white[] = {1.0, 1.0, 1.0};  // RGB
 
-    // Dataref provides altitudes in meters, need to convert to feet to match
     // in-game display for validation
     std::string headingPilotStr =
         "Heading, Pilot: " + std::to_string(headingPilotRef) + " deg";
