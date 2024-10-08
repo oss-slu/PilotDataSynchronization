@@ -4,8 +4,7 @@
 *.obj
 *.pdb
 .vscode
-./bin
-*.dll
-*.lib
+lib/** 
 *.exp
 *.xpl
+*.lib
