@@ -52,9 +52,9 @@ void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
                        char virtual_key, void* in_refcon, int losing_focus) {}
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
-    strcpy(outName, "GetAltitudesPlugin");
-    strcpy(outSig, "alielnour.getaltitudesplugin");
-    strcpy(outDesc, "A plug-in that displays both the AGL and MSL altitudes.");
+    strcpy(outName, "PilotDataSyncPlugin");
+    strcpy(outSig, "oss.pilotdatasyncplugin");
+    strcpy(outDesc, "A plug-in that collects and transmits X-Plane 11 data.");
 
     XPLMCreateWindow_t params;
     params.structSize = sizeof(params);
