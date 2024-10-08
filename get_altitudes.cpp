@@ -31,6 +31,7 @@ static XPLMWindowID g_window;
 
 static XPLMDataRef elevationMslRef;
 static XPLMDataRef elevationAglRef;
+static XPLMDataRef airspeedRef;
 static XPLMDataRef verticalVelocityRef; 
 
 // Callbacks we will register when we create our window
@@ -51,9 +52,9 @@ void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
                        char virtual_key, void* in_refcon, int losing_focus) {}
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
-    strcpy(outName, "GetAltitudesPlugin");
-    strcpy(outSig, "alielnour.getaltitudesplugin");
-    strcpy(outDesc, "A plug-in that displays both the AGL and MSL altitudes.");
+    strcpy(outName, "PilotDataSyncPlugin");
+    strcpy(outSig, "oss.pilotdatasyncplugin");
+    strcpy(outDesc, "A plug-in that collects and transmits X-Plane 11 data.");
 
     XPLMCreateWindow_t params;
     params.structSize = sizeof(params);
@@ -80,6 +81,8 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     // Obtain datarefs for MSL and AGL elevation, respectively
     elevationMslRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
     elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
+
+	airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
     verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");  ///instruments for the flight --> cockp
 
     g_window = XPLMCreateWindowEx(&params);
@@ -124,7 +127,9 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         XPLMGetDataf(elevationMslRef) * metersToFeetRate;
     float currentElevationAgl =
         XPLMGetDataf(elevationAglRef) * metersToFeetRate;
-    float currentVerticalVelocity = 
+	float msToKnotsRate = 1.94384;
+	float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
+  float currentVerticalVelocity = 
         XPLMGetDataf(verticalVelocityRef); 
 
 
@@ -132,6 +137,8 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         "Elevation (MSL): " + std::to_string(currentElevationMsl) + " ft";
     std::string elevationAglStr =
         "Elevation (AGL): " + std::to_string(currentElevationAgl) + " ft";
+	std::string trueAirspeedStr =
+		"True Airspeed: " + std::to_string(trueAirspeed) + " knots";
 
      std::string verticalVelocityRef;
 
@@ -145,6 +152,8 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
                    xplmFont_Proportional);
     XPLMDrawString(col_white, l + 10, t - 30, elevationAglStr.c_str(), NULL,
                    xplmFont_Proportional);
-    XPLMDrawString(col_white, l + 10, t - 40, verticalVelocityRef.c_str(), NULL,
+	XPLMDrawString(col_white, l + 10, t - 40, trueAirspeedStr.c_str(), NULL,
+                   xplmFont_Proportional);				  
+    XPLMDrawString(col_white, l + 10, t - 50, verticalVelocityRef.c_str(), NULL,
                    xplmFont_Proportional);
 }
