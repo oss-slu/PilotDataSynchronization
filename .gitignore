@@ -5,6 +5,7 @@
 *.pdb
 .vscode
 lib/** 
+bin/**
 *.exp
 *.xpl
 *.lib
