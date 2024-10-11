@@ -1,15 +1,11 @@
-// This basic plugin is a modified and de-commented version of the sample
-// "Hello, World" plugin code found here:
-// https://developer.x-plane.com/code-sample/hello-world-sdk-3/
-
 #include <string.h>
 #include <windows.h>
-
 #include <string>
 
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
+
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
                       LPVOID lpReserved) {
     switch (ul_reason_for_call) {
@@ -26,17 +22,11 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
 #error This is made to be compiled against the XPLM300 SDK
 #endif
 
-
-// GETTING DATAREFS: 
-// 1. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot"
-// 2. "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot"
-
-
 // An opaque handle to the window we will create
 static XPLMWindowID heading_window;
 
-static XPLMDataRef headingPilotRef;
-static XPLMDataRef headingCopilotRef;
+static XPLMDataRef  headingPilotRef;
+static XPLMDataRef  headingCopilotRef;
 
 // Callbacks we will register when we create our window
 void    draw_heading_window(XPLMWindowID in_window_id, void* in_refcon);
@@ -63,7 +53,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMCreateWindow_t params;
     params.structSize = sizeof(params);
     params.visible = 1;
-    params.drawWindowFunc = draw_hello_world;
+    params.drawWindowFunc = draw_heading_window;
     params.handleMouseClickFunc = dummy_mouse_handler;
     params.handleRightClickFunc = dummy_mouse_handler;
     params.handleMouseWheelFunc = dummy_wheel_handler;
