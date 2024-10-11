@@ -4,14 +4,16 @@
 
 #include <string.h>
 #include <windows.h>
+
+#include <cmath>
 #include <string>
 
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
-#include <cmath>
-BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
-                      LPVOID lpReserved) {
+
+BOOL APIENTRY
+DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     switch (ul_reason_for_call) {
         case DLL_PROCESS_ATTACH:
         case DLL_THREAD_ATTACH:
@@ -23,7 +25,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
 }
 
 #ifndef XPLM300
-#error This is made to be compiled against the XPLM300 SDK
+    #error This is made to be compiled against the XPLM300 SDK
 #endif
 
 // An opaque handle to the window we will create
@@ -32,24 +34,49 @@ static XPLMWindowID g_window;
 static XPLMDataRef elevationMslRef;
 static XPLMDataRef elevationAglRef;
 static XPLMDataRef airspeedRef;
-static XPLMDataRef verticalVelocityRef; 
+static XPLMDataRef verticalVelocityRef;
 
 // Callbacks we will register when we create our window
 void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon);
-int dummy_mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
-                        void* in_refcon) {
+
+int dummy_mouse_handler(
+    XPLMWindowID in_window_id,
+    int x,
+    int y,
+    int is_down,
+    void* in_refcon
+) {
     return 0;
 }
-XPLMCursorStatus dummy_cursor_status_handler(XPLMWindowID in_window_id, int x,
-                                             int y, void* in_refcon) {
+
+XPLMCursorStatus dummy_cursor_status_handler(
+    XPLMWindowID in_window_id,
+    int x,
+    int y,
+    void* in_refcon
+) {
     return xplm_CursorDefault;
 }
-int dummy_wheel_handler(XPLMWindowID in_window_id, int x, int y, int wheel,
-                        int clicks, void* in_refcon) {
+
+int dummy_wheel_handler(
+    XPLMWindowID in_window_id,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* in_refcon
+) {
     return 0;
 }
-void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
-                       char virtual_key, void* in_refcon, int losing_focus) {}
+
+void dummy_key_handler(
+    XPLMWindowID in_window_id,
+    char key,
+    XPLMKeyFlags flags,
+    char virtual_key,
+    void* in_refcon,
+    int losing_focus
+) {}
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     strcpy(outName, "PilotDataSyncPlugin");
@@ -82,17 +109,15 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     elevationMslRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
     elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
 
-	airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
-    verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");  ///instruments for the flight --> cockp
+    airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
+    verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
 
     g_window = XPLMCreateWindowEx(&params);
 
     // Position the window as a "free" floating window, which the user can drag
     // around
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
-    // Limit resizing our window: maintain a minimum width/height of 100 boxels
-    // and a max width/height of 300 boxels
-    XPLMSetWindowResizingLimits(g_window, 200, 50, 300, 50);
+    XPLMSetWindowResizingLimits(g_window, 200, 60, 200, 60);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
     return g_window != NULL;
@@ -104,21 +129,29 @@ PLUGIN_API void XPluginStop(void) {
 }
 
 PLUGIN_API void XPluginDisable(void) {}
-PLUGIN_API int XPluginEnable(void) { return 1; }
-PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg,
-                                      void* inParam) {}
+
+PLUGIN_API int XPluginEnable(void) {
+    return 1;
+}
+
+PLUGIN_API void
+XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void* inParam) {}
 
 void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
-    XPLMSetGraphicsState(0 /* no fog */, 0 /* 0 texture units */,
-                         0 /* no lighting */, 0 /* no alpha testing */,
-                         1 /* do alpha blend */, 1 /* do depth testing */,
-                         0 /* no depth writing */
+    XPLMSetGraphicsState(
+        0 /* no fog */,
+        0 /* 0 texture units */,
+        0 /* no lighting */,
+        0 /* no alpha testing */,
+        1 /* do alpha blend */,
+        1 /* do depth testing */,
+        0 /* no depth writing */
     );
 
     int l, t, r, b;
     XPLMGetWindowGeometry(in_window_id, &l, &t, &r, &b);
 
-    float col_white[] = {1.0, 1.0, 1.0};  // RGB
+    float col_white[] = {1.0, 1.0, 1.0}; // RGB
 
     // Dataref provides altitudes in meters, need to convert to feet to match
     // in-game display for validation
@@ -127,33 +160,65 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         XPLMGetDataf(elevationMslRef) * metersToFeetRate;
     float currentElevationAgl =
         XPLMGetDataf(elevationAglRef) * metersToFeetRate;
-	float msToKnotsRate = 1.94384;
-	float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
-  float currentVerticalVelocity = 
-        XPLMGetDataf(verticalVelocityRef); 
-
+    float msToKnotsRate = 1.94384;
+    float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
+    float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
 
     std::string elevationMslStr =
         "Elevation (MSL): " + std::to_string(currentElevationMsl) + " ft";
     std::string elevationAglStr =
         "Elevation (AGL): " + std::to_string(currentElevationAgl) + " ft";
-	std::string trueAirspeedStr =
-		"True Airspeed: " + std::to_string(trueAirspeed) + " knots";
+    std::string trueAirspeedStr =
+        "True Airspeed: " + std::to_string(trueAirspeed) + " knots";
 
-     std::string verticalVelocityRef;
+    std::string verticalVelocityStr;
 
-    if (std::isnan(currentVerticalVelocity)){
-        verticalVelocityRef = "Vertical Velocity: (Error Reading Data)";
+    if (std::isnan(currentVerticalVelocity)) {
+        verticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
     } else {
-        "Vertical Velocity: " + std::to_string(currentVerticalVelocity) + " ft/s";
-    } 
+        verticalVelocityStr = "Vertical Velocity: "
+            + std::to_string(currentVerticalVelocity) + " ft/s";
+    }
 
-    XPLMDrawString(col_white, l + 10, t - 20, elevationMslStr.c_str(), NULL,
-                   xplmFont_Proportional);
-    XPLMDrawString(col_white, l + 10, t - 30, elevationAglStr.c_str(), NULL,
-                   xplmFont_Proportional);
-	XPLMDrawString(col_white, l + 10, t - 40, trueAirspeedStr.c_str(), NULL,
-                   xplmFont_Proportional);				  
-    XPLMDrawString(col_white, l + 10, t - 50, verticalVelocityRef.c_str(), NULL,
-                   xplmFont_Proportional);
+    // use this get_next_y_offset() lambda function to find the next vertical pixel start position
+    // on the window for string rendering for you.
+    int last_offset = 10;
+    auto get_next_y_offset = [&last_offset, t]() {
+        last_offset = last_offset + 10;
+        return t - last_offset;
+    };
+
+    // Increment the inChar (third) variable's subtraction term by 10 to put your string on a new line
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        elevationMslStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        elevationAglStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        trueAirspeedStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        verticalVelocityStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
 }
