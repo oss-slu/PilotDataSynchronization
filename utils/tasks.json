@@ -1,0 +1,83 @@
+/** Place me in your .vscode directory. Run me by: 
+  *   Going to the Command Palette (Ctrl + Shift + P) 
+  *   >Tasks: Run Task
+  *   select "build plugin"
+  *   After running, your entire plugin, including the correct folder structure, will build.
+  *   You can copy the folder generated in the bin directory straight into your X-Plane plugins folder
+  */
+{
+    "version": "2.0.0",
+    "windows": {
+      "options": {
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/C",
+            // The path to VsDevCmd.bat depends on the version of Visual Studio you have installed.
+            "\"C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat\"",
+            "&&"
+          ]
+        }
+      }
+    },
+    "tasks": [
+      {
+        "type": "shell",
+        "label": "compile plugin",
+        "problemMatcher": ["$msCompile"],
+        "command": "cl",
+        "args": [
+            "/c",
+            "/std:c++20",
+            "/MD",
+            ".\\src\\pilotdatasync-xp11.cpp",
+            "-DXPLM200",
+            "-DXLPM210",
+            "-DXPLM300",
+            "-DXPLM301",
+            "-DXPLM303",
+            "-DIBM=1",
+            "-I.\\lib\\SDK\\CHeaders\\XPLM",
+            "-I.\\lib\\SDK\\CHeaders\\Widgets"
+        ],
+        "group": {
+          "kind": "build",
+        }
+      },
+      {
+        "type": "shell",
+        "label": "make directory",
+        "problemMatcher": ["$msCompile"],
+        "command": "if not exist .\\bin\\PilotDataSync\\win_x64\\ mkdir .\\bin\\PilotDataSync\\win_x64\\"
+      },
+      {
+        "type": "shell",
+        "label": "link plugin",
+        "command": "link",
+        "problemMatcher": ["$msCompile"],
+        "args": [
+            "/DLL",
+            "./lib/SDK/Libraries/Win/XPLM_64.lib",
+            "./lib/SDK/Libraries/Win/XPWidgets_64.lib",
+            "pilotdatasync-xp11.obj",
+            "/OUT:./bin/PilotDataSync/win_x64/PilotDataSync.xpl"
+        ],
+        "group": {
+          "kind": "build",
+        },
+        "dependsOn": ["make directory"]
+      },
+      {
+        "type": "shell",
+        "label": "build plugin",
+        "command": "del",
+        "args": [
+            ".\\bin\\PilotDataSync\\win_x64\\PilotDataSync.exp",
+            ".\\bin\\PilotDataSync\\win_x64\\PilotDataSync.lib",
+            ".\\pilotdatasync-xp11.obj"
+        ],
+        "dependsOn": ["compile plugin", "link plugin"],
+        "dependsOrder": "sequence"
+      }
+    ]
+  }
