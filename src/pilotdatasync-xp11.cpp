@@ -40,7 +40,7 @@ static XPLMDataRef headingPilotRef;
 static XPLMDataRef headingCopilotRef;
 
 // Callbacks we will register when we create our window
-void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon);
+void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
 
 int dummy_mouse_handler(
     XPLMWindowID in_window_id,
@@ -89,7 +89,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMCreateWindow_t params;
     params.structSize = sizeof(params);
     params.visible = 1;
-    params.drawWindowFunc = draw_hello_world;
+    params.drawWindowFunc = draw_pilotdatasync_plugin;
     params.handleMouseClickFunc = dummy_mouse_handler;
     params.handleRightClickFunc = dummy_mouse_handler;
     params.handleMouseWheelFunc = dummy_wheel_handler;
@@ -113,19 +113,19 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
 
     // Obtain datarefs for Airspeed and Vertical Velocity
-    airspeedRef         = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
+    airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
     verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
 
     // Obtain datarefs for Pilot and CoPilot headings
-    headingPilotRef     = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
-    headingCopilotRef   = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
+    headingPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
+    headingCopilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
 
     g_window = XPLMCreateWindowEx(&params);
 
     // Position the window as a "free" floating window, 
     // which the user can drag around
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
-    XPLMSetWindowResizingLimits(g_window, 200, 60, 200, 60);
+    XPLMSetWindowResizingLimits(g_window, 200, 80, 200, 80);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
     return g_window != NULL;
@@ -147,7 +147,7 @@ PLUGIN_API void
 XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void* inParam) {}
 
 
-void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
+void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     XPLMSetGraphicsState(
         0 /* no fog */,
         0 /* 0 texture units */,
