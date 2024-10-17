@@ -1,9 +1,3 @@
-#ifdef IBM
-    #include <GL/gl.h>
-#elif APL
-    #include <OpenGL/gl.h>
-#endif
-
 #include <cstring>
 
 // Include the X-Plane SDK headers
