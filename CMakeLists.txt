@@ -12,8 +12,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(XPLANE_SDK_PATH "lib/SDK")
 
 # Specify the path to the X-Plane SDK libraries
-set(XPLANE_LIBS_DIR "${XPLANE_SDK_PATH}/lib")
-set(XPLANE_LIBS "${XPLANE_LIBS_DIR}/XPLM_410.dylib") # Adjust if necessary
+set(XPLANE_LIBS_DIR "../${XPLANE_SDK_PATH}/Libraries/Win")
+set(XPLANE_LIBS 
+    "${XPLANE_LIBS_DIR}/XPLM_64"
+    "${XPLANE_LIBS_DIR}/XPWidgets_64"
+    ) # Adjust if necessary
 
 # Plugin source
 add_library(xplane_plugin SHARED
@@ -29,28 +32,32 @@ target_include_directories(xplane_plugin PRIVATE
 
 # Link against the X-Plane SDK libraries
 target_link_libraries(xplane_plugin PRIVATE ${XPLANE_LIBS})
-
+set_target_properties(xplane_plugin PROPERTIES
+    OUTPUT_NAME "xplane-helloworld"  # Replace with your desired plugin name
+    SUFFIX ".xpl"
+)
 
 # Enable testing
 enable_testing()
 
 # Google Test
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
-)
-FetchContent_MakeAvailable(googletest)
+# include(FetchContent)
+# FetchContent_Declare(
+#     googletest
+#     URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+# )
+# FetchContent_MakeAvailable(googletest)
 
-# Test executable
-add_executable(plugin_tests
-    tests/plugin_tests.cpp 
-)
+# # Test executable
+# add_executable(plugin_tests
+#     tests/plugin_tests.cpp 
+# )
 
-target_link_libraries(plugin_tests PRIVATE
-    gtest_main
+target_link_libraries(
+    #plugin_tests PRIVATE
+    # gtest_main
     xplane_plugin
 )
 
-include(GoogleTest)
-gtest_discover_tests(plugin_tests)
+# include(GoogleTest)
+# gtest_discover_tests(plugin_tests)

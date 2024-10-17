@@ -9,3 +9,4 @@ bin/**
 *.exp
 *.xpl
 *.lib
+build/
