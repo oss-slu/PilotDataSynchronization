@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
 project(XPlanePlugin)
 
+# Add this line to define the IBM macro globally for the entire project
+add_definitions(-DIBM=1)
+add_definitions(-DXPLM300=1)
+add_definitions(-DXPLM410=1)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -11,6 +16,7 @@ set(XPLANE_SDK_PATH "lib/SDK")
 add_library(xplane_plugin SHARED
     src/pilotdatasync-xp11.cpp
 )
+
 
 target_include_directories(xplane_plugin PRIVATE
     ${XPLANE_SDK_PATH}/CHeaders/XPLM
