@@ -15,9 +15,6 @@ extern "C" {
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
-#include "XPLMWindow.h"  // Include this for XPLMCreateWindow_t
-#include "XPLMUtilities.h" // Include this for related utilities
-#include "XPLMWidgets.h"
 
 #ifdef __cplusplus
 }
