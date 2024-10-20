@@ -1,4 +1,5 @@
 # Run this script ONLY from the project root
+# with the command "PowerShell /utils/init.ps1"
 
 $dlurl="https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK410.zip"
 $download_loc="./sdk.zip"
@@ -10,7 +11,7 @@ New-Item ../lib/SDK -ItemType Directory -Force
 Invoke-WebRequest -Uri $dlurl -OutFile $download_loc
 
 # Extract SDK into the lib folder
-Expand-Archive $download_loc -DestinationPath "../lib/" -Force
+Expand-Archive $download_loc -DestinationPath "./lib/" -Force
 
 # Cleanup
 Remove-Item $download_loc
