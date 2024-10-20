@@ -8,9 +8,17 @@
 #include <cmath>
 #include <string>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
+
+#ifdef __cplusplus
+}
+#endif
 
 BOOL APIENTRY
 DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
