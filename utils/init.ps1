@@ -5,7 +5,7 @@ $dlurl="https://developer.x-plane.com/wp-content/plugins/code-sample-generation/
 $download_loc="./sdk.zip"
 
 # Create lib folder if it doesn't exist
-New-Item ../lib/SDK -ItemType Directory -Force
+New-Item ./lib/SDK -ItemType Directory -Force
 
 # Download the SDK
 Invoke-WebRequest -Uri $dlurl -OutFile $download_loc
