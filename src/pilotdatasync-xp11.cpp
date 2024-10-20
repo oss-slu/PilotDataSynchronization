@@ -37,7 +37,7 @@ static XPLMDataRef elevationAglRef;
 static XPLMDataRef airspeedRef;
 static XPLMDataRef verticalVelocityRef;
 static XPLMDataRef headingPilotRef;
-// static XPLMDataRef headingCopilotRef;
+static XPLMDataRef headingFlightmodelRef;
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
@@ -116,9 +116,9 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
     verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
 
-    // Obtain datarefs for Pilot and CoPilot headings
+    // Obtain dataref for Pilot heading and True Magnetic Heading
     headingPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
-    // headingCopilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
+    headingFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/mag_psi");
 
     g_window = XPLMCreateWindowEx(&params);
 
@@ -174,7 +174,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
     float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
     float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-    // float currentCopilotHeading = XPLMGetDataf(headingCopilotRef);
+    float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
 
     // Create strings from DataRefs to display in plugin window
     std::string elevationMslStr =
@@ -193,11 +193,19 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     }
     
     std::string headingPilotStr;
-    if( std::isnan(currentPilotHeading)) {
-        headingPilotStr = "Error Reading 'currentPilotHeading' Data";
+    if (std::isnan(currentPilotHeading)) {
+        headingPilotStr = "Error Reading Pilot Heading Data";
     } else {
-        headingPilotStr = "Heading, Pilot: " 
-            + std::to_string(currentPilotHeading) + " deg";
+        headingPilotStr = "Heading, Pilot MagDegrees: " 
+            + std::to_string(currentPilotHeading) + " °M";
+    }
+
+    std::string headingFlightmodelStr;
+    if (std::isnan(currentFlightmodelHeading)) {
+        headingFlightmodelStr = "Error Reading Plane Heading Data";
+    } else {
+        headingFlightmodelStr = "Heading, Flightmodel MagDegrees: "
+            + std::to_string(currentFlightmodelHeading) + " °M";
     }
     
     // use this get_next_y_offset() lambda function to find the next vertical pixel start position
@@ -250,6 +258,15 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         l + 10, 
         get_next_y_offset(),
         headingPilotStr.c_str(), 
+        NULL,      
+        xplmFont_Proportional
+    );
+    // Draw Flightmodel Heading in window
+    XPLMDrawString(
+        col_white, 
+        l + 10, 
+        get_next_y_offset(),
+        headingFlightmodelStr.c_str(), 
         NULL,      
         xplmFont_Proportional
     );
