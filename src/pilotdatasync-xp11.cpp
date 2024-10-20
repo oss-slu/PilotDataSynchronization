@@ -37,7 +37,7 @@ static XPLMDataRef elevationAglRef;
 static XPLMDataRef airspeedRef;
 static XPLMDataRef verticalVelocityRef;
 static XPLMDataRef headingPilotRef;
-static XPLMDataRef headingCopilotRef;
+// static XPLMDataRef headingCopilotRef;
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
@@ -118,7 +118,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
     // Obtain datarefs for Pilot and CoPilot headings
     headingPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
-    headingCopilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
+    // headingCopilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_copilot");
 
     g_window = XPLMCreateWindowEx(&params);
 
@@ -174,7 +174,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
     float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
     float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-    float currentCopilotHeading = XPLMGetDataf(headingCopilotRef);
+    // float currentCopilotHeading = XPLMGetDataf(headingCopilotRef);
 
     // Create strings from DataRefs to display in plugin window
     std::string elevationMslStr =
@@ -192,11 +192,14 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
             + std::to_string(currentVerticalVelocity) + " ft/s";
     }
     
-    std::string headingPilotStr =
-        "Heading, Pilot: " + std::to_string(currentPilotHeading) + " deg";
-    std::string headingCopilotStr =
-        "Heading, CoPilot: " + std::to_string(currentCopilotHeading) + " deg";
-
+    std::string headingPilotStr;
+    if( std::isnan(currentPilotHeading)) {
+        headingPilotStr = "Error Reading 'currentPilotHeading' Data";
+    } else {
+        headingPilotStr = "Heading, Pilot: " 
+            + std::to_string(currentPilotHeading) + " deg";
+    }
+    
     // use this get_next_y_offset() lambda function to find the next vertical pixel start position
     // on the window for string rendering for you.
     int last_offset = 10;
@@ -248,15 +251,6 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         get_next_y_offset(),
         headingPilotStr.c_str(), 
         NULL,      
-        xplmFont_Proportional
-    );
-    // Draw CoPilot Heading in window
-    XPLMDrawString(
-        col_white, 
-        l + 10, 
-        get_next_y_offset(),
-        headingCopilotStr.c_str(), 
-        NULL,
         xplmFont_Proportional
     );
 }
