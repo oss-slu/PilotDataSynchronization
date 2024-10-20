@@ -31,13 +31,16 @@ DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 // An opaque handle to the window we will create
 static XPLMWindowID g_window;
 
+// DataRef Identifiers
 static XPLMDataRef elevationMslRef;
 static XPLMDataRef elevationAglRef;
 static XPLMDataRef airspeedRef;
 static XPLMDataRef verticalVelocityRef;
+static XPLMDataRef headingPilotRef;
+static XPLMDataRef headingFlightmodelRef;
 
 // Callbacks we will register when we create our window
-void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon);
+void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
 
 int dummy_mouse_handler(
     XPLMWindowID in_window_id,
@@ -86,7 +89,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMCreateWindow_t params;
     params.structSize = sizeof(params);
     params.visible = 1;
-    params.drawWindowFunc = draw_hello_world;
+    params.drawWindowFunc = draw_pilotdatasync_plugin;
     params.handleMouseClickFunc = dummy_mouse_handler;
     params.handleRightClickFunc = dummy_mouse_handler;
     params.handleMouseWheelFunc = dummy_wheel_handler;
@@ -109,19 +112,25 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     elevationMslRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
     elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
 
+    // Obtain datarefs for Airspeed and Vertical Velocity
     airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
     verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
 
+    // Obtain dataref for Pilot heading and True Magnetic Heading
+    headingPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
+    headingFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/mag_psi");
+
     g_window = XPLMCreateWindowEx(&params);
 
-    // Position the window as a "free" floating window, which the user can drag
-    // around
+    // Position the window as a "free" floating window, 
+    // which the user can drag around
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
-    XPLMSetWindowResizingLimits(g_window, 200, 60, 200, 60);
+    XPLMSetWindowResizingLimits(g_window, 200, 80, 200, 80);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
     return g_window != NULL;
 }
+
 
 PLUGIN_API void XPluginStop(void) {
     XPLMDestroyWindow(g_window);
@@ -137,7 +146,8 @@ PLUGIN_API int XPluginEnable(void) {
 PLUGIN_API void
 XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void* inParam) {}
 
-void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
+
+void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     XPLMSetGraphicsState(
         0 /* no fog */,
         0 /* 0 texture units */,
@@ -163,7 +173,10 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
     float msToKnotsRate = 1.94384;
     float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
     float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
+    float currentPilotHeading = XPLMGetDataf(headingPilotRef);
+    float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
 
+    // Create strings from DataRefs to display in plugin window
     std::string elevationMslStr =
         "Elevation (MSL): " + std::to_string(currentElevationMsl) + " ft";
     std::string elevationAglStr =
@@ -172,14 +185,29 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         "True Airspeed: " + std::to_string(trueAirspeed) + " knots";
 
     std::string verticalVelocityStr;
-
     if (std::isnan(currentVerticalVelocity)) {
         verticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
     } else {
         verticalVelocityStr = "Vertical Velocity: "
             + std::to_string(currentVerticalVelocity) + " ft/s";
     }
+    
+    std::string headingPilotStr;
+    if (std::isnan(currentPilotHeading)) {
+        headingPilotStr = "Error Reading Pilot Heading Data";
+    } else {
+        headingPilotStr = "Heading, Pilot MagDegrees: " 
+            + std::to_string(currentPilotHeading) + " °M";
+    }
 
+    std::string headingFlightmodelStr;
+    if (std::isnan(currentFlightmodelHeading)) {
+        headingFlightmodelStr = "Error Reading Plane Heading Data";
+    } else {
+        headingFlightmodelStr = "Heading, Flightmodel MagDegrees: "
+            + std::to_string(currentFlightmodelHeading) + " °M";
+    }
+    
     // use this get_next_y_offset() lambda function to find the next vertical pixel start position
     // on the window for string rendering for you.
     int last_offset = 10;
@@ -188,7 +216,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         return t - last_offset;
     };
 
-    // Increment the inChar (third) variable's subtraction term by 10 to put your string on a new line
+   // Draw Elevation MSL in window
     XPLMDrawString(
         col_white,
         l + 10,
@@ -197,6 +225,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         NULL,
         xplmFont_Proportional
     );
+    // Draw Elevation AGL in window
     XPLMDrawString(
         col_white,
         l + 10,
@@ -205,6 +234,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         NULL,
         xplmFont_Proportional
     );
+    // Draw True Airspeed in window
     XPLMDrawString(
         col_white,
         l + 10,
@@ -213,12 +243,31 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         NULL,
         xplmFont_Proportional
     );
+    // Draw Vertical Velocity in window
     XPLMDrawString(
         col_white,
         l + 10,
         get_next_y_offset(),
         verticalVelocityStr.c_str(),
         NULL,
+        xplmFont_Proportional
+    );
+    // Draw Pilot Heading in window
+    XPLMDrawString(
+        col_white, 
+        l + 10, 
+        get_next_y_offset(),
+        headingPilotStr.c_str(), 
+        NULL,      
+        xplmFont_Proportional
+    );
+    // Draw Flightmodel Heading in window
+    XPLMDrawString(
+        col_white, 
+        l + 10, 
+        get_next_y_offset(),
+        headingFlightmodelStr.c_str(), 
+        NULL,      
         xplmFont_Proportional
     );
 }
