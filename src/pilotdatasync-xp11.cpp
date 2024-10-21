@@ -153,26 +153,44 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
 
     float col_white[] = {1.0, 1.0, 1.0}; // RGB
 
-    // Dataref provides altitudes in meters, need to convert to feet to match
-    // in-game display for validation
+    // DataRef Setup with Simple Error-Catching if the data doesn't read correctly
+        // Dataref provides altitudes in meters, need to convert to feet to match
+        // in-game display for validation
     float metersToFeetRate = 3.28084;
-    float currentElevationMsl =
-        XPLMGetDataf(elevationMslRef) * metersToFeetRate;
-    float currentElevationAgl =
-        XPLMGetDataf(elevationAglRef) * metersToFeetRate;
     float msToKnotsRate = 1.94384;
-    float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
+    
+    float currentElevationMsl = XPLMGetDataf(elevationMslRef);
+    std::string elevationMslStr;
+    if (std::isnan(currentElevationMsl)) {
+        elevationMslStr = "Elevation (MSL): (Error Reading Data)";
+    } else {
+        currentElevationMsl *= metersToFeetRate;
+        elevationMslStr = "Elevation (MSL): " 
+            + std::to_string(currentElevationMsl) + " ft";
+    }
+
+    float currentElevationAgl = XPLMGetDataf(elevationAglRef);
+    std::string elevationAglStr;
+    if (std::isnan(currentElevationAgl)) {
+        elevationAglStr = "Elevation (AGL): (Error Reading Data)";
+    } else {
+        currentElevationAgl *= metersToFeetRate;
+        elevationAglStr = "Elevation (AGL): " 
+            + std::to_string(currentElevationAgl) + " ft";
+    }
+
+    float trueAirspeed = XPLMGetDataf(airspeedRef);
+    std::string trueAirspeedStr;
+    if (std::isnan(trueAirspeed)) {
+        trueAirspeedStr = "True Airspeed: (Error Reading Data)";
+    } else {
+        trueAirspeed *= msToKnotsRate;
+        trueAirspeedStr = "True Airspeed: " 
+            + std::to_string(trueAirspeed) + " knots";
+    }
+    
     float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
-
-    std::string elevationMslStr =
-        "Elevation (MSL): " + std::to_string(currentElevationMsl) + " ft";
-    std::string elevationAglStr =
-        "Elevation (AGL): " + std::to_string(currentElevationAgl) + " ft";
-    std::string trueAirspeedStr =
-        "True Airspeed: " + std::to_string(trueAirspeed) + " knots";
-
     std::string verticalVelocityStr;
-
     if (std::isnan(currentVerticalVelocity)) {
         verticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
     } else {
