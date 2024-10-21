@@ -31,10 +31,12 @@ DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 // An opaque handle to the window we will create
 static XPLMWindowID g_window;
 
-static XPLMDataRef elevationMslRef;
-static XPLMDataRef elevationAglRef;
-static XPLMDataRef airspeedRef;
-static XPLMDataRef verticalVelocityRef;
+static XPLMDataRef elevationFlightmodelRef;
+static XPLMDataRef elevationPilotRef;
+static XPLMDataRef airspeedFlightmodelRef;
+static XPLMDataRef airspeedPilotRef;
+static XPLMDataRef verticalVelocityFlightmodelRef;
+static XPLMDataRef verticalVelocityPilotRef;
 
 // Callbacks we will register when we create our window
 void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon);
@@ -106,11 +108,14 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     params.top = params.bottom + 200;
 
     // Obtain datarefs for MSL and AGL elevation, respectively
-    elevationMslRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
-    elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
+    elevationFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
+    elevationPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/altitude_ft_pilot");
 
-    airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
-    verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
+    airspeedFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
+    airspeedPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/airspeed_kts_pilot");
+
+    verticalVelocityFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
+    verticalVelocityPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/vvi_fpm_pilot");
 
     g_window = XPLMCreateWindowEx(&params);
 
@@ -159,43 +164,53 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
     float metersToFeetRate = 3.28084;
     float msToKnotsRate = 1.94384;
     
-    float currentElevationMsl = XPLMGetDataf(elevationMslRef);
-    std::string elevationMslStr;
-    if (std::isnan(currentElevationMsl)) {
-        elevationMslStr = "Elevation (MSL): (Error Reading Data)";
+    float currentFlightmodelElevation = XPLMGetDataf(elevationFlightmodelRef);
+    std::string elevationFlightmodelStr;
+    if (std::isnan(currentFlightmodelElevation)) {
+        elevationFlightmodelStr = "Elevation (MSL): (Error Reading Data)";
     } else {
-        currentElevationMsl *= metersToFeetRate;
-        elevationMslStr = "Elevation (MSL): " 
-            + std::to_string(currentElevationMsl) + " ft";
+        currentFlightmodelElevation *= metersToFeetRate;
+        elevationFlightmodelStr = "Elevation (MSL): " 
+            + std::to_string(currentFlightmodelElevation) + " ft";
     }
 
-    float currentElevationAgl = XPLMGetDataf(elevationAglRef);
-    std::string elevationAglStr;
-    if (std::isnan(currentElevationAgl)) {
-        elevationAglStr = "Elevation (AGL): (Error Reading Data)";
+    float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
+    std::string elevationPilotStr;
+    if (std::isnan(currentPilotElevation)) {
+        elevationPilotStr = "Elevation (AGL): (Error Reading Data)";
     } else {
-        currentElevationAgl *= metersToFeetRate;
-        elevationAglStr = "Elevation (AGL): " 
-            + std::to_string(currentElevationAgl) + " ft";
+        currentPilotElevation *= metersToFeetRate;
+        elevationPilotStr = "Elevation (AGL): " 
+            + std::to_string(currentPilotElevation) + " ft";
     }
 
-    float trueAirspeed = XPLMGetDataf(airspeedRef);
-    std::string trueAirspeedStr;
-    if (std::isnan(trueAirspeed)) {
-        trueAirspeedStr = "True Airspeed: (Error Reading Data)";
+    float currentFlightmodelAirspeed = XPLMGetDataf(airspeedFlightmodelRef);
+    std::string flightmodelAirspeedStr;
+    if (std::isnan(currentFlightmodelAirspeed)) {
+        flightmodelAirspeedStr = "True Airspeed: (Error Reading Data)";
     } else {
-        trueAirspeed *= msToKnotsRate;
-        trueAirspeedStr = "True Airspeed: " 
-            + std::to_string(trueAirspeed) + " knots";
+        currentFlightmodelAirspeed *= msToKnotsRate;
+        flightmodelAirspeedStr = "True Airspeed: " 
+            + std::to_string(currentFlightmodelAirspeed) + " knots";
     }
     
-    float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
-    std::string verticalVelocityStr;
-    if (std::isnan(currentVerticalVelocity)) {
-        verticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
+    float currentFlightmodelVerticalVelocity = XPLMGetDataf(verticalVelocityFlightmodelRef);
+    std::string flightmodelVerticalVelocityStr;
+    if (std::isnan(currentFlightmodelVerticalVelocity)) {
+        flightmodelVerticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
     } else {
-        verticalVelocityStr = "Vertical Velocity: "
-            + std::to_string(currentVerticalVelocity) + " ft/s";
+        flightmodelVerticalVelocityStr = "Vertical Velocity: "
+            + std::to_string(currentVerticalVelocity) + " ft/m";
+    }
+
+
+    float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
+    std::string pilotVerticalVelocityStr;
+    if (std::isnan(currentPilotVerticalVelocity)) {
+        pilotVerticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
+    } else {
+        pilotVerticalVelocityStr = "Vertical Velocity: "
+            + std::to_string(currentPilotVerticalVelocity) + " ft/m";
     }
 
     // use this get_next_y_offset() lambda function to find the next vertical pixel start position
@@ -211,7 +226,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         col_white,
         l + 10,
         get_next_y_offset(),
-        elevationMslStr.c_str(),
+        elevationFlightmodelStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
@@ -219,7 +234,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         col_white,
         l + 10,
         get_next_y_offset(),
-        elevationAglStr.c_str(),
+        elevationPilotStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
@@ -227,7 +242,7 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         col_white,
         l + 10,
         get_next_y_offset(),
-        trueAirspeedStr.c_str(),
+        flightmodelAirspeedStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
@@ -235,7 +250,15 @@ void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon) {
         col_white,
         l + 10,
         get_next_y_offset(),
-        verticalVelocityStr.c_str(),
+        flightmodelVerticalVelocityStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        pilotVerticalVelocityStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
