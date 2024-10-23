@@ -42,7 +42,7 @@ set_target_properties(xplane_plugin PROPERTIES
     SUFFIX ".xpl"
 )
 
-# Enable testing
+# # Enable testing
 enable_testing()
 
 #Google Test
@@ -53,7 +53,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-# # Test executable
+# Test executable
 add_executable(plugin_tests
     tests/plugin_tests.cpp 
 )
@@ -65,7 +65,7 @@ target_link_libraries(
     xplane_plugin
 )
 
- # Include the 'include' directory for plugin_tests
+# Include the 'include' directory for plugin_tests
  target_include_directories(plugin_tests PRIVATE
     ${XPLANE_SDK_PATH}/CHeaders/XPLM
     ${XPLANE_SDK_PATH}/CHeaders/Widgets
