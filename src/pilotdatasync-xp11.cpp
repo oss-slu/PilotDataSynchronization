@@ -32,12 +32,14 @@ DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 static XPLMWindowID g_window;
 
 // DataRef Identifiers
-static XPLMDataRef elevationMslRef;
-static XPLMDataRef elevationAglRef;
-static XPLMDataRef airspeedRef;
-static XPLMDataRef verticalVelocityRef;
-static XPLMDataRef headingPilotRef;
+static XPLMDataRef elevationFlightmodelRef;
+static XPLMDataRef elevationPilotRef;
+static XPLMDataRef airspeedFlightmodelRef;
+static XPLMDataRef airspeedPilotRef;
+static XPLMDataRef verticalVelocityFlightmodelRef;
+static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
+static XPLMDataRef headingPilotRef;
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
@@ -84,7 +86,7 @@ void dummy_key_handler(
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     strcpy(outName, "PilotDataSyncPlugin");
     strcpy(outSig, "oss.pilotdatasyncplugin");
-    strcpy(outDesc, "A plug-in that collects and transmits X-Plane 11 data.");
+    strcpy(outDesc, "A plug-in that collects and transmits X-Plane 11 data to the iMotions platform for data collection and research");
 
     XPLMCreateWindow_t params;
     params.structSize = sizeof(params);
@@ -109,16 +111,20 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     params.top = params.bottom + 200;
 
     // Obtain datarefs for MSL and AGL elevation, respectively
-    elevationMslRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
-    elevationAglRef = XPLMFindDataRef("sim/flightmodel/position/y_agl");
+    elevationFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
+    elevationPilotRef = XPLMFindDataRef("NEED TO CHANGE THIS DATAREF");
 
-    // Obtain datarefs for Airspeed and Vertical Velocity
-    airspeedRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
-    verticalVelocityRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
+    // Obtain datarefs for Airspeed
+    airspeedFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
+    airspeedPilotRef = XPLMFindDataRef("NEED TO CHANGE THIS DATAREF");
+
+    // DataRefs for Vertical Velocity
+    verticalVelocityFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
+    verticalVelocityPilotRef = XPLMFindDataRef("NEED TO CHANGE THIS DATAREF");
 
     // Obtain dataref for Pilot heading and True Magnetic Heading
-    headingPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
     headingFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/mag_psi");
+    headingPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
 
     g_window = XPLMCreateWindowEx(&params);
 
@@ -163,51 +169,74 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
 
     float col_white[] = {1.0, 1.0, 1.0}; // RGB
 
-    // Dataref provides altitudes in meters, need to convert to feet to match
-    // in-game display for validation
+    // Dataref provides altitudes in meters, need to convert to feet and knots
     float metersToFeetRate = 3.28084;
-    float currentElevationMsl =
-        XPLMGetDataf(elevationMslRef) * metersToFeetRate;
-    float currentElevationAgl =
-        XPLMGetDataf(elevationAglRef) * metersToFeetRate;
     float msToKnotsRate = 1.94384;
-    float trueAirspeed = XPLMGetDataf(airspeedRef) * msToKnotsRate;
-    float currentVerticalVelocity = XPLMGetDataf(verticalVelocityRef);
-    float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-    float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
 
     // Create strings from DataRefs to display in plugin window
-    std::string elevationMslStr =
-        "Elevation (MSL): " + std::to_string(currentElevationMsl) + " ft";
-    std::string elevationAglStr =
-        "Elevation (AGL): " + std::to_string(currentElevationAgl) + " ft";
-    std::string trueAirspeedStr =
-        "True Airspeed: " + std::to_string(trueAirspeed) + " knots";
-
-    std::string verticalVelocityStr;
-    if (std::isnan(currentVerticalVelocity)) {
-        verticalVelocityStr = "Vertical Velocity: (Error Reading Data)";
+    std::string elevationFlightmodelStr;
+    float currentFlightmodelElevation = XPLMGetDataf(elevationFlightmodelRef) * metersToFeetRate;
+    if (std::isnan(currentFlightmodelElevation)) {
+        elevationFlightmodelStr = "Elevation, Flightmodel (MSL): (Error Reading Data)";
     } else {
-        verticalVelocityStr = "Vertical Velocity: "
-            + std::to_string(currentVerticalVelocity) + " ft/s";
+        elevationFlightmodelStr = "Elevation, Flightmodel (MSL):" 
+            + std::to_string(currentFlightmodelElevation) + " ft";
+    }
+
+    std::string elevationPilotStr;
+    float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * metersToFeetRate;
+    if (std::isnan(currentPilotElevation)) {
+        elevationPilotStr = "Elevation, Pilot (MSL): (Error Reading Data)";
+    } else {
+        elevationPilotStr = "Elevation, Pilot (MSL):" 
+            + std::to_string(currentPilotElevation) + " ft";
+    }
+
+    std::string airspeedFlightmodelStr;
+    float currentFlightmodelAirspeed = XPLMGetDataf(airspeedFlightmodelRef) * msToKnotsRate;
+    if (std::isnan(currentFlightmodelAirspeed)) {
+        airspeedFlightmodelStr = "Airspeed, Flightmodel: (Error Reading Data)";
+    } else {
+        airspeedFlightmodelStr = "Airspeed, Flightmodel:" 
+            + std::to_string(currentFlightmodelAirspeed) + " knots";
+    }
+
+    std::string airspeedPilotStr;
+    float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+    if (std::isnan(currentPilotAirspeed)) {
+        airspeedPilotStr = "Airspeed, Pilot: (Error Reading Data)";
+    } else {
+        airspeedPilotStr = "Airspeed, Pilot:" 
+            + std::to_string(currentPilotAirspeed) + " knots";
     }
     
-    std::string headingPilotStr;
-    if (std::isnan(currentPilotHeading)) {
-        headingPilotStr = "Error Reading Pilot Heading Data";
+    std::string verticalVelocityFlightmodelStr;
+    float currentFlightmodelVerticalVelocity = XPLMGetDataf(verticalVelocityFlightmodelRef);
+    if (std::isnan(currentFlightmodelVerticalVelocity)) {
+        verticalVelocityFlightmodelStr = "Vertical Velocity, Flightmodel: (Error Reading Data)";
     } else {
-        headingPilotStr = "Heading, Pilot MagDegrees: " 
+        verticalVelocityFlightmodelStr = "Vertical Velocity: "
+            + std::to_string(currentFlightmodelVerticalVelocity) + " ft/s";
+    }
+    
+    std::string headingFlightmodelStr;
+    float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
+    if (std::isnan(currentFlightmodelHeading)) {
+        headingFlightmodelStr = "Heading, Flightmodel: (Error Reading Data)";
+    } else {
+        headingFlightmodelStr = "Heading, Flightmodel: "
+            + std::to_string(currentFlightmodelHeading) + " °M";
+    }
+
+    std::string headingPilotStr;
+    float currentPilotHeading = XPLMGetDataf(headingPilotRef);
+    if (std::isnan(currentPilotHeading)) {
+        headingPilotStr = "Heading, Pilot: (Error Reading Data)";
+    } else {
+        headingPilotStr = "Heading, Pilot: " 
             + std::to_string(currentPilotHeading) + " °M";
     }
 
-    std::string headingFlightmodelStr;
-    if (std::isnan(currentFlightmodelHeading)) {
-        headingFlightmodelStr = "Error Reading Plane Heading Data";
-    } else {
-        headingFlightmodelStr = "Heading, Flightmodel MagDegrees: "
-            + std::to_string(currentFlightmodelHeading) + " °M";
-    }
-    
     // use this get_next_y_offset() lambda function to find the next vertical pixel start position
     // on the window for string rendering for you.
     int last_offset = 10;
@@ -216,16 +245,15 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         return t - last_offset;
     };
 
-   // Draw Elevation MSL in window
+   // Draw Elevation in window
     XPLMDrawString(
         col_white,
         l + 10,
         get_next_y_offset(),
-        elevationMslStr.c_str(),
+        elevationFlightmodelStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
-    // Draw Elevation AGL in window
     XPLMDrawString(
         col_white,
         l + 10,
@@ -234,12 +262,20 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         NULL,
         xplmFont_Proportional
     );
-    // Draw True Airspeed in window
+    // Draw Airspeed in window
     XPLMDrawString(
         col_white,
         l + 10,
         get_next_y_offset(),
-        trueAirspeedStr.c_str(),
+        airspeedFlightmodelStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        airspeedPilotStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
@@ -248,25 +284,32 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         col_white,
         l + 10,
         get_next_y_offset(),
-        verticalVelocityStr.c_str(),
+        verticalVelocityFlightmodelStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
-    // Draw Pilot Heading in window
     XPLMDrawString(
-        col_white, 
-        l + 10, 
+        col_white,
+        l + 10,
         get_next_y_offset(),
-        headingPilotStr.c_str(), 
-        NULL,      
+        verticalVelocityPilotStr.c_str(),
+        NULL,
         xplmFont_Proportional
     );
-    // Draw Flightmodel Heading in window
+    // Draw Heading in window
     XPLMDrawString(
         col_white, 
         l + 10, 
         get_next_y_offset(),
         headingFlightmodelStr.c_str(), 
+        NULL,      
+        xplmFont_Proportional
+    );
+    XPLMDrawString(
+        col_white, 
+        l + 10, 
+        get_next_y_offset(),
+        headingPilotStr.c_str(), 
         NULL,      
         xplmFont_Proportional
     );
