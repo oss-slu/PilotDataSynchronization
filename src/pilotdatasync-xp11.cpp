@@ -112,15 +112,15 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
     // Obtain datarefs for MSL and AGL elevation, respectively
     elevationFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
-    elevationPilotRef = XPLMFindDataRef("NEED TO CHANGE THIS DATAREF");
+    elevationPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/altitude_ft_pilot");
 
     // Obtain datarefs for Airspeed
     airspeedFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
-    airspeedPilotRef = XPLMFindDataRef("NEED TO CHANGE THIS DATAREF");
+    airspeedPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/airspeed_kts_pilot");
 
-    // DataRefs for Vertical Velocity
-    verticalVelocityFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind");
-    verticalVelocityPilotRef = XPLMFindDataRef("NEED TO CHANGE THIS DATAREF");
+    // DataRefs for Vertical Velocitys
+    verticalVelocityFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
+    verticalVelocityPilotRef = XPLMFindDataRef("sim/cockpit2/gauges/indicators/vvi_fpm_pilot");
 
     // Obtain dataref for Pilot heading and True Magnetic Heading
     headingFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/mag_psi");
@@ -131,7 +131,6 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     // Position the window as a "free" floating window, 
     // which the user can drag around
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
-    XPLMSetWindowResizingLimits(g_window, 200, 80, 200, 80);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
     return g_window != NULL;
@@ -170,12 +169,12 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     float col_white[] = {1.0, 1.0, 1.0}; // RGB
 
     // Dataref provides altitudes in meters, need to convert to feet and knots
-    float metersToFeetRate = 3.28084;
+    float msToFeetRate = 3.28084;
     float msToKnotsRate = 1.94384;
 
     // Create strings from DataRefs to display in plugin window
     std::string elevationFlightmodelStr;
-    float currentFlightmodelElevation = XPLMGetDataf(elevationFlightmodelRef) * metersToFeetRate;
+    float currentFlightmodelElevation = XPLMGetDataf(elevationFlightmodelRef) * msToFeetRate;
     if (std::isnan(currentFlightmodelElevation)) {
         elevationFlightmodelStr = "Elevation, Flightmodel (MSL): (Error Reading Data)";
     } else {
@@ -184,7 +183,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     }
 
     std::string elevationPilotStr;
-    float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * metersToFeetRate;
+    float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * msToFeetRate;
     if (std::isnan(currentPilotElevation)) {
         elevationPilotStr = "Elevation, Pilot (MSL): (Error Reading Data)";
     } else {
@@ -215,9 +214,19 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
     if (std::isnan(currentFlightmodelVerticalVelocity)) {
         verticalVelocityFlightmodelStr = "Vertical Velocity, Flightmodel: (Error Reading Data)";
     } else {
-        verticalVelocityFlightmodelStr = "Vertical Velocity: "
-            + std::to_string(currentFlightmodelVerticalVelocity) + " ft/s";
+        verticalVelocityFlightmodelStr = "Vertical Velocity, Flightmodel: "
+            + std::to_string(currentFlightmodelVerticalVelocity) + " ft/min";
     }
+
+    std::string verticalVelocityPilotStr;
+    float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
+    if (std::isnan(currentPilotVerticalVelocity)) {
+        verticalVelocityPilotStr = "Vertical Velocity, Flightmodel: (Error Reading Data)";
+    } else {
+        verticalVelocityPilotStr = "Vertical Velocity, Pilot: "
+            + std::to_string(currentPilotVerticalVelocity) + " ft/min";
+    }
+    
     
     std::string headingFlightmodelStr;
     float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
@@ -258,7 +267,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         col_white,
         l + 10,
         get_next_y_offset(),
-        elevationAglStr.c_str(),
+        elevationPilotStr.c_str(),
         NULL,
         xplmFont_Proportional
     );
