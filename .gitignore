@@ -3,10 +3,10 @@
 *.ilk
 *.obj
 *.pdb
-.vscode
 lib/** 
 bin/**
 *.exp
 *.xpl
 *.lib
+build/
 .DS_STORE
