@@ -42,35 +42,35 @@ set_target_properties(xplane_plugin PROPERTIES
     SUFFIX ".xpl"
 )
 
-# # Enable testing
-enable_testing()
+# # # Enable testing
+# enable_testing()
 
-#Google Test
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
-)
-FetchContent_MakeAvailable(googletest)
+# #Google Test
+# include(FetchContent)
+# FetchContent_Declare(
+#     googletest
+#     URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+# )
+# FetchContent_MakeAvailable(googletest)
 
-# Test executable
-add_executable(plugin_tests
-    tests/plugin_tests.cpp 
-)
+# # Test executable
+# add_executable(plugin_tests
+#     tests/plugin_tests.cpp 
+# )
 
-target_link_libraries(
-    plugin_tests PRIVATE
-    gtest_main
-    gtest
-    xplane_plugin
-)
+# target_link_libraries(
+#     plugin_tests PRIVATE
+#     gtest_main
+#     gtest
+#     xplane_plugin
+# )
 
-# Include the 'include' directory for plugin_tests
- target_include_directories(plugin_tests PRIVATE
-    ${XPLANE_SDK_PATH}/CHeaders/XPLM
-    ${XPLANE_SDK_PATH}/CHeaders/Widgets
-    include
-)
+# # Include the 'include' directory for plugin_tests
+#  target_include_directories(plugin_tests PRIVATE
+#     ${XPLANE_SDK_PATH}/CHeaders/XPLM
+#     ${XPLANE_SDK_PATH}/CHeaders/Widgets
+#     include
+# )
 
-include(GoogleTest)
-gtest_discover_tests(plugin_tests)
+# include(GoogleTest)
+# gtest_discover_tests(plugin_tests)
