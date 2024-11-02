@@ -2,11 +2,10 @@
 // "Hello, World" plugin code found here:
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
-#include <string.h>
-#include <windows.h>
-
 #include <cmath>
 #include <string>
+
+// #include "packet.cpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,6 +14,8 @@ extern "C" {
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
+#include "XPLMProcessing.h"
+#include "XPLMUtilities.h"
 
 #ifdef __cplusplus
 }
@@ -38,6 +39,7 @@ DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 
 // An opaque handle to the window we will create
 static XPLMWindowID g_window;
+static XPLMFlightLoop_f test;
 
 // DataRef Identifiers
 static XPLMDataRef elevationFlightmodelRef;
@@ -51,6 +53,17 @@ static XPLMDataRef headingPilotRef;
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
+
+float flight_loop(
+    float inElapsedSinceLastCall,
+    float inElapsedTimeSinceLastFlightLoop,
+    int inCounter,
+    void* inRefcon
+) {
+    XPLMSpeakString("FLOOP");
+    XPLMDebugString("FLOOP");
+    return 1.0;
+}
 
 int dummy_mouse_handler(
     XPLMWindowID in_window_id,
@@ -151,6 +164,16 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     // which the user can drag around
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
+
+    // Register per-time-unit callback
+    XPLMCreateFlightLoop_t loop_params = {
+        .structSize = sizeof(loop_params),
+        .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
+        .callbackFunc = flight_loop,
+        .refcon = NULL  
+    };
+    XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
+    XPLMScheduleFlightLoop(id, 1.0, true);
 
     return g_window != NULL;
 }

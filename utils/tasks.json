@@ -5,7 +5,7 @@
   *   After running, your entire plugin, including the correct folder structure, will build.
   *   You can copy the folder generated in the bin directory straight into your X-Plane plugins folder
   */
-{
+  {
     "version": "2.0.0",
     "windows": {
       "options": {
@@ -32,7 +32,7 @@
             "/MD",
             ".\\src\\pilotdatasync-xp11.cpp",
             "-DXPLM200",
-            "-DXLPM210",
+            "-DXPLM210",
             "-DXPLM300",
             "-DXPLM301",
             "-DXPLM303",
@@ -76,6 +76,9 @@
             ".\\bin\\PilotDataSync\\win_x64\\PilotDataSync.lib",
             ".\\pilotdatasync-xp11.obj"
         ],
+        "group": {
+          "kind": "build"
+        },
         "dependsOn": ["compile plugin", "link plugin"],
         "dependsOrder": "sequence"
       }
