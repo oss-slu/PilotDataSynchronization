@@ -60,8 +60,6 @@ float flight_loop(
     int inCounter,
     void* inRefcon
 ) {
-    XPLMSpeakString("FLOOP");
-    XPLMDebugString("FLOOP");
     return 1.0;
 }
 
