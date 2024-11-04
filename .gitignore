@@ -10,3 +10,4 @@ bin/**
 *.xpl
 *.lib
 build/
+CMakeCache.txt
