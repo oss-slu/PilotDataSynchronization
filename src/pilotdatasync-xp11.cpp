@@ -5,7 +5,7 @@
 #include <cmath>
 #include <string>
 
-// #include "packet.cpp"
+#include "threading-tools.h"
 
 #include <thread>
 
@@ -110,13 +110,30 @@ void dummy_key_handler(
 
 int runTCPThread(){
     TCPClient client; 
-    vector<float> testQueue = {3.0,4.0}; 
+    ThreadQueue myQueue; 
+    
     std::cout << "TCP Client Starting..." << std::endl;
+    bool stop_exec = false; 
 
-    while(proceedSend == true){
-        if (testQueue.length() == 0){
-            proceedSend == false; 
-        }   
+    while(stop_exec == false){
+        if(myQueue.size() == 0){
+            std::this_thread::sleep_for(150ms);
+            continue;
+        }
+
+        ThreadMessage tm = myQueue.pop();
+        if(tm.end_execution_flag == true){
+            stop_exec == false;
+        } else {
+            vector <string> myVec; 
+            for (int i = 0; i < 4; i++){
+                myVec.push_back(to_string(tm.values_for_packet[i]));
+            }
+            string packet = generate_packet(myVec);
+
+            //move along the TCP 
+            client.sendData(packet);
+        }
     }
 
     if (!client.initializeWinsock()) {
