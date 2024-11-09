@@ -1,6 +1,4 @@
-#include "../include/packet.h"
-
-using namespace std;
+#include "../include/threading-tools.h"
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -9,41 +7,21 @@ using namespace std;
 #include <vector>
 using namespace std;
 
-struct ThreadMessage {
-    const float* values_for_packet;
-    const bool end_execution_flag;
+int ThreadQueue::size() {
+    lock_guard<mutex> lock(m);
+    return q.size();
+}
 
-    ThreadMessage(float const (&values_for_packet)[4], const bool tf) :
-        values_for_packet(values_for_packet),
-        end_execution_flag(tf) {};
-};
+void ThreadQueue::push(ThreadMessage tm) {
+    lock_guard<mutex> lock(m);
+    q.push(tm);
+}
 
-class ThreadQueue {
-  private:
-    mutex m;
-    queue<ThreadMessage> q;
-
-  public:
-    int size() {
-        lock_guard<mutex> lock(m);
-        return q.size();
-    }
-
-    void push(ThreadMessage tm) {
-        lock_guard<mutex> lock(m);
-        q.push(tm);
-    }
-
-    ThreadMessage pop() {
-        lock_guard<mutex> lock(m);
-        ThreadMessage front = q.front();
-        q.pop();
-        return front;
-    }
-};
-
-void t() {
-    lock_guard<mutex> guard(mvec);
+ThreadMessage ThreadQueue::pop() {
+    lock_guard<mutex> lock(m);
+    ThreadMessage front = q.front();
+    q.pop();
+    return front;
 }
 
 string generate_packet(vector<string> vec) {
