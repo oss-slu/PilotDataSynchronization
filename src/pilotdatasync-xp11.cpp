@@ -8,6 +8,8 @@
 #include <cmath>
 #include <string>
 
+#include <thread>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,6 +21,7 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+#include <vector>
 
 BOOL APIENTRY
 DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
@@ -43,6 +46,9 @@ static XPLMDataRef elevationMslRef;
 static XPLMDataRef elevationAglRef;
 static XPLMDataRef airspeedRef;
 static XPLMDataRef verticalVelocityRef;
+
+//thread handle here 
+static std::thread thread_handle; 
 
 // Callbacks we will register when we create our window
 void draw_hello_world(XPLMWindowID in_window_id, void* in_refcon);
@@ -86,6 +92,47 @@ void dummy_key_handler(
     int losing_focus
 ) {}
 
+int runTCPThread(){
+    TCPClient client; 
+    vector<float> testQueue = {3.0,4.0}; 
+    std::cout << "TCP Client Starting..." << std::endl;
+
+    while(proceedSend == true){
+        if (testQueue.length() == 0){
+            proceedSend == false; 
+        }   
+    }
+
+    if (!client.initializeWinsock()) {
+        std::cout << "Failed to initialize Winsock" << std::endl;
+        return 1; 
+    }
+    
+    if (!client.createSocket()) {
+        std::cout << "Failed to create socket" << std::endl;
+        return 1; 
+        }
+        
+
+    std::string serverIP = "127.0.0.1";  // Changed to IPv4 localhost
+    if (!client.connectToServer(serverIP)) {
+        std::cout << "Failed to connect to server" << std::endl;
+        return 1;
+    }
+    
+    // Send test messages
+    std::cout << "Starting to send test messages..." << std::endl;
+    for (int i = 0; i < 5; i++) {
+        std::string message = "Test message " + std::to_string(i + 1);
+        if (!client.sendData(message))
+            break;
+        std::cout << "Sleeping for 1 second..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    
+    std::cout << "Client shutting down..." << std::endl;
+}
+
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     strcpy(outName, "PilotDataSyncPlugin");
     strcpy(outSig, "oss.pilotdatasyncplugin");
@@ -127,6 +174,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
     XPLMSetWindowResizingLimits(g_window, 200, 60, 200, 60);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
+
+
+    ///TCP Server 
+    thread_handle = std::thread(runTCPThread);
+
+    ///
 
     return g_window != NULL;
 }
