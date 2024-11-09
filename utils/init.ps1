@@ -1,6 +1,7 @@
 # Run this script ONLY from the project root
+# with the command "PowerShell /utils/init.ps1" while in the root folder
 
-$dlurl="https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK410.zip"
+$dlurl="https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK411.zip"
 $download_loc="./sdk.zip"
 
 # Create lib folder if it doesn't exist

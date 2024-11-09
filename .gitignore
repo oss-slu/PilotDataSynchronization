@@ -3,7 +3,6 @@
 *.ilk
 *.obj
 *.pdb
-.vscode
 lib/** 
 bin/**
 *.exp
@@ -12,3 +11,4 @@ bin/**
 build/
 CMakeCache.txt
 CMakeFiles/
+.DS_STORE
