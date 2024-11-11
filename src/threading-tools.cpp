@@ -23,15 +23,15 @@ ThreadMessage ThreadQueue::pop() {
 
 string generate_packet(vector<string> vec) {
     time_t system_time = system_clock::to_time_t(system_clock::now());
-    string time = ctime(&system_time);
-    // remove trailing newline
-    time.erase(remove(time.begin(), time.end(), '\n'), time.cend());
+    auto gm = gmtime(&system_time);
+    char buf[42];
+    strftime(buf, 42, "%Y%m%d %X", gm);
     string main_packet =
         accumulate(vec.begin(), vec.end(), string(""), [](string a, string b) {
             return a + b + ";";
         });
     string source = ";X-Plane 11.55 PilotDataSync Plugin;";
-    return main_packet + time + source + "\r\n";
+    return main_packet + buf + source + "\r\n";
 }
 
 string output_xml() {
