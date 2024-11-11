@@ -1,11 +1,8 @@
 #include "../include/threading-tools.h"
-#include <iostream>
-#include <mutex>
-#include <queue>
-#include <string>
-#include <thread>
-#include <vector>
+#include <ctime>
+#include <chrono>
 using namespace std;
+using chrono::system_clock;
 
 int ThreadQueue::size() {
     lock_guard<mutex> lock(m);
@@ -25,11 +22,16 @@ ThreadMessage ThreadQueue::pop() {
 }
 
 string generate_packet(vector<string> vec) {
-    string output =
+    time_t system_time = system_clock::to_time_t(system_clock::now());
+    string time = ctime(&system_time);
+    // remove trailing newline
+    time.erase(remove(time.begin(), time.end(), '\n'), time.cend());
+    string main_packet =
         accumulate(vec.begin(), vec.end(), string(""), [](string a, string b) {
             return a + b + ";";
         });
-    return output + "\r\n";
+    string source = ";X-Plane 11.55 PilotDataSync Plugin;";
+    return main_packet + time + source + "\r\n";
 }
 
 string output_xml() {

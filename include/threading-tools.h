@@ -2,13 +2,10 @@
 #include <numeric>
 #include <string>
 #include <vector>
-
 #include <iostream>
 #include <mutex>
 #include <queue>
-#include <string>
 #include <thread>
-#include <vector>
 using namespace std;
 
 struct ThreadMessage {
