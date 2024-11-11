@@ -1,12 +1,18 @@
 #include "packet.h"
+#include <ctime>
+#include <chrono>
 
 using namespace std;
+using chrono::system_clock;
 string generate_packet(vector<string> vec) {
+    time_t system_time = system_clock::to_time_t(system_clock::now());
+    string time = ctime(&system_time);
     string output =
         accumulate(vec.begin(), vec.end(), string(""), [](string a, string b) {
             return a + b + ";";
         });
-    return output + "\r\n";
+    // return output + "\r\n";
+    return time;
 }
 
 string output_xml() {
