@@ -110,7 +110,7 @@ void dummy_key_handler(
     void* in_refcon,
     int losing_focus
 ) {}
-
+/* 
 void runTCP(){
     TCPClient client; 
     ThreadQueue myQueue; 
@@ -136,6 +136,37 @@ void runTCP(){
         }
     }
 
+} */
+
+volatile bool stop_exec = false;
+void runTCP() {
+    TCPClient client;
+    ThreadQueue myQueue;
+    while (!stop_exec) {
+        if (!client.isConnectionActive()) {
+            if (!client.connectToServer()) {
+                std::this_thread::sleep_for(std::chrono::seconds(5)); // Retry after 5 seconds
+                continue;
+            }
+        }
+        if (myQueue.size() > 0) {
+            ThreadMessage tm = myQueue.pop();
+            if (tm.end_execution_flag) {
+                stop_exec = true;
+            } else {
+                std::vector<std::string> myVec;
+                for (int i = 0; i < 4; i++) {
+                    myVec.push_back(std::to_string(tm.values_for_packet[i]));
+                }
+                std::string packet = generate_packet(myVec);
+                if (!client.sendData(packet)) {
+                    std::cerr << "Failed to send packet." << std::endl;
+                }
+            }
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        }
+    }
 }
 
 
@@ -210,12 +241,43 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
     XPLMScheduleFlightLoop(id, 1.0, true);
 
-    thread_handle = std::thread(runTCP);
+    // thread_handle = std::thread(runTCP);
+
+    TCPClient client; 
+    client.initializeWinsock();
+    client.createSocket();
+    client.connectToServer();
+    ThreadQueue myQueue; 
+    bool stop_exec = false; 
+
+    while (stop_exec = false){
+        if(myQueue.size() == 0){
+            std::this_thread::sleep_for(150ms);
+            continue; 
+        }
+
+        ThreadMessage tm = myQueue.pop();
+        if (tm.end_execution_flag == true){
+            stop_exec = false;
+        } else {
+            vector <string> myVec; 
+            for(int i = 0; i < 4; i++){
+                myVec.push_back(to_string(tm.values_for_packet[i]));
+            }
+            string packet = generate_packet(myVec);
+
+            client.sendData(packet);
+        }
+    }
 
     return g_window != NULL;
 }
 
-PLUGIN_API void XPluginStop(void) {
+PLUGIN_API void XPluginStop() {
+    stop_exec = true;
+    if (thread_handle.joinable()) {
+        thread_handle.join(); // Wait for the thread to finish
+    }
     XPLMDestroyWindow(g_window);
     g_window = NULL;
 }
