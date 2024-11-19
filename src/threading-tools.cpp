@@ -16,6 +16,9 @@ void ThreadQueue::push(ThreadMessage tm) {
 
 ThreadMessage ThreadQueue::pop() {
     lock_guard<mutex> lock(m);
+    if (this->q.size() < 1) {
+        throw std::invalid_argument("Attempted to pop off an empty queue");
+    }
     ThreadMessage front = q.front();
     q.pop();
     return front;
@@ -32,19 +35,4 @@ string generate_packet(vector<string> vec) {
         });
     string source = ";X-Plane 11.55 PilotDataSync Plugin;";
     return main_packet + buf + source + "\r\n";
-}
-
-string output_xml() {
-    return "\
-    <EventSource Version=\"1\" Id=\"QSensor\" Name=\"Affectiva Q Sensor\">\
-        <Sample Id=\"AffectivaQSensor\" Name=\"QSensor\">\
-            <Field Id=\"SeqNo\" />\
-            <Field Id=\"AccelZ\" />\
-            <Field Id=\"AccelY\" />\
-            <Field Id=\"AccelX\" />\
-            <Field Id=\"Battery\" />\
-            <Field Id=\"Temperature\" Range=\"Fixed\" Min=\"30\" Max=\"40\" />\
-            <Field Id=\"EDA\" Range=\"Variable\" Min=\"0\" Max=\"0.2\" />\
-        </Sample>\
-    </EventSource>";
 }
