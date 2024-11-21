@@ -9,6 +9,7 @@
 
 #include "TCPClient.cpp"
 #include "threading-tools.cpp"
+#include "Logger.cpp"
 
 // #include "packet.cpp"
 
@@ -110,8 +111,8 @@ void dummy_key_handler(
     void* in_refcon,
     int losing_focus
 ) {}
-/* 
-void runTCP(){
+
+/* void runTCP(){
     TCPClient client; 
     ThreadQueue myQueue; 
     bool stop_exec = false; 
@@ -134,41 +135,72 @@ void runTCP(){
 
             client.sendData(packet);
         }
-    }
+    } */
 
-} */
+//} 
 
 volatile bool stop_exec = false;
-void runTCP() {
-    TCPClient client;
-    ThreadQueue myQueue;
-    while (!stop_exec) {
-        if (!client.isConnectionActive()) {
-            if (!client.connectToServer()) {
-                std::this_thread::sleep_for(std::chrono::seconds(5)); // Retry after 5 seconds
-                continue;
-            }
+Logger* Logger::instance = nullptr;
+
+int runTCP(){
+    Logger* logger = Logger::getInstance();
+
+    logger->log("Plugin initialization started");
+
+    try {
+        TCPClient client; 
+        std::string serverIP = "127.0.0.1";
+        logger->log("Initializing Winsock");
+        client.initializeWinsock();
+        
+        logger->log("Creating socket");
+        client.createSocket();
+        
+        logger->log("Attempting to connect to server");
+        if (!client.connectToServer(serverIP)) {
+            logger->log("Server connection failed");
+            // Handle connection failure
+            return 0;
         }
-        if (myQueue.size() > 0) {
+        
+        logger->log("Server connection successful");
+        
+        ThreadQueue myQueue; 
+        bool stop_exec = false; 
+
+        while (!stop_exec) {
+            if (myQueue.size() == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                continue; 
+            }
+
             ThreadMessage tm = myQueue.pop();
             if (tm.end_execution_flag) {
+                logger->log("Received end execution flag");
                 stop_exec = true;
             } else {
-                std::vector<std::string> myVec;
+                std::vector<std::string> myVec; 
                 for (int i = 0; i < 4; i++) {
                     myVec.push_back(std::to_string(tm.values_for_packet[i]));
                 }
+                
                 std::string packet = generate_packet(myVec);
+                logger->log("Generating packet: " + packet);
+
                 if (!client.sendData(packet)) {
-                    std::cerr << "Failed to send packet." << std::endl;
+                    logger->log("Failed to send packet");
+                } else {
+                    logger->log("Packet sent successfully");
                 }
             }
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(150));
         }
+    } catch (const std::exception& e) {
+        logger->log("Exception occurred: " + std::string(e.what()));
+        return 0;
     }
-}
 
+    return 1;
+}
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     strcpy(outName, "PilotDataSyncPlugin");
@@ -241,34 +273,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
     XPLMScheduleFlightLoop(id, 1.0, true);
 
-    // thread_handle = std::thread(runTCP);
-
-    TCPClient client; 
-    client.initializeWinsock();
-    client.createSocket();
-    client.connectToServer();
-    ThreadQueue myQueue; 
-    bool stop_exec = false; 
-
-    while (stop_exec = false){
-        if(myQueue.size() == 0){
-            std::this_thread::sleep_for(150ms);
-            continue; 
-        }
-
-        ThreadMessage tm = myQueue.pop();
-        if (tm.end_execution_flag == true){
-            stop_exec = false;
-        } else {
-            vector <string> myVec; 
-            for(int i = 0; i < 4; i++){
-                myVec.push_back(to_string(tm.values_for_packet[i]));
-            }
-            string packet = generate_packet(myVec);
-
-            client.sendData(packet);
-        }
-    }
+    thread_handle = std::thread(runTCP);
 
     return g_window != NULL;
 }
