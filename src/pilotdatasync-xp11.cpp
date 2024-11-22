@@ -70,7 +70,17 @@ float flight_loop(
     int inCounter,
     void* inRefcon
 ) {
-    return 1.0;
+    // currently sends a series of test packets. once the server is stable, we will send the real data
+    ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
+    for (int i = 1; i < 4; i++) {
+        ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
+        tq_ptr->push(tm);
+    }
+    ThreadMessage tm = { {}, true};
+    tq_ptr->push(tm);
+
+    // return 0.0 to deactivate the loop. otherwise, return val == number of secs until next callback
+    return 0.0;
 }
 
 int dummy_mouse_handler(
@@ -142,7 +152,7 @@ void dummy_key_handler(
 volatile bool stop_exec = false;
 Logger* Logger::instance = nullptr;
 
-int runTCP(){
+int runTCP(std::shared_ptr<ThreadQueue> thread_queue){
     Logger* logger = Logger::getInstance();
 
     logger->log("Plugin initialization started");
@@ -165,16 +175,15 @@ int runTCP(){
         
         logger->log("Server connection successful");
         
-        ThreadQueue myQueue; 
         bool stop_exec = false; 
 
         while (!stop_exec) {
-            if (myQueue.size() == 0) {
+            if (thread_queue->size() == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(150));
                 continue; 
             }
 
-            ThreadMessage tm = myQueue.pop();
+            ThreadMessage tm = thread_queue->pop();
             if (tm.end_execution_flag) {
                 logger->log("Received end execution flag");
                 stop_exec = true;
@@ -263,18 +272,6 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
-    // Register per-time-unit callback
-    XPLMCreateFlightLoop_t loop_params = {
-        .structSize = sizeof(loop_params),
-        .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-        .callbackFunc = flight_loop,
-        .refcon = NULL  
-    };
-    XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
-    XPLMScheduleFlightLoop(id, 1.0, true);
-
-    thread_handle = std::thread(runTCP);
-
     return g_window != NULL;
 }
 
@@ -290,6 +287,21 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API void XPluginDisable(void) {}
 
 PLUGIN_API int XPluginEnable(void) {
+    // TCP server threading setup
+    ThreadQueue tq;
+    std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
+    thread_handle = std::thread(runTCP, tq_ptr);
+
+    // Register per-time-unit callback
+    XPLMCreateFlightLoop_t loop_params = {
+        .structSize = sizeof(loop_params),
+        .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
+        .callbackFunc = flight_loop,
+        .refcon = tq_ptr.get()
+    };
+    XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
+    XPLMScheduleFlightLoop(id, 1.0, true);
+
     return 1;
 }
 
