@@ -56,24 +56,51 @@ public:
             return false;
         }
 
-        int err = connect(clientSocket, (struct sockaddr*)&server, sizeof(server));
-        if (err < 0) {
-            std::cout << "Failed to connect to server. Error code: " << WSAGetLastError() << std::endl;
-            return false;
+        bool attempt_retry = true;
+        auto start = std::chrono::system_clock::now();
+        while (attempt_retry) {
+            // attempt to reconnect for 30 seconds, then fail
+            auto elapsed = std::chrono::system_clock::now() - start;
+            if (elapsed.count() > 30.0) {
+                attempt_retry = false;
+            }
+            int err = connect(clientSocket, (struct sockaddr*)&server, sizeof(server));
+            if (err < 0) {
+                std::cout << "Failed to connect to server. Error code: " << WSAGetLastError() << std::endl;
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                if (attempt_retry) {
+                    std::cout << "Retrying connection\n";
+                    continue;
+                } else {
+                    return false;
+                }
+            }
+            std::cout << "Connected to server: " << serverIP << std::endl;
+            return true;
         }
-        std::cout << "Connected to server: " << serverIP << std::endl;
-        return true;
+        return false;
     }
 
     bool sendData(const std::string& message) {
         std::cout << "Sending message: " << message << std::endl;
         int result = send(clientSocket, message.c_str(), message.length(), 0);
-        if (result < 0) {
+        
+        int retry_attempts = 3;
+        while (retry_attempts > 0) {
+            if (result == 0) {
+                std::cout << "Successfully sent " << result << " bytes.\n";
+                return true;
+            }
+            retry_attempts += 1;
             std::cout << "Failed to send data. Error code: " << WSAGetLastError() << std::endl;
-            return false;
+            if (retry_attempts > 0) {
+                std::cout << "Retrying...\n";
+                retry_attempts -= 1;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        std::cout << "Successfully sent " << result << " bytes." << std::endl;
-        return true;
+        return false;
     }
 
     void closeSocket() {
