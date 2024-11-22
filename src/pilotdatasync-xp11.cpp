@@ -168,12 +168,12 @@ int runTCP(std::shared_ptr<ThreadQueue> thread_queue){
         
         logger->log("Attempting to connect to server");
         if (!client.connectToServer(serverIP)) {
-            logger->log("Server connection failed");
+            logger->log("Server connection failed", MsgLogType::CONN_FAIL);
             // Handle connection failure
             return 0;
         }
         
-        logger->log("Server connection successful");
+        logger->log("Server connection successful", MsgLogType::CONN_PASS);
         
         bool stop_exec = false; 
 
@@ -185,7 +185,7 @@ int runTCP(std::shared_ptr<ThreadQueue> thread_queue){
 
             ThreadMessage tm = thread_queue->pop();
             if (tm.end_execution_flag) {
-                logger->log("Received end execution flag");
+                logger->log("Received end execution flag", MsgLogType::END);
                 stop_exec = true;
             } else {
                 std::vector<std::string> myVec; 
@@ -197,14 +197,14 @@ int runTCP(std::shared_ptr<ThreadQueue> thread_queue){
                 logger->log("Generating packet: " + packet);
 
                 if (!client.sendData(packet)) {
-                    logger->log("Failed to send packet");
+                    logger->log("Failed to send packet", MsgLogType::SEND_FAIL);
                 } else {
-                    logger->log("Packet sent successfully");
+                    logger->log("Packet sent successfully", MsgLogType::SEND_PASS);
                 }
             }
         }
     } catch (const std::exception& e) {
-        logger->log("Exception occurred: " + std::string(e.what()));
+        logger->log("Exception occurred: " + std::string(e.what()), MsgLogType::ERR);
         return 0;
     }
 
@@ -238,7 +238,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMGetScreenBoundsGlobal(&left, &top, &right, &bottom);
     params.left = left + 50;
     params.bottom = bottom + 150;
-    params.right = params.left + 200;
+    params.right = params.left + 350;
     params.top = params.bottom + 200;
 
     // Obtain datarefs for MSL and AGL elevation, respectively
@@ -481,6 +481,85 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         l + 10,
         get_next_y_offset(),
         headingPilotStr.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+
+    Logger* instance = Logger::getInstance();
+    if (instance == nullptr) {
+        return;
+    }
+
+    // blank line
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        string("").c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+
+    string dashboard_header = "Packet Data:";
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        dashboard_header.c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+
+    MsgLogType status = instance->get_last_status();
+    string status_str;
+    switch (status) {
+        case MsgLogType::NONE:
+            status_str = "NONE";
+            break;
+        case MsgLogType::SEND:
+            status_str = "SEND";
+            break;
+        case MsgLogType::SEND_PASS:
+            status_str = "SEND_PASS";
+            break;
+        case MsgLogType::SEND_FAIL:
+            status_str = "SEND_FAIL";
+            break;
+        case MsgLogType::CONN:
+            status_str = "CONN";
+            break;
+        case MsgLogType::CONN_PASS:
+            status_str = "CONN_PASS";
+            break;
+        case MsgLogType::CONN_FAIL:
+            status_str = "CONN_FAIL";
+            break;
+        case MsgLogType::END:
+            status_str = "END";
+            break;
+        case MsgLogType::ERR:
+            status_str = "ERR";
+            break;
+        default:
+            status_str = "N/A";
+            break;
+    };
+
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        string("LAST STATUS: " + status_str).c_str(),
+        NULL,
+        xplmFont_Proportional
+    );
+
+    string packets_sent = "Packets Sent: " + to_string(instance->get_packets_sent());
+    XPLMDrawString(
+        col_white,
+        l + 10,
+        get_next_y_offset(),
+        packets_sent.c_str(),
         NULL,
         xplmFont_Proportional
     );
