@@ -167,7 +167,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMCreateFlightLoop_t loop_params = {
         .structSize = sizeof(loop_params),
         .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-        .callbackFunc = flight_loop,
+        .callbackFunc = flight_loop,olo
         .refcon = NULL  
     };
     XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
