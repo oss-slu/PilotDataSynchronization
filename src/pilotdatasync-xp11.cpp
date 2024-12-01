@@ -71,7 +71,7 @@ float flight_loop(
     void* inRefcon
 ) {
     // currently sends a series of test packets. once the server is stable, we will send the real data
-    ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
+    /* ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
     for (int i = 1; i < 4; i++) {
         ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
         tq_ptr->push(tm);
@@ -80,7 +80,37 @@ float flight_loop(
     tq_ptr->push(tm);
 
     // return 0.0 to deactivate the loop. otherwise, return val == number of secs until next callback
-    return 0.0;
+    return 0.0; */
+
+    ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
+
+    // Retrieve X-Plane datarefs
+    float altitude = XPLMGetDataf(elevationFlightmodelRef);      // Altitude above sea level
+    float groundSpeed = XPLMGetDataf(airspeedFlightmodelRef);  // Ground speed
+    float heading = XPLMGetDataf(headingFlightmodelRef);        // Magnetic heading
+    float verticalSpeed = XPLMGetDataf(verticalVelocityFlightmodelRef);  // Vertical speed
+
+    std::vector<std::string> dataVector = {
+        std::to_string(altitude),
+        std::to_string(groundSpeed),
+        std::to_string(heading),
+        std::to_string(verticalSpeed)
+    };
+
+    // Create thread message with the data vector
+    ThreadMessage tm = { 
+        {altitude, groundSpeed, heading, verticalSpeed}, 
+        false 
+    };
+    tq_ptr->push(tm);
+
+    // Send end execution message
+    ThreadMessage end_tm = { {}, true};
+    tq_ptr->push(end_tm);
+
+    // Return 1.0 to call again in 1 second
+    return 1.0;
+
 }
 
 int dummy_mouse_handler(
