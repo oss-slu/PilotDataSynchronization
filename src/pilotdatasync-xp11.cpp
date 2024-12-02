@@ -105,8 +105,8 @@ float flight_loop(
     tq_ptr->push(tm);
 
     // Send end execution message
-    ThreadMessage end_tm = { {}, true};
-    tq_ptr->push(end_tm);
+   /*  ThreadMessage end_tm = { {}, true};
+    tq_ptr->push(end_tm); */
 
     // Return 1.0 to call again in 1 second
     return 1.0;
