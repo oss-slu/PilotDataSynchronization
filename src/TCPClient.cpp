@@ -111,7 +111,7 @@ public:
     }
 };
 
-int main() {
+/* int main() {
     std::cout << "TCP Client Starting..." << std::endl;
     TCPClient client;
     
@@ -143,4 +143,4 @@ int main() {
     
     std::cout << "Client shutting down..." << std::endl;
     return 0;
-}
+} */

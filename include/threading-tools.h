@@ -9,11 +9,11 @@
 using namespace std;
 
 struct ThreadMessage {
-    const float* values_for_packet;
+    const float values_for_packet[4];
     const bool end_execution_flag;
 
-    ThreadMessage(float const (&values_for_packet)[4], const bool tf) :
-        values_for_packet(values_for_packet),
+    ThreadMessage(float const (&values)[4], const bool tf) :
+        values_for_packet{ values[0], values[1], values[2], values[3] },
         end_execution_flag(tf) {};
 };
 

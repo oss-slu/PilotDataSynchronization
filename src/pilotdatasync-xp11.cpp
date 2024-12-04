@@ -4,6 +4,12 @@
 
 #include <cmath>
 #include <string>
+#include <thread>
+#include <vector> 
+
+#include "TCPClient.cpp"
+#include "threading-tools.cpp"
+#include "Logger.cpp"
 
 // #include "packet.cpp"
 
@@ -16,6 +22,7 @@ extern "C" {
 #include "XPLMGraphics.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
+
 
 #ifdef __cplusplus
 }
@@ -51,6 +58,9 @@ static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
 static XPLMDataRef headingPilotRef;
 
+//thread handle for TCP 
+static std::thread thread_handle; 
+
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
 
@@ -60,7 +70,47 @@ float flight_loop(
     int inCounter,
     void* inRefcon
 ) {
+    // currently sends a series of test packets. once the server is stable, we will send the real data
+    /* ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
+    for (int i = 1; i < 4; i++) {
+        ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
+        tq_ptr->push(tm);
+    }
+    ThreadMessage tm = { {}, true};
+    tq_ptr->push(tm);
+
+    // return 0.0 to deactivate the loop. otherwise, return val == number of secs until next callback
+    return 0.0; */
+
+    ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
+
+    // Retrieve X-Plane datarefs
+    float altitude = XPLMGetDataf(elevationFlightmodelRef);      // Altitude above sea level
+    float groundSpeed = XPLMGetDataf(airspeedFlightmodelRef);  // Ground speed
+    float heading = XPLMGetDataf(headingFlightmodelRef);        // Magnetic heading
+    float verticalSpeed = XPLMGetDataf(verticalVelocityFlightmodelRef);  // Vertical speed
+
+    std::vector<std::string> dataVector = {
+        std::to_string(altitude),
+        std::to_string(groundSpeed),
+        std::to_string(heading),
+        std::to_string(verticalSpeed)
+    };
+
+    // Create thread message with the data vector
+    ThreadMessage tm = { 
+        {altitude, groundSpeed, heading, verticalSpeed}, 
+        false 
+    };
+    tq_ptr->push(tm);
+
+    // Send end execution message
+   /*  ThreadMessage end_tm = { {}, true};
+    tq_ptr->push(end_tm); */
+
+    // Return 1.0 to call again in 1 second
     return 1.0;
+
 }
 
 int dummy_mouse_handler(
@@ -101,6 +151,95 @@ void dummy_key_handler(
     void* in_refcon,
     int losing_focus
 ) {}
+
+/* void runTCP(){
+    TCPClient client; 
+    ThreadQueue myQueue; 
+    bool stop_exec = false; 
+
+    while (stop_exec = false){
+        if(myQueue.size() == 0){
+            std::this_thread::sleep_for(150ms);
+            continue; 
+        }
+
+        ThreadMessage tm = myQueue.pop();
+        if (tm.end_execution_flag == true){
+            stop_exec = false;
+        } else {
+            vector <string> myVec; 
+            for(int i = 0; i < 4; i++){
+                myVec.push_back(to_string(tm.values_for_packet[i]));
+            }
+            string packet = generate_packet(myVec);
+
+            client.sendData(packet);
+        }
+    } */
+
+//} 
+
+volatile bool stop_exec = false;
+Logger* Logger::instance = nullptr;
+
+int runTCP(std::shared_ptr<ThreadQueue> thread_queue){
+    Logger* logger = Logger::getInstance();
+
+    logger->log("Plugin initialization started");
+
+    try {
+        TCPClient client; 
+        std::string serverIP = "127.0.0.1";
+        logger->log("Initializing Winsock");
+        client.initializeWinsock();
+        
+        logger->log("Creating socket");
+        client.createSocket();
+        
+        logger->log("Attempting to connect to server");
+        if (!client.connectToServer(serverIP)) {
+            logger->log("Server connection failed");
+            // Handle connection failure
+            return 0;
+        }
+        
+        logger->log("Server connection successful");
+        
+        bool stop_exec = false; 
+
+        while (!stop_exec) {
+            if (thread_queue->size() == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                continue; 
+            }
+
+            ThreadMessage tm = thread_queue->pop();
+            if (tm.end_execution_flag) {
+                logger->log("Received end execution flag");
+                stop_exec = true;
+            } else {
+                std::vector<std::string> myVec; 
+                for (int i = 0; i < 4; i++) {
+                    myVec.push_back(std::to_string(tm.values_for_packet[i]));
+                }
+                
+                std::string packet = generate_packet(myVec);
+                logger->log("Generating packet: " + packet);
+
+                if (!client.sendData(packet)) {
+                    logger->log("Failed to send packet");
+                } else {
+                    logger->log("Packet sent successfully");
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        logger->log("Exception occurred: " + std::string(e.what()));
+        return 0;
+    }
+
+    return 1;
+}
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     strcpy(outName, "PilotDataSyncPlugin");
@@ -163,20 +302,14 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
     XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
-    // Register per-time-unit callback
-    XPLMCreateFlightLoop_t loop_params = {
-        .structSize = sizeof(loop_params),
-        .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-        .callbackFunc = flight_loop,
-        .refcon = NULL  
-    };
-    XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
-    XPLMScheduleFlightLoop(id, 1.0, true);
-
     return g_window != NULL;
 }
 
-PLUGIN_API void XPluginStop(void) {
+PLUGIN_API void XPluginStop() {
+    stop_exec = true;
+    if (thread_handle.joinable()) {
+        thread_handle.join(); // Wait for the thread to finish
+    }
     XPLMDestroyWindow(g_window);
     g_window = NULL;
 }
@@ -184,6 +317,21 @@ PLUGIN_API void XPluginStop(void) {
 PLUGIN_API void XPluginDisable(void) {}
 
 PLUGIN_API int XPluginEnable(void) {
+    // TCP server threading setup
+    ThreadQueue tq;
+    std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
+    thread_handle = std::thread(runTCP, tq_ptr);
+
+    // Register per-time-unit callback
+    XPLMCreateFlightLoop_t loop_params = {
+        .structSize = sizeof(loop_params),
+        .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
+        .callbackFunc = flight_loop,
+        .refcon = tq_ptr.get()
+    };
+    XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
+    XPLMScheduleFlightLoop(id, 1.0, true);
+
     return 1;
 }
 
