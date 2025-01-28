@@ -1,38 +1,36 @@
-# name: CI/CD Pipeline
+# All actions have a name that will be displayed in the "Actions" page in GitHub.
+name: PilotDataSync CI/CD Pipeline
 
-# on:
-#   pull_request:
-#     branches:
-#       - main
+# The "on" option will specify when to run this action and on which branch
+# Usually for a CI action you would like to run it on every pull request and on push
+# For CD you would probably only want to run it on closed pull requests or direct pushes on master
+# If you want to run it manually you would add "worflow_dispatch"
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-# jobs:
-#   build:
-#     runs-on: windows-latest
+# The whole action can contain sub-items called jobs
+# Jobs are run separately and will spin up a new build machine for each sub-item
+jobs:
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v2
+  # This is just a custom name "build" but it can be anything
+  build:
 
-#       - name: Set up MSBuild
-#         uses: microsoft/setup-msbuild@v1.1
-#         with:
-#           vs-version: 'latest'
+    # What build machine to start
+    runs-on: windows-latest
+      
+    # Steps are the individual actions for each job
+    steps:
+    
+      # Runs a single command using the runners shell
+      - name: Run a one-line script
+        run: echo Hello, world!
 
-#       - name: Compile the C++ code
-#         run: |
-#           mkdir build
-#           cd build
-#           cl /EHsc /Fe:output.exe ../*.cpp /link /SUBSYSTEM:CONSOLE
-
-#       - name: Run the executable
-#         run: |
-#           .\output.exe || echo "Output executable did not run successfully."
-
-#       - name: Check for .xpl file
-#         run: |
-#           if exist output.xpl (
-#             echo ".xpl file generated successfully."
-#           ) else (
-#             echo "No .xpl file generated."
-#             exit 1
-#           )
+      # Runs a set of commands using the runners shell
+      - name: Run a multi-line script
+        run: |
+          echo Add other actions to build,
+          echo test, and deploy your project.
