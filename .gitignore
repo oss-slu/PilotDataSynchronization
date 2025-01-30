@@ -12,3 +12,4 @@ build/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+/googletest

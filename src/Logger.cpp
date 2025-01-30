@@ -48,6 +48,17 @@ public:
         return packets_sent;
     }
 
+    std::string readLogFile() {
+        std::ifstream file("xplane_plugin_log.txt");
+        std::string content((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+        return content;
+    }
+
+    int logTest (int a, int b){
+        return a + b; 
+    }
+
     void log(const std::string &message, MsgLogType code = NONE) {
         last_message = message;
         switch (code) {
@@ -73,6 +84,7 @@ public:
             logFile.flush(); // Ensure immediate writing
         }
     }
+
 
     ~Logger() {
         if (logFile.is_open()) {
