@@ -1,6 +1,9 @@
 # init
 project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'])
 
+# imports
+fs = import('fs')
+ 
 # download sdk if not present
 # TODO
 
@@ -12,15 +15,13 @@ compiler_args = [
   '-DXPLM303',
   '-DIBM=1',
   '-D_WINSOCK_DEPRECATED_NO_WARNINGS',
-  '-lXPLM_64',
-  '-lXPWidgets_64'
 ]
 
 # TODO review if this is still necessary
 add_project_arguments('-Llib/SDK/Libraries/Win', language: 'cpp')
 
 # includes
-inc_dir = include_directories('include', 'lib/SDK/CHeaders/Widgets', 'lib/SDK/CHeaders/XPLM')
+inc_dir = include_directories('include', 'lib/SDK/CHeaders/Widgets/', 'lib/SDK/CHeaders/XPLM/')
 compiler = meson.get_compiler('cpp')
 
 # slightly hacky method of retrieving the required absolute path to the precomp
@@ -38,15 +39,41 @@ winsock = compiler.find_library(
 )
 
 # retrieve the xplm precompiled library and wreap it as a dependency
-xplm = compiler.find_library('XPLM_64', dirs: lib_path)
+xplm = compiler.find_library(
+  'XPLM_64',
+  dirs: lib_path,
+  has_headers: [
+    'XPLMPlugin.h',
+    'XPLMDefs.h',
+    'XPLMDataAccess.h',
+    'XPLMUtilities.h',
+    'XPLMDisplay.h'
+  ],
+  header_include_directories: inc_dir,
+  required: true
+)
+xpwidgets = compiler.find_library(
+  'XPWidgets_64',
+  dirs: lib_path,
+  required: true
+)
+
+# include directory specifically for the cross compiler
+xdir = []
+if fs.is_dir('/usr/x86_64-w64-mingw32/include')
+  xdir.append(include_directories('/usr/x86_64-w64-mingw32/include'))
+endif
+if fs.is_dir('/opt/homebrew/bin/x86_64-w64-mingw32-g++/include')
+  xdir.append(include_directories('/opt/homebrew/x86_64-w64-mingw32-g++/include'))
+endif
 
 # final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
 shared_library(
   'PilotDataSync.xpl',
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
-  dependencies: [winsock, xplm],
-  include_directories: ['/usr/x86_64-w64-mingw32/include', inc_dir, lib_dir],
+  dependencies: [winsock, xplm, xpwidgets],
+  include_directories: [inc_dir, lib_dir],
   cpp_args: compiler_args,
   link_args: ['-static-libstdc++', '-static-libgcc', '-static'],
 )
