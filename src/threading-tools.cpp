@@ -1,4 +1,5 @@
-#include "../include/threading-tools.h"
+#pragma once
+#include "threading-tools.h"
 #include <ctime>
 #include <chrono>
 using namespace std;

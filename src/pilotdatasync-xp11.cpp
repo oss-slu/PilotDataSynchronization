@@ -8,7 +8,7 @@
 #include <vector> 
 
 #include "TCPClient.cpp"
-#include "threading-tools.cpp"
+#include "threading-tools.h"
 #include "Logger.cpp"
 
 // #include "packet.cpp"

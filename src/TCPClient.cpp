@@ -1,5 +1,7 @@
-#include <WinSock2.h>
+#pragma warning(disable:4996)
+#pragma once
 #include <ws2tcpip.h>
+#include <winsock2.h>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -51,7 +53,9 @@ public:
         std::cout << "Connecting to server at " << serverIP << ":" << PORT << "..." << std::endl;
         server.sin_family = AF_INET;  // Changed to IPv4
         server.sin_port = htons(PORT);
-        if (inet_pton(AF_INET, serverIP.c_str(), &server.sin_addr) <= 0) {  // Changed to IPv4
+        // temporary commented out to facilitate compiling on WSL2 Ubuntu
+        // if (inet_pton(AF_INET, serverIP.c_str(), &server.sin_addr) <= 0) {  // Changed to IPv4
+        if (-1 <= 0) {  // Changed to IPv4
             std::cout << "Invalid server IP address. Error code: " << WSAGetLastError() << std::endl;
             return false;
         }

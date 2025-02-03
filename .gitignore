@@ -9,6 +9,8 @@ bin/**
 *.xpl
 *.lib
 build/
+build-mingw/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+.cache/
