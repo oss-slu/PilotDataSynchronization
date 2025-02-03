@@ -1,5 +1,5 @@
 # init
-project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'])
+project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'], meson_version: '1.7.0')
 
 # imports
 fs = import('fs')
@@ -7,6 +7,7 @@ fs = import('fs')
 # download sdk if not present
 # TODO
 
+# these defines are necessary as required by XPlane
 compiler_args = [
   '-DXPLM200',
   '-DXPLM210',
@@ -14,7 +15,6 @@ compiler_args = [
   '-DXPLM301',
   '-DXPLM303',
   '-DIBM=1',
-  '-D_WINSOCK_DEPRECATED_NO_WARNINGS',
 ]
 
 # TODO review if this is still necessary
@@ -22,6 +22,7 @@ add_project_arguments('-Llib/SDK/Libraries/Win', language: 'cpp')
 
 # includes
 inc_dir = include_directories('include', 'lib/SDK/CHeaders/Widgets/', 'lib/SDK/CHeaders/XPLM/')
+
 compiler = meson.get_compiler('cpp')
 
 # slightly hacky method of retrieving the required absolute path to the precomp
@@ -57,15 +58,6 @@ xpwidgets = compiler.find_library(
   dirs: lib_path,
   required: true
 )
-
-# include directory specifically for the cross compiler
-xdir = []
-if fs.is_dir('/usr/x86_64-w64-mingw32/include')
-  xdir.append(include_directories('/usr/x86_64-w64-mingw32/include'))
-endif
-if fs.is_dir('/opt/homebrew/bin/x86_64-w64-mingw32-g++/include')
-  xdir.append(include_directories('/opt/homebrew/x86_64-w64-mingw32-g++/include'))
-endif
 
 # final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
 shared_library(
