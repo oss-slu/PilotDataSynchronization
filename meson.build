@@ -60,7 +60,7 @@ xpwidgets = compiler.find_library(
 )
 
 # final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
-shared_library(
+lib = shared_library(
   'PilotDataSync.xpl',
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
@@ -69,3 +69,10 @@ shared_library(
   cpp_args: compiler_args,
   link_args: ['-static-libstdc++', '-static-libgcc', '-static'],
 )
+
+# gtest
+gtest_proj = subproject('gtest')
+# gtest_dep = dependency('gtest', main: true, required: false)
+gtest_dep = gtest_proj.get_variable('gtest_dep')
+test_exec = executable('testsuite', 'tests/test.cc', dependencies: gtest_dep)
+test('gtest test', test_exec)

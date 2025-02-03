@@ -46,7 +46,6 @@ DllMain(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 
 // An opaque handle to the window we will create
 static XPLMWindowID g_window;
-static XPLMFlightLoop_f test;
 
 // DataRef Identifiers
 static XPLMDataRef elevationFlightmodelRef;

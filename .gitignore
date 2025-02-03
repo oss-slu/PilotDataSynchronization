@@ -14,3 +14,5 @@ CMakeCache.txt
 CMakeFiles/
 .DS_STORE
 .cache/
+subprojects/*
+!subprojects/*.wrap

@@ -1,4 +1,3 @@
-#pragma once
 #include "threading-tools.h"
 #include <ctime>
 #include <chrono>

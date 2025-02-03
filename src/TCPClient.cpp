@@ -1,5 +1,3 @@
-#pragma warning(disable:4996)
-#pragma once
 #include <ws2tcpip.h>
 #include <winsock2.h>
 #include <iostream>
@@ -8,7 +6,6 @@
 #include <chrono>
 
 #define PORT 8089
-#pragma comment(lib, "Ws2_32.lib")
 
 class TCPClient {
 private:
