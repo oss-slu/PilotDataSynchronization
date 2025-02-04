@@ -8,8 +8,7 @@ on: # yamllint disable-line rule:truthy
 permissions: {}
 
 jobs:
-  build:
-    name: Lint
+  lint-and-fix:
     runs-on: ubuntu-latest
 
     permissions:
@@ -26,11 +25,130 @@ jobs:
           # list of files that changed across commits
           fetch-depth: 0
 
-      - name: Load super-linter configuration
-        run: grep -v '^#' .github/super-linter.env >> "$GITHUB_ENV"
 
-      - name: Super-linter
+      - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1 # x-release-please-version
         env:
-          # To report GitHub Actions status checks
+          VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # load environment variables from .env file
+          ENV_FILE: super-linter.env
+
+          name: Code Linting and Auto-Fix
+
+
+
+# -----------------------------------------------------
+#Direct Commit
+name: Code Linting and Auto-Fix
+
+on:
+  push:
+    branches: [62-set-up-github-actions]
+  pull_request:
+    branches: [62-set-up-github-actions]
+
+jobs:
+  lint-and-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      # Give the default GITHUB_TOKEN write permission to commit and push
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Important: Fetch full git history and all branches
+          fetch-depth: 0
+
+      - name: Run Super-Linter with Auto-Fix
+        uses: super-linter/super-linter@v7.2.1 # x-release-please-version
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Auto-fix option
+          FILTER_REGEX_EXCLUDE: .*(.min.js|.min.css)
+          MULTI_STATUS: true
+          # Coding Languages you Want to Lint
+          VALIDATE_CPP: true
+          VALIDATE_CLANG_FORMAT: true
+          VALIDATE_RUST_CLIPPY: true
+          VALIDATE_POWERSHELL: true
+          # Other Lintable Things
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_YAML: true
+          VALIDATE_JSON: true
+          VALIDATE_MARKDOWN: true
+
+      - name: Commit fixed files
+        run: |
+          git config --global user.name 'Auto Linter'
+          git config --global user.email 'auto-linter@github.com'
+          
+          # Check if there are any changes
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "Auto-fix linting issues"
+            git push
+          else
+            echo "No linting fixes needed"
+          fi
+
+
+
+#-----------------------------------------------------------------------
+# With PR
+name: Code Linting and Auto-Fix
+
+on:
+  push:
+    branches: [62-set-up-github-actions]
+  pull_request:
+    branches: [62-set-up-github-actions]
+
+jobs:
+  lint-and-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Important for Super-Linter: Fetch full git history and all branches
+          fetch-depth: 0
+
+      - name: Run Super-Linter with Auto-Fix
+        uses: super-linter/super-linter@v7.2.1 # x-release-please-version
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MULTI_STATUS: true
+          # Coding Languages you Want to Lint
+          VALIDATE_CPP: true
+          VALIDATE_CLANG_FORMAT: true   # --> do we need to lint CLANG? confused on build systems
+          VALIDATE_RUST_CLIPPY: true
+          VALIDATE_POWERSHELL: true
+          # Other Lintable Things
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_YAML: true
+          VALIDATE_JSON: true
+          VALIDATE_MARKDOWN: true
+
+      - name: Commit fixed files
+        run: |
+          git config --global user.name 'Auto Linter'
+          git config --global user.email 'auto-linter@github.com'
+          
+          # Check if there are any changes
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "Auto-fix linting issues"
+            git push
+          else
+            echo "No linting fixes needed"
+          fi
