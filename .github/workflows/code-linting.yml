@@ -29,16 +29,12 @@ jobs:
           # Lint: Languages and Scripts
           VALIDATE_CPP: true            # --> actual C++ code correctness
           VALIDATE_CLANG_FORMAT: true   # --> C++ code formatting according to CLANG
-          VALIDATE_POWERSHELL: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
-          VALIDATE_MARKDOWN: true
 
           # Fix: Languages and Scripts
           FIX_CLANG_FORMAT: true
-          FIX_RUST_CLIPPY: true
           FIX_YAML: true
-          FIX_MARKDOWN: true
 
       - name: Commit fixed files
         run: |
