@@ -7,9 +7,11 @@ name: PilotDataSync CI/CD Pipeline
 # If you want to run it manually you would add "worflow_dispatch"
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ 62-set-up-github-actions ]
   push:
-    branches: [ main ]
+    branches: [ 62-set-up-github-actions ]
+  commit: 
+    branches: [ 62-set-up-github-actions ]
   workflow_dispatch:
 
 # The whole action can contain sub-items called jobs
