@@ -28,17 +28,17 @@ jobs:
           MULTI_STATUS: true
 
           # Lint: Languages and Scripts
-          VALIDATE_CPP: true
+          # VALIDATE_CPP: true
           VALIDATE_RUST_CLIPPY: true
           VALIDATE_POWERSHELL: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
           VALIDATE_MARKDOWN: true
-          # VALIDATE_CLANG_FORMAT: true   # --> do we need to lint CLANG?
+          VALIDATE_CLANG_FORMAT: true   # --> do we need to lint CLANG?
           # VALIDATE_JSON: true # --> do we use JSON at all in this project?
 
           # Fix: Languages and Scripts
-          FIX_CPP: true
+          FIX_CLANG_FORMAT: true
           FIX_RUST_CLIPPY: true
           FIX_YAML: true
           FIX_MARKDOWN: true
