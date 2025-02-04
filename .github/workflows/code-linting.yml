@@ -34,7 +34,6 @@ jobs:
 
           # Fix: Languages and Scripts
           FIX_CLANG_FORMAT: true
-          FIX_YAML: true
 
       - name: Commit fixed files
         run: |
