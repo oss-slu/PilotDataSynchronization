@@ -26,16 +26,24 @@ jobs:
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MULTI_STATUS: true
-          # Coding Languages you Want to Lint
+
+          # Lint: Languages and Scripts
           VALIDATE_CPP: true
-          VALIDATE_CLANG_FORMAT: true   # --> do we need to lint CLANG? confused on build systems
           VALIDATE_RUST_CLIPPY: true
           VALIDATE_POWERSHELL: true
-          # Other Lintable Things
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
-          VALIDATE_JSON: true
           VALIDATE_MARKDOWN: true
+          # VALIDATE_CLANG_FORMAT: true   # --> do we need to lint CLANG?
+          # VALIDATE_JSON: true # --> do we use JSON at all in this project?
+
+          # Fix: Languages and Scripts
+          FIX_CPP: true
+          FIX_RUST_CLIPPY: true
+          FIX_YAML: true
+          FIX_MARKDOWN: true
+          FIX_GITHUB_ACTIONS: true
+
 
       - name: Commit fixed files
         run: |
