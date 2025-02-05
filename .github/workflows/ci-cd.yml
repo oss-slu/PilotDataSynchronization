@@ -1,21 +1,25 @@
-# All actions have a name that will be displayed in the "Actions" page in GitHub.
+---
+# All actions have a name that will be displayed in 
+  # the "Actions" page in GitHub.
 name: PilotDataSync CI/CD Pipeline
 
-# The "on" option will specify when to run this action and on which branch
-# Usually for a CI action you would like to run it on every pull request and on push
-# For CD you would probably only want to run it on closed pull requests or direct pushes on master
-# If you want to run it manually you would add "worflow_dispatch"
+# The "on" option will specify when to run this action 
+  # and on which branch. 
+# Usually for a CI action you would like to run 
+  # it on every pull request and on push.
+# For CD, you would probably only want to run it on 
+  # closed pull requests or direct pushes on master.
+# If you want to run it manually you would add "worflow_dispatch".
 on:
   pull_request:
-    branches: [ 62-set-up-github-actions ]
+    branches: [62-set-up-github-actions]
   push:
-    branches: [ 62-set-up-github-actions ]
-  commit: 
-    branches: [ 62-set-up-github-actions ]
+    branches: [62-set-up-github-actions]
   workflow_dispatch:
 
-# The whole action can contain sub-items called jobs
-# Jobs are run separately and will spin up a new build machine for each sub-item
+# The whole action can contain sub-items called jobs.
+# Jobs are run separately and will spin up a 
+  # new build machine for each sub-item
 jobs:
 
   # This is just a custom name "build" but it can be anything
