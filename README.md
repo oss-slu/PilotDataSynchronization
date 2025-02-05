@@ -1,3 +1,5 @@
+![Super-Linter](https://github.com/oss-slu/PilotDataSynchronization/actions/workflows/code-linting.yml/badge.svg)
+
 # pilot training data synchronization
 
 Our project is still in progress, and the current phase focuses on data extraction and communication protocols. As the project evolves, additional features and optimizations will be implemented.
