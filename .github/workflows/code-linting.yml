@@ -1,5 +1,5 @@
 ---
-name: Code Linting and Auto-Fix
+name: Super-Linter!
 
 on:
   pull_request: 
