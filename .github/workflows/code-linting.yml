@@ -2,8 +2,11 @@
 name: Code Linting and Auto-Fix
 
 on:
+  pull_request: 
+    types: [opened, synchronize]
   push:
-    branches: [62-set-up-github-actions]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   lint-and-fix:
@@ -22,16 +25,15 @@ jobs:
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1 # x-release-please-version
         env:
-          # DONT VALIDATE EVERYTHING so i can test changes
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MULTI_STATUS: true
 
           # Lint: Languages and Scripts
-          # VALIDATE_CPP: true            # --> actual C++ code correctness
           VALIDATE_CLANG_FORMAT: true   # --> C++ code formatting according to CLANG
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
+          # VALIDATE_CPP: true            # --> actual C++ code correctness --> should we have this?
 
           # Fix: Languages and Scripts
           FIX_CLANG_FORMAT: true
