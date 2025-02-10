@@ -1,8 +1,12 @@
+---
 name: Super-Linter!
 
 on:
-  pull_request:
-    types: [opened, synchronize]  # Trigger on PR creation and updates
+  pull_request: 
+    types: [opened, synchronize]
+  #push:
+  #  branches: [main]
+  workflow_dispatch:
 
 jobs:
   lint-and-fix:
@@ -15,33 +19,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full git history and all branches
-
+          # Important for Super-Linter: Fetch full git history and all branches
+          fetch-depth: 0
+          # ref: ${{ github.event.pull_request.head.ref }}     
+          
       - name: Run Super-Linter with Auto-Fix
-        uses: super-linter/super-linter@v7.2.1
+        uses: super-linter/super-linter@v7.2.1 # x-release-please-version
         env:
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MULTI_STATUS: true
 
           # Lint: Languages and Scripts
-          VALIDATE_CLANG_FORMAT: true   # C++ code formatting according to CLANG
+          VALIDATE_CLANG_FORMAT: true   # --> C++ code formatting according to CLANG
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
+          # VALIDATE_CPP: true            # --> actual C++ code correctness --> should we have this?
 
           # Fix: Languages and Scripts
           FIX_CLANG_FORMAT: true
 
-      - name: Commit and push fixes to the PR branch
+      - name: Commit fixed files
         run: |
           git config --global user.name 'Auto Linter'
           git config --global user.email 'auto-linter@github.com'
-
+          
           # Check if there are any changes
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Auto-fix linting issues"
-            git push origin HEAD:${{ github.head_ref }}  # Push to the PR branch
+            git push
           else
             echo "No linting fixes needed"
           fi
