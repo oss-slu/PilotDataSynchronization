@@ -21,6 +21,7 @@ jobs:
         with:
           # Important for Super-Linter: Fetch full git history and all branches
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1 # x-release-please-version
