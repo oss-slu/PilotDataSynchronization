@@ -13,6 +13,14 @@ build-mingw/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+# Automated Build System
 .cache/
 subprojects/*
 !subprojects/*.wrap
+
+# Super-linter outputs
+super-linter-output
+super-linter.log
+
+# GitHub Actions leftovers
+github_conf
