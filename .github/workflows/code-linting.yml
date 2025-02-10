@@ -27,6 +27,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISABLE_GITHUB_STATUS: true  # Prevent status updates to avoid API errors
           MULTI_STATUS: false  # Ensure no GitHub status API calls are made
+          LOG_LEVEL: DEBUG  # Enable detailed debugging logs
+          ACTIONS_RUNNER_DEBUG: true
           
           # Lint: Enable validation for specific languages
           VALIDATE_CLANG_FORMAT: true
