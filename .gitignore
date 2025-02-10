@@ -12,4 +12,14 @@ build/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+
+#UnitTests
 /googletest
+
+
+# Super-linter outputs
+super-linter-output
+super-linter.log
+
+# GitHub Actions leftovers
+github_conf
