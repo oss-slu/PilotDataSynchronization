@@ -1,6 +1,6 @@
-#include "../include/threading-tools.h"
-#include <chrono>
+#include "threading-tools.h"
 #include <ctime>
+#include <chrono>
 using namespace std;
 using chrono::system_clock;
 

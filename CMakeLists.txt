@@ -112,5 +112,3 @@ set (SOURCES     ##add files being tested here :p
 add_library(${This} STATIC ${SOURCES})  ##add headers here if headers are added 
 
 add_subdirectory(tests)
-
-

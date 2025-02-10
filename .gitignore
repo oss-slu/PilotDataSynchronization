@@ -9,9 +9,14 @@ bin/**
 *.xpl
 *.lib
 build/
+build-mingw/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+# Automated Build System
+.cache/
+subprojects/*
+!subprojects/*.wrap
 
 #UnitTests
 /googletest

@@ -35,3 +35,20 @@ C++ code is formatted using the VSCode C/C++ Extension's format action. The rule
 
 To get started contributing to the project, see the [contributing guide](CONTRIBUTING.md).
 This document also includes guidelines for reporting bugs and proposing new features.
+
+# Building the Project
+
+## Steps
+From the project root: `./utils/init.sh` (linux) or `./utils/init.ps1` (windows)
+
+Once you have all the dependencies:
+- `meson setup --cross-file win.ini build`
+- `cd build`
+- `meson compile`
+
+Currently, even after the file is generated, you'll need to manually rename it to `PilotDataSync.xpl` for the time being.
+
+## Prerequisites
+- `mingw-w64`
+- `meson`
+- `rust` (pending)
