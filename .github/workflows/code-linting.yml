@@ -28,6 +28,7 @@ jobs:
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MULTI_STATUS: true
+          DISABLE_GITHUB_STATUS: true  # Disable GitHub status reporting to avoid the 403 error
 
           # Lint: Languages and Scripts
           VALIDATE_CLANG_FORMAT: true   # --> C++ code formatting according to CLANG
