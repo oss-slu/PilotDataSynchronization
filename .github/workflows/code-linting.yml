@@ -1,11 +1,8 @@
 name: Super-Linter!
 
 on:
-  pull_request: 
-    types: [opened, synchronize]
-  push:
-    branches: [main]
-  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize]  # Trigger on PR creation and updates
 
 jobs:
   lint-and-fix:
@@ -18,36 +15,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full git history and all branches for accurate linting
+          fetch-depth: 0  # Fetch full git history and all branches
 
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
         env:
           VALIDATE_ALL_CODEBASE: true
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-          DISABLE_GITHUB_STATUS: true  # Prevent status updates to avoid API errors
-          MULTI_STATUS: false  # Ensure no GitHub status API calls are made
-          LOG_LEVEL: DEBUG  # Enable detailed debugging logs
-          ACTIONS_RUNNER_DEBUG: true
-          
-          # Lint: Enable validation for specific languages
-          VALIDATE_CLANG_FORMAT: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MULTI_STATUS: true
+
+          # Lint: Languages and Scripts
+          VALIDATE_CLANG_FORMAT: true   # C++ code formatting according to CLANG
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
-          
-          # Fix: Enable auto-fix for Clang Format
+
+          # Fix: Languages and Scripts
           FIX_CLANG_FORMAT: true
 
-      - name: Commit fixed files
+      - name: Commit and push fixes to the PR branch
         run: |
           git config --global user.name 'Auto Linter'
           git config --global user.email 'auto-linter@github.com'
-          
-          # Check if there are any changes to commit
+
+          # Check if there are any changes
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Auto-fix linting issues"
-            # Push changes to the same branch (handle detached HEAD state)
-            git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
+            git push origin HEAD:${{ github.head_ref }}  # Push to the PR branch
           else
             echo "No linting fixes needed"
+          fi
