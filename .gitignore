@@ -18,6 +18,10 @@ CMakeFiles/
 subprojects/*
 !subprojects/*.wrap
 
+#UnitTests
+/googletest
+
+
 # Super-linter outputs
 super-linter-output
 super-linter.log
