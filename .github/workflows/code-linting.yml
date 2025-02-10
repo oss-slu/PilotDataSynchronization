@@ -18,22 +18,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important for Super-Linter: Fetch full git history and all branches
+          fetch-depth: 0  # Fetch full git history and all branches for accurate linting
 
       - name: Run Super-Linter with Auto-Fix
-        uses: super-linter/super-linter@v7.2.1  # x-release-please-version
+        uses: super-linter/super-linter@v7.2.1
         env:
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MULTI_STATUS: true
-          DISABLE_GITHUB_STATUS: true  # Disable GitHub status reporting to avoid the 403 error
+          DISABLE_GITHUB_STATUS: true  # Prevent status updates to avoid API errors
+          MULTI_STATUS: false  # Ensure no GitHub status API calls are made
           
-          # Lint: Languages and Scripts
-          VALIDATE_CLANG_FORMAT: true   # C++ code formatting according to CLANG
+          # Lint: Enable validation for specific languages
+          VALIDATE_CLANG_FORMAT: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
           
-          # Fix: Languages and Scripts
+          # Fix: Enable auto-fix for Clang Format
           FIX_CLANG_FORMAT: true
 
       - name: Commit fixed files
@@ -45,8 +45,7 @@ jobs:
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Auto-fix linting issues"
-            # Push changes to the same branch (handling detached HEAD state)
+            # Push changes to the same branch (handle detached HEAD state)
             git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
           else
             echo "No linting fixes needed"
-          fi
