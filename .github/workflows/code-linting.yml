@@ -47,7 +47,7 @@ jobs:
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Auto-fix linting issues"
-            git push
+            git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
           else
             echo "No linting fixes needed"
           fi
