@@ -20,9 +20,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           
-      - name: Fetch all history and tags
+      - name: Fetch all branches
         run: |
-          git fetch --prune --unshallow
           git fetch --all
           
       - name: Run Super-Linter with Auto-Fix
