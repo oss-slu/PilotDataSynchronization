@@ -151,33 +151,6 @@ void dummy_key_handler(
     int losing_focus
 ) {}
 
-/* void runTCP(){
-    TCPClient client; 
-    ThreadQueue myQueue; 
-    bool stop_exec = false; 
-
-    while (stop_exec = false){
-        if(myQueue.size() == 0){
-            std::this_thread::sleep_for(150ms);
-            continue; 
-        }
-
-        ThreadMessage tm = myQueue.pop();
-        if (tm.end_execution_flag == true){
-            stop_exec = false;
-        } else {
-            vector <string> myVec; 
-            for(int i = 0; i < 4; i++){
-                myVec.push_back(to_string(tm.values_for_packet[i]));
-            }
-            string packet = generate_packet(myVec);
-
-            client.sendData(packet);
-        }
-    } */
-
-//} 
-
 volatile bool stop_exec = false;
 Logger* Logger::instance = nullptr;
 
@@ -316,6 +289,9 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API void XPluginDisable(void) {}
 
 PLUGIN_API int XPluginEnable(void) {
+    // TEMPORARY DISABLE, UNCOMMENT THIS BLOCK IF YOU FIND THIS
+
+    /*
     // TCP server threading setup
     ThreadQueue tq;
     std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
@@ -331,6 +307,8 @@ PLUGIN_API int XPluginEnable(void) {
     XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
     XPLMScheduleFlightLoop(id, 1.0, true);
 
+    return 1;
+    */
     return 1;
 }
 
