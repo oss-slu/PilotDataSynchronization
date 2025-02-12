@@ -27,10 +27,10 @@ jobs:
         run: |
           git config --global user.name 'Auto Linter'
           git config --global user.email 'auto-linter@github.com'
-          # Fetch the PR branch specifically
-          git fetch origin ${{ github.event.pull_request.head.ref }}
-          # Switch to the PR branch
-          git checkout -B ${{ github.event.pull_request.head.ref }} origin/${{ github.event.pull_request.head.ref }}
+          git fetch origin "$PR_BRANCH"
+          git checkout -B "$PR_BRANCH" "origin/$PR_BRANCH"
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
