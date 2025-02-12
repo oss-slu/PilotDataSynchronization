@@ -13,20 +13,22 @@ jobs:
       contents: write
 
     steps:
-      - name: Debug Info
-        run: |
-          echo "GitHub REF: ${{ github.ref }}"
-          echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
-          echo "PR Base Ref: ${{ github.event.pull_request.base.ref }}"
-          echo "Event Name: ${{ github.event_name }}"
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.sha }}
+          # Checking out the PR merge commit
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          
+      - name: Configure Git
+        run: |
+          git config --global user.name 'Auto Linter'
+          git config --global user.email 'auto-linter@github.com'
+          # Fetch the PR branch specifically
+          git fetch origin ${{ github.event.pull_request.head.ref }}
+          # Switch to the PR branch
+          git checkout -B ${{ github.event.pull_request.head.ref }} origin/${{ github.event.pull_request.head.ref }}
           
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
@@ -42,14 +44,10 @@ jobs:
       - name: Commit fixed files
         if: github.event_name == 'pull_request'
         run: |
-          git config --global user.name 'Auto Linter'
-          git config --global user.email 'auto-linter@github.com'
-          
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Auto-fix linting issues"
-            # Push directly to the HEAD SHA reference
-            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+            git push origin ${{ github.event.pull_request.head.ref }}
           else
             echo "No linting fixes needed"
           fi
