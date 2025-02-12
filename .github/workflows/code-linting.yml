@@ -44,12 +44,14 @@ jobs:
           FIX_CLANG_FORMAT: true
 
       - name: Commit fixed files
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
         run: |
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Auto-fix linting issues"
-            git push origin ${{ github.event.pull_request.head.ref }}
+            git push origin "$PR_BRANCH"
           else
             echo "No linting fixes needed"
           fi
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
