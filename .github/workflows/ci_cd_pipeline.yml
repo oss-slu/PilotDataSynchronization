@@ -1,4 +1,5 @@
-name: Super-Linter!
+---
+name: CI/CD Pipeline
 
 on:
   pull_request: 
@@ -43,8 +44,18 @@ jobs:
           VALIDATE_YAML: true
           FIX_CLANG_FORMAT: true
 
+          # I need to talk to the team about YAML and Markdown Prettier.
+          # This will let us check and auto-fix styling issues in our
+            # documentation and workflows.
+          # VALIDATE_YAML_PRETTIER
+          # FIX_YAML_PRETTIER
+          # VALIDATE_MARKDOWN_PRETTIER
+          # FIX_MARKDOWN_PRETTIER
+
       - name: Commit fixed files
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+        if: > 
+          github.event_name == 'pull_request' 
+          && github.event.pull_request.head.repo.fork == false
         run: |
           if [[ -n $(git status -s) ]]; then
             git add .
