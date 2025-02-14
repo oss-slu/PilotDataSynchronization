@@ -27,18 +27,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Checking out the PR merge commit
-          #ref: refs/pull/${{ github.event.pull_request.number }}/merge
-          #token: ${{ secrets.GITHUB_TOKEN }}
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           
       - name: Configure Git
         run: |
           git config --global user.name "${{ env.CI_COMMIT_AUTHOR }}"
           git config --global user.email 'auto-linter@github.com'
-         # git fetch origin "$"
-         # git checkout -B "$PR_BRPR_BRANCHANCH" "origin/$PR_BRANCH"
-       # env:
-        #  PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          git fetch origin "$"
+          git checkout -B "$PR_BRPR_BRANCHANCH" "origin/$PR_BRANCH"
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
@@ -67,11 +67,10 @@ jobs:
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
-            git push
+            git push origin HEAD:$PR_BRANCH
+
           else
             echo "No linting fixes needed"
           fi
-      #  env:
-         # PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
