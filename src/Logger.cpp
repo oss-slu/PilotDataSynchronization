@@ -1,6 +1,7 @@
 #include <fstream>
 #include <chrono>
 #include <ctime>
+#include <string>
 
 enum MsgLogType {
     NONE,
@@ -29,12 +30,20 @@ private:
     }
 
 public: 
+    #ifdef TESTING
+        static void resetInstance() {
+        delete instance;
+        instance = nullptr;
+    }
+    #endif
+
     static Logger* getInstance() {
-        if (!instance) {
+         if (!instance) {
             instance = new Logger();
         }
-        return instance;
+        return instance; 
     }
+
 
     std::string get_last_message() {
         return last_message;
@@ -46,6 +55,10 @@ public:
 
     int get_packets_sent() {
         return packets_sent;
+    }
+
+    void resetPacketCount() {
+        packets_sent = 0;
     }
 
     std::string readLogFile() {
@@ -75,11 +88,17 @@ public:
         if (logFile.is_open()) {
             auto now = std::chrono::system_clock::now();
             std::time_t time = std::chrono::system_clock::to_time_t(now);
+            
             char timeStr[26];
-            ctime_s(timeStr, sizeof(timeStr), &time);
+            #ifdef _WIN32
+                ctime_s(timeStr, sizeof(timeStr), &time);
+            #else
+                ctime_r(&time, timeStr);
+            #endif
+            
             std::string timeString(timeStr);
             timeString = timeString.substr(0, timeString.length() - 1); // Remove newline
-
+            
             logFile << "[" << timeString << "] " << message << std::endl;
             logFile.flush(); // Ensure immediate writing
         }
