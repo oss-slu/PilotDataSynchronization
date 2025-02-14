@@ -59,7 +59,7 @@ jobs:
 
       - name: Commit fixed files
         if: > 
-          github.event_name != 'pull_request' 
+          github.event_name == 'pull_request' 
           && github.event.pull_request.head.repo.fork == false
         run: |
           if [[ -n $(git status -s) ]]; then
