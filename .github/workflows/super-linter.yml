@@ -1,5 +1,5 @@
 ---
-name: CI/CD Pipeline
+name: Super Linter!
 
 on:
   pull_request: 
@@ -14,6 +14,9 @@ jobs:
       contents: write
       checks: write
       statuses: write
+    env:
+      CI_COMMIT_MESSAGE: Auto-fix linting issues
+      CI_COMMIT_AUTHOR: Super Linter!
 
     steps:
       - name: Checkout code
@@ -26,7 +29,7 @@ jobs:
           
       - name: Configure Git
         run: |
-          git config --global user.name 'Auto Linter'
+          git config --global user.name "${{ env.CI_COMMIT_AUTHOR }}"
           git config --global user.email 'auto-linter@github.com'
           git fetch origin "$PR_BRANCH"
           git checkout -B "$PR_BRANCH" "origin/$PR_BRANCH"
@@ -59,7 +62,7 @@ jobs:
         run: |
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "Auto-fix linting issues"
+            git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
             git push origin "$PR_BRANCH"
           else
             echo "No linting fixes needed"
