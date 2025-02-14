@@ -2,14 +2,14 @@
 // "Hello, World" plugin code found here:
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
-#include <cmath>
-#include <string>
-#include <thread>
 #include <vector>
 
 #include "Logger.cpp"
 #include "TCPClient.cpp"
 #include "threading-tools.h"
+#include <cmath>
+#include <string>
+#include <thread>
 
 // #include "packet.cpp"
 
