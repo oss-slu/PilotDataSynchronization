@@ -59,6 +59,10 @@ xpwidgets = compiler.find_library(
   required: true
 )
 
+# rust library from subproject
+baton_subp = subproject('baton')
+baton = baton_subp.get_variable('baton_dep')
+
 # final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
 lib = shared_library(
   'PilotDataSync.xpl',

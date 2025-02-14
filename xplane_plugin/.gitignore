@@ -13,14 +13,15 @@ build-mingw/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+
 # Automated Build System
 .cache/
 subprojects/*
 !subprojects/*.wrap
+!subprojects/baton/*
 
 #UnitTests
 /googletest
-
 
 # Super-linter outputs
 super-linter-output

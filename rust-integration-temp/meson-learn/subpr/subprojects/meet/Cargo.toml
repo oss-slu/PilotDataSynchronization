@@ -1,0 +1,10 @@
+[package]
+name = "meet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+itertools = "*"
+
+[lib]
+crate-type = ["cdylib"]
