@@ -19,6 +19,7 @@ target/
 .cache/
 subprojects/*
 !subprojects/*.wrap
+!subprojects/baton/
 
 # Super-linter outputs
 super-linter-output

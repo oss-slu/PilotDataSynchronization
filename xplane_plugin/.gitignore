@@ -18,7 +18,7 @@ CMakeFiles/
 .cache/
 subprojects/*
 !subprojects/*.wrap
-!subprojects/baton/*
+!subprojects/baton/
 
 #UnitTests
 /googletest
