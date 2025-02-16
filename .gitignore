@@ -13,6 +13,7 @@ build-mingw/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
+target/
 
 # Automated Build System
 .cache/
