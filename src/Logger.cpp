@@ -30,13 +30,11 @@ private:
     }
 
 public: 
-    #ifdef TESTING
-        static void resetInstance() {
+    static void resetInstance() {
         delete instance;
         instance = nullptr;
     }
-    #endif
-
+    
     static Logger* getInstance() {
          if (!instance) {
             instance = new Logger();

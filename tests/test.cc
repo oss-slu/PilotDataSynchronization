@@ -1,4 +1,4 @@
-#define TESTING
+//#define TESTING
 #include <gtest/gtest.h>
 #include "../src/Logger.cpp"
 #include <thread>
@@ -20,7 +20,7 @@ protected:
 };
 
 //singleton
-TEST_F(LoggerTest, SingletonPattern) {
+TEST(LoggerTest, SingletonPattern) {
     Logger* instance1 = Logger::getInstance();
     Logger* instance2 = Logger::getInstance();
     
@@ -29,7 +29,7 @@ TEST_F(LoggerTest, SingletonPattern) {
 }
 
 // Test Last Message Update
-TEST_F(LoggerTest, LastMessageUpdate) {
+TEST(LoggerTest, LastMessageUpdate) {
     Logger* logger = Logger::getInstance();
     std::string testMessage = "Test message";
     
@@ -38,7 +38,7 @@ TEST_F(LoggerTest, LastMessageUpdate) {
 }
 
 // Test Log Format
-TEST_F(LoggerTest, LogFormat) {
+TEST(LoggerTest, LogFormat) {
     Logger* logger = Logger::getInstance();
     std::string testMessage = "Test log format";
     
@@ -50,7 +50,7 @@ TEST_F(LoggerTest, LogFormat) {
 }
 
 // Test Packet Count
-TEST_F(LoggerTest, PacketCount) {
+TEST(LoggerTest, PacketCount) {
     Logger* logger = Logger::getInstance();
     logger->resetPacketCount();
     
@@ -64,7 +64,7 @@ TEST_F(LoggerTest, PacketCount) {
 }
 
 // Test Last Status Update
-TEST_F(LoggerTest, LastStatusUpdate) {
+TEST(LoggerTest, LastStatusUpdate) {
     Logger* logger = Logger::getInstance();
     
     logger->log("Test message", MsgLogType::SEND_PASS);
