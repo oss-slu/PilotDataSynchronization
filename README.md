@@ -37,9 +37,8 @@ To run the code, ensure you have the following packages installed using your pre
     - `meson setup --cross-file win.ini build` : which initializes the Meson build system
     - `cd build` : which navigates you into the `./build` directory
     - `meson compile` : which compiles the project and places the result folder `libPilotDataSync.xpl.dll.p` into the `./build` directory, which you should already be in!
-5. Finally, rename the `libPilotDataSync.xpl.dll.p` folder to `PilotDataSync.xpl`
 
-And there you go: project built! Currently, you'll need to manually rename the plugin folder to `PilotDataSync.xpl` after it is built, but we are quickly looking to change this and make building as smooth as possible within our build system!
+And there you go: project built! Currently, the build system in active development and change and we will be updating this README as we go with accurate build instructions!
 
 Now, all that's left is for you to copy-paste the `PilotDataSync.xpl` folder into your XPlane11 Plugins folder, start the flight simulator, and get to work!
 
