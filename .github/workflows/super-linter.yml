@@ -1,10 +1,11 @@
-name: Super Linter from ChatGPT
+---
+name: Super Linter!
 
 on:
   push:
     branches:
       - main
-  pull_request:
+  pull_request: 
     branches:
       - main
   workflow_dispatch:
@@ -13,7 +14,6 @@ jobs:
   lint-and-fix:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
       contents: write
       checks: write
       statuses: write
@@ -23,127 +23,63 @@ jobs:
       CI_COMMIT_AUTHOR_EMAIL: auto-linter@github.com
 
     steps:
-      - name: Determine Branch Name
-        id: branch
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "BRANCH_NAME=${{ github.event.pull_request.head.ref }}" >> $GITHUB_ENV
-            echo "REF_NAME=refs/pull/${{ github.event.pull_request.number }}/head" >> $GITHUB_ENV
-          else
-            echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
-            echo "REF_NAME=${GITHUB_REF}" >> $GITHUB_ENV
-          fi
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.REF_NAME }}
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-
-      - name: Ensure Correct Branch is Checked Out
-        run: |
-          git fetch origin ${{ env.BRANCH_NAME }}
-          git checkout ${{ env.BRANCH_NAME }}
+          # ref: ${{ github.head_ref }}
 
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
         env:
-          VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: true
           MULTI_STATUS: true
           VALIDATE_CLANG_FORMAT: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
           FIX_CLANG_FORMAT: true
 
-      - name: Commit fixed files
-        if: github.event.pull_request.head.repo.fork == false
-        run: |
-          git config --global user.name "${{ env.CI_COMMIT_AUTHOR_NAME }}"
-          git config --global user.email "${{ env.CI_COMMIT_AUTHOR_EMAIL }}"
+          # I need to talk to the team about YAML and Markdown Prettier.
+          # This will let us check and auto-fix styling issues in our
+            # documentation and workflows.
+          # VALIDATE_YAML_PRETTIER
+          # FIX_YAML_PRETTIER
+          # VALIDATE_MARKDOWN_PRETTIER
+          # FIX_MARKDOWN_PRETTIER
 
-          if [[ -n $(git status -s) ]]; then
-            git add .
-            git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
-            git push origin ${{ env.BRANCH_NAME }}
-          else
-            echo "No linting fixes needed"
-          fi
+      - name: Auto Commit Linted Files
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Auto-fix linting issues
+
+          commit_user_name: Super Linter!
+          commit_user_email: auto-linter@github.com
+          commit_author: auto-linter@github.com
+
+          # Optional. Option used by `git-status` to determine if the repository is 
+          # dirty. See https://git-scm.com/docs/git-status#_options
+          #status_options: '--untracked-files=no'
+          
+          # Optional. Disable dirty check and always try to create a commit and push
+          #skip_dirty_check: true    
+        
 
 
 
-# ---
-# name: Super Linter!
 
-# on:
-#   push:
-#     branches:
-#       - main
-#   pull_request: 
-#     branches:
-#       - main
-#   workflow_dispatch:
 
-# jobs:
-#   lint-and-fix:
-#     runs-on: ubuntu-latest
-#     permissions:
-#       pull-requests: write
-#       contents: write
-#       checks: write
-#       statuses: write
-#     env:
-#       CI_COMMIT_MESSAGE: Auto-fix linting issues
-#       CI_COMMIT_AUTHOR_NAME: Super Linter!
-#       CI_COMMIT_AUTHOR_EMAIL: auto-linter@github.com
+# OLD COMMIT LOGIC
+      # - name: Commit fixed files
+      #   if: github.event.pull_request.head.repo.fork == false
+      #   run: |
+      #     git config --global user.name "${{ env.CI_COMMIT_AUTHOR_NAME }}"
+      #     git config --global user.email '${{ env.CI_COMMIT_AUTHOR_EMAIL }}'
 
-#     steps:
-#       - name: Determine Branch Name into ENV var
-#         id: branch
-#         run: |
-#           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-#             echo "BRANCH_NAME=${{ github.event.pull_request.head.ref }}" >> $GITHUB_ENV
-#           else
-#             echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
-#           fi
-
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-#         with:
-#           ref: ${{ env.BRANCH_NAME }}
-#           token: ${{ secrets.GITHUB_TOKEN }}
-#           fetch-depth: 0
-                    
-#       - name: Run Super-Linter with Auto-Fix
-#         uses: super-linter/super-linter@v7.2.1
-#         env:
-#           VALIDATE_ALL_CODEBASE: true
-#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#           MULTI_STATUS: true
-#           VALIDATE_CLANG_FORMAT: true
-#           VALIDATE_GITHUB_ACTIONS: true
-#           VALIDATE_YAML: true
-#           FIX_CLANG_FORMAT: true
-
-#           # I need to talk to the team about YAML and Markdown Prettier.
-#           # This will let us check and auto-fix styling issues in our
-#             # documentation and workflows.
-#           # VALIDATE_YAML_PRETTIER
-#           # FIX_YAML_PRETTIER
-#           # VALIDATE_MARKDOWN_PRETTIER
-#           # FIX_MARKDOWN_PRETTIER
-
-#       - name: Commit fixed files
-#         if: github.event.pull_request.head.repo.fork == false
-#         run: |
-#           git config --global user.name "${{ env.CI_COMMIT_AUTHOR_NAME }}"
-#           git config --global user.email '${{ env.CI_COMMIT_AUTHOR_EMAIL }}'
-
-#           if [[ -n $(git status -s) ]]; then
-#             git add .
-#             git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
-#             git push origin HEAD:${{ env.BRANCH_NAME }}
-#           else
-#             echo "No linting fixes needed"
-#           fi
+      #     if [[ -n $(git status -s) ]]; then
+      #       git add .
+      #       git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
+      #       git push origin HEAD:${{ env.BRANCH_NAME }}
+      #     else
+      #       echo "No linting fixes needed"
+      #     fi
