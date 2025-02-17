@@ -20,14 +20,25 @@ jobs:
       statuses: write
     env:
       CI_COMMIT_MESSAGE: Auto-fix linting issues
-      CI_COMMIT_AUTHOR: Super Linter!
-      BRANCH_REF: ${{ github.event.pull_request.head.ref || github.ref }}
+      CI_COMMIT_AUTHOR_NAME: Super Linter!
+      CI_COMMIT_AUTHOR_EMAIL: auto-linter@github.com
 
     steps:
+      - name: Determine Branch Name into ENV var
+        id: branch
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "BRANCH_NAME=${{ github.event.pull_request.head.ref }}" >> $GITHUB_ENV
+          else
+            echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+          fi
+
+
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.BRANCH_REF }}
+          ref: ${{ env.BRANCH_NAME }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
                     
@@ -53,14 +64,13 @@ jobs:
       - name: Commit fixed files
         if: github.event.pull_request.head.repo.fork == false
         run: |
-          git config --global user.name "${{ env.CI_COMMIT_AUTHOR }}"
-          git config --global user.email 'auto-linter@github.com'
+          git config --global user.name "${{ env.CI_COMMIT_AUTHOR_NAME }}"
+          git config --global user.email '${{ env.CI_COMMIT_AUTHOR_EMAIL }}'
 
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
-            git push origin HEAD:${{ env.BRANCH_REF }}
+            git push origin HEAD:${{ env.BRANCH_NAME }}
           else
             echo "No linting fixes needed"
           fi
-          
