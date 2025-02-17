@@ -55,7 +55,7 @@ jobs:
 
           commit_user_name: Super Linter!
           commit_user_email: auto-linter@github.com
-          commit_author: auto-linter@github.com
+          commit_author: SuperLinter <auto-linter@github.com>
 
           # Optional. Option used by `git-status` to determine if the repository is 
           # dirty. See https://git-scm.com/docs/git-status#_options
