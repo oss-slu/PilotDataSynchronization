@@ -90,4 +90,12 @@ public:
             logFile.close();
         }
     }
+
+
+//---------------------- Testing Function ONLY
+    int testMesonBuildSystem() {
+        return 0;
+    }
+
+
 };
