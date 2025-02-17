@@ -37,7 +37,7 @@ jobs:
         with:
           action: test      # build project and run unit tests
           directory: build
-          setup-options: --cross-file win.ini build   # meson setup CLI args
+          setup-options: --cross-file win.ini   # meson setup CLI args
           options: --verbose
           #meson-version: #1.7.0  # default is an old version --> use latest
           #ninja-version: #1.12.1 # default is an old version --> use latest
