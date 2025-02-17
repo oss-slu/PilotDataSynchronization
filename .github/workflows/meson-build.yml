@@ -39,8 +39,8 @@ jobs:
           directory: build
           setup-options: --cross-file win.ini build   # meson setup CLI args
           options: --verbose
-          meson-version: 1.7.0  # default is an old version --> use latest
-          ninja-version: 1.12.1 # default is an old version --> use latest
+          meson-version: #1.7.0  # default is an old version --> use latest
+          ninja-version: #1.12.1 # default is an old version --> use latest
 
       # if tests fail, upload a test log?
       - name: Upload Test Log
