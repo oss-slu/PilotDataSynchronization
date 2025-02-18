@@ -1,33 +1,30 @@
 .vscode
-*.exe
-*.ilk
-*.ilkj
-*.obj
-*.pdb
+**/*.exe
+**/*.ilk
+**/*.ilkj
+**/*.obj
+**/*.pdb
 **/lib/** 
 **/bin/**
-*.exp
-*.xpl
-*.lib
-build/
-build-mingw/
-CMakeCache.txt
-CMakeFiles/
-.DS_STORE
+**/*.exp
+**/*.xpl
+**/*.lib
+**/build/
+**/.DS_STORE
 **/target/
 
 # Automated Build System
-.cache/
+**/.cache/
 **/subprojects/*
 **/!subprojects/*.wrap
 **/!subprojects/baton/
 
 # Unit Tests
-/googletest
+**/googletest
 
 # Super-linter outputs
-super-linter-output
-super-linter.log
+**/super-linter-output
+**/super-linter.log
 
 # GitHub Actions leftovers
-github_conf
+**/github_conf
