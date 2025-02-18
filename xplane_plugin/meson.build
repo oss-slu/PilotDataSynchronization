@@ -65,7 +65,7 @@ baton = baton_subp.get_variable('baton_dep')
 
 # final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
 lib = shared_library(
-  'PilotDataSync.xpl',
+  'DataSync',
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
   # dependencies: [winsock, xplm, xpwidgets, baton],
@@ -75,7 +75,7 @@ lib = shared_library(
   cpp_args: compiler_args,
   link_args: ['-static-libstdc++', '-static-libgcc', '-static'],
   name_prefix: 'Pilot',
-  name_suffix: '.xpl'
+  name_suffix: 'xpl'
 )
 
 # gtest
