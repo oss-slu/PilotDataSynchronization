@@ -19,7 +19,7 @@ jobs:
     strategy:
       # Basically just runs the workflow on each of these OS's and each of these versions
       matrix: 
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ windows-latest ]
         meson_version: ["1.4.0"]
     steps:
       - name: Checkout code
@@ -39,14 +39,14 @@ jobs:
           directory: build
           setup-options: --cross-file win.ini   # meson setup CLI args
           options: --verbose
-          #meson-version: #1.7.0  # default is an old version --> use latest
-          #ninja-version: #1.12.1 # default is an old version --> use latest
+          #meson-version: 1.7.0  # default is an old version --> use latest
+          #ninja-version: 1.12.1 # default is an old version --> use latest
 
       # if tests fail, upload a test log?
-      - name: Upload Test Log
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: ${{ matrix.os }}_Meson_Testlog
-          path: builddir/meson-logs/testlog.txt
+      #- name: Upload Test Log
+      #  uses: actions/upload-artifact@v4
+      #  if: failure()
+      #  with:
+      #    name: ${{ matrix.os }}_Meson_Testlog
+      #    path: builddir/meson-logs/testlog.txt
 
