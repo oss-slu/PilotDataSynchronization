@@ -3,5 +3,5 @@ fn main() {
         .std("c++20")
         .compile("baton");
 
-    // println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=src/lib.rs");
 }
