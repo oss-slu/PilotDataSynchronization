@@ -20,7 +20,7 @@ subprojects/*
 
 #UnitTests
 /googletest
-
+/xplane_plugin
 
 # Super-linter outputs
 super-linter-output
