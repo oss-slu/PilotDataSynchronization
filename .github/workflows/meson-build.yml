@@ -33,7 +33,7 @@ jobs:
           python-version: '3.x'
 
       - name: Install Dependencies using Python Pip
-        run: pip install -r meson_requirements.txt
+        run: pip install -r .github/workflows/meson_requirements.txt
 
       - name: Download XPlane SDK using Windows Powershell
         run: ./utils/init.ps1
