@@ -289,7 +289,7 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API void XPluginDisable(void) {}
 
 PLUGIN_API int XPluginEnable(void) {
-    // TEMPORARY DISABLE, UNCOMMENT THIS BLOCK IF YOU FIND THIS
+    // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
 
     /*
     // TCP server threading setup
@@ -306,9 +306,8 @@ PLUGIN_API int XPluginEnable(void) {
     };
     XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
     XPLMScheduleFlightLoop(id, 1.0, true);
-
-    return 1;
     */
+    
     return 1;
 }
 
