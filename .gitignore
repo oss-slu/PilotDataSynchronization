@@ -1,10 +1,11 @@
 .vscode
 *.exe
 *.ilk
+*.ilkj
 *.obj
 *.pdb
-lib/** 
-bin/**
+**/lib/** 
+**/bin/**
 *.exp
 *.xpl
 *.lib
@@ -13,13 +14,16 @@ build-mingw/
 CMakeCache.txt
 CMakeFiles/
 .DS_STORE
-target/
+**/target/
 
 # Automated Build System
 .cache/
-subprojects/*
-!subprojects/*.wrap
-!subprojects/baton/
+**/subprojects/*
+**/!subprojects/*.wrap
+**/!subprojects/baton/
+
+# Unit Tests
+/googletest
 
 # Super-linter outputs
 super-linter-output
