@@ -12,7 +12,7 @@ baton_tgt = custom_target(
     '@OUTDIR@',
     '@CURRENT_SOURCE_DIR@'
   ],
-  output: ['libbaton.a', 'lib.rs.h']
+  output: ['libbaton.lib', 'lib.rs.cc', 'lib.rs.h']
 )
 
 baton_dep = declare_dependency(

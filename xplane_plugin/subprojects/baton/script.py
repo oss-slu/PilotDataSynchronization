@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import shutil
 
 outdir = sys.argv[1]
 curr_src_dir = sys.argv[2]
@@ -20,14 +21,29 @@ subprocess.run([
     f'{curr_src_dir}/Cargo.toml' 
 ])
 
-subprocess.run([
-    'cp',
-    f'{outdir}/release/libbaton.a',
-    outdir
-])
+# subprocess.run([
+#     'cp',
+#     f'{outdir}/release/libbaton.a',
+#     outdir
+# ])
 
-subprocess.run([
-    'cp',
-    f'{outdir}/cxxbridge/baton/src/lib.rs.h',
+# subprocess.run([
+#     'cp',
+#     f'{outdir}/cxxbridge/baton/src/lib.rs.h',
+#     outdir
+# ])
+
+shutil.copyfile(
+    f'{outdir}/x86_64-pc-windows-gnu/release/libbaton.lib',
     outdir
-])
+)
+
+shutil.copyfile(
+    f'{outdir}/x86_64-pc-windows-gnu/cxxbridge/lib.rs.cc',
+    outdir
+)
+
+shutil.copyfile(
+    f'{outdir}/x86_64-pc-windows-gnu/cxxbridge/lib.rs.h',
+    outdir
+)
