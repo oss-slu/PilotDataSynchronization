@@ -40,7 +40,7 @@ jobs:
 
       - name: Build Meson
         run: |
-          meson setup
+          meson setup build
           meson compile -C build
 
 
