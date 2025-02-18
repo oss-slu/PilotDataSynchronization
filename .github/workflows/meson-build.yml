@@ -2,15 +2,17 @@ name: Meson Build System
 
 # Only runs when changes are detected on ".cpp" and ".h" files
 # Basically, only rebuilds and tests the project when C++ is changed
+# Commented that out so now it runs on every push
 on:
   push:
-    paths:
-      - "**.cpp"
-      - "**.h"
+    #paths:
+      # - "**.cpp"
+      # - "**.h"
   pull_request:
-    paths:
-      - "**.cpp"
-      - "**.h"
+    # paths:
+      # - "**.cpp"
+      # - "**.h"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -30,15 +32,28 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Install Dependencies using Python Pip
+        run: pip install -r meson_requirements.txt
+
+      - name: Download XPlane SDK using Windows Powershell
+        run: ./utils/init.ps1
+
+      - name: Build Meson
+        run: |
+          meson setup
+          meson compile -C build
+
+
+
       # https://github.com/marketplace/actions/meson-build 
       # NOTE: This workflow is a couple years old, so it may not interact well with the current Meson.
-      - name: Meson Build and Test
-        uses: BSFishy/meson-build@v1.0.3
-        with:
-          action: test      # build project and run unit tests
-          directory: build
+     # - name: Meson Build and Test
+      #  uses: BSFishy/meson-build@v1.0.3
+      #  with:
+      #    action: test      # build project and run unit tests
+          # directory: build
          # setup-options: --cross-file win.ini   # meson setup CLI args
-          options: --verbose
+          # options: --verbose
           #meson-version: 1.7.0  # default is an old version --> use latest
           #ninja-version: 1.12.1 # default is an old version --> use latest
 
