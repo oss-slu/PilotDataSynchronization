@@ -74,6 +74,8 @@ lib = shared_library(
   include_directories: [inc_dir, lib_dir],
   cpp_args: compiler_args,
   link_args: ['-static-libstdc++', '-static-libgcc', '-static'],
+  name_prefix: 'Pilot',
+  name_suffix: '.xpl'
 )
 
 # gtest
