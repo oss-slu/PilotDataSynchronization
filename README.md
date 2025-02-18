@@ -35,12 +35,9 @@ To run the code, ensure you have the following packages installed using your pre
 3. Run the script `./utils/init.sh` (mac/linux) or `./utils/init.ps1` (windows) from the project root to download the XPlane SDK into the generated `./lib` folder 
 4. Next, run the following scripts in the project root:
     - `meson setup --cross-file win.ini build` : which initializes the Meson build system
-    - `cd build` : which navigates you into the `./build` directory
-    - `meson compile` : which compiles the project and places the result folder `libPilotDataSync.xpl.dll.p` into the `./build` directory, which you should already be in!
-
+    - `meson compile -C build` : which compiles the meson build system and places the resultant file into the `./build` folder.
 And there you go: project built! Currently, the build system in active development and change and we will be updating this README as we go with accurate build instructions!
 
-Now, all that's left is for you to copy-paste the `PilotDataSync.xpl` folder into your XPlane11 Plugins folder, start the flight simulator, and get to work!
 
 
 ## Project Layout
