@@ -17,6 +17,9 @@ To perform initial project setup, run the `init.ps1` PowerShell script found in 
 ## Build System
 This project uses the Meson build system to build our project! More information can be found on the [Meson homepage](https://mesonbuild.com/).
 
+## Unit Testing
+This project uses the [GoogleTest framework](https://google.github.io/googletest/) for unit testing in our project to ensure that each component functions as expected.We are currently focusing on achieving at least 80% test coverage across our codebase to ensure reliability and reduce the likelihood of defects in the system. As the project develops, we continue to refine and add more tests to cover all critical components of the project, improving robustness and identifying potential issues early in the development cycle.
+
 ## Prerequisites
 
 To run the code, ensure you have the following packages installed using your preferred package manager:
@@ -24,6 +27,7 @@ To run the code, ensure you have the following packages installed using your pre
 - `meson` : build system
 - `rust` : programming language (pending) 
 - Winsock2 Library: Required for socket programming on Windows.
+- GoogleTest: Testing framework for unit tests.
 
 
 ## Getting Started : Step-by-Step Build Instructions
@@ -32,10 +36,14 @@ To run the code, ensure you have the following packages installed using your pre
     - `mingw-w64`
     - `meson`
     - `rust`
+    - `gtest`
 3. Run the script `./utils/init.sh` (mac/linux) or `./utils/init.ps1` (windows) from the project root to download the XPlane SDK into the generated `./lib` folder 
 4. Next, run the following scripts in the project root:
     - `meson setup --cross-file win.ini build` : which initializes the Meson build system
     - `meson compile -C build` : which compiles the meson build system and places the resultant file into the `./build` folder.
+    - `meson compile -C build tests` : to build the test executable
+    - `ctest` : to run the unit tests
+
 And there you go: project built! Currently, the build system in active development and change and we will be updating this README as we go with accurate build instructions!
 
 
