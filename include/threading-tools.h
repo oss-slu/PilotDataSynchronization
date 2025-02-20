@@ -1,12 +1,12 @@
 #pragma once
-#include <iterator>
-#include <numeric>
-#include <string>
-#include <vector>
 #include <iostream>
+#include <iterator>
 #include <mutex>
+#include <numeric>
 #include <queue>
+#include <string>
 #include <thread>
+#include <vector>
 using namespace std;
 
 struct ThreadMessage {
