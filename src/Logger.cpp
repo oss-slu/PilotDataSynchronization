@@ -1,6 +1,7 @@
 #include <chrono>
 #include <ctime>
 #include <fstream>
+#include <string>
 
 enum MsgLogType {
   NONE,
@@ -29,6 +30,11 @@ private:
   }
 
 public:
+  static void resetInstance() {
+    delete instance;
+    instance = nullptr;
+  }
+
   static Logger *getInstance() {
     if (!instance) {
       instance = new Logger();
@@ -41,6 +47,8 @@ public:
   MsgLogType get_last_status() { return last_status; }
 
   int get_packets_sent() { return packets_sent; }
+
+  void resetPacketCount() { packets_sent = 0; }
 
   std::string readLogFile() {
     std::ifstream file("xplane_plugin_log.txt");
@@ -67,8 +75,14 @@ public:
     if (logFile.is_open()) {
       auto now = std::chrono::system_clock::now();
       std::time_t time = std::chrono::system_clock::to_time_t(now);
+
       char timeStr[26];
+#ifdef _WIN32
       ctime_s(timeStr, sizeof(timeStr), &time);
+#else
+      ctime_r(&time, timeStr);
+#endif
+
       std::string timeString(timeStr);
       timeString =
           timeString.substr(0, timeString.length() - 1); // Remove newline
