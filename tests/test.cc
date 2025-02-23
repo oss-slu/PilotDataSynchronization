@@ -74,7 +74,7 @@ TEST(LoggerTest, LastStatusUpdate) {
   EXPECT_EQ(logger->get_last_status(), MsgLogType::ERR);
 }
 
-// test test (haha)
+// test test
 /* TEST(a, b) {
     std::cout << "Test is running" << std::endl;
     EXPECT_EQ(56, 56);
