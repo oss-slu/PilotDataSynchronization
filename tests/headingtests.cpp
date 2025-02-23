@@ -1,7 +1,5 @@
 #include "headingtests.hpp"
-#include <gtest/gtest.h>
 #include "../src/Logger.cpp"
+#include <gtest/gtest.h>
 
-TEST(a, b){
-    EXPECT_EQ(1,2);
-}
+TEST(a, b) { EXPECT_EQ(1, 2); }
