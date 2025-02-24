@@ -16,14 +16,13 @@ on:
 
 jobs:
   build:
-    name: Build and Test on ${{ matrix.os }} with Meson v${{ matrix.meson_version }}
+    name: Build and Test on ${{ matrix.os }} with Meson
     runs-on: ${{ matrix.os }}
     strategy:
       # Basically just runs the workflow on each of these OS's and each of these versions
       # Right now, just worried about runing / building on Windows
       matrix: 
         os: [ windows-latest ]
-        meson_version: ["1.4.0"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,16 +32,20 @@ jobs:
         with:
           python-version: '3.x'
 
+      # I think I need to find a better place to put this requirements directory.
+      # Right now, it is in the project root
       - name: Install Dependencies using Python Pip
         run: pip install -r ci_requirements.txt
 
       - name: Download XPlane SDK using Windows Powershell
         run: ./utils/init.sh
 
-      - name: Build Meson
-        run: |
-          meson setup build
-          meson compile -C build
+      - name: Setup Meson Build Directory '\build'
+        run: meson setup build
+
+      - name: Compile Meson 
+        run: meson compile -C build
+
 
 
 
