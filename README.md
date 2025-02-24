@@ -1,69 +1,40 @@
-[![Super-Linter](https://github.com/oss-slu/PilotDataSynchronization/actions/workflows/code-linting.yml/badge.svg)](https://github.com/marketplace/actions/super-linter)
+# Overview
+- `xplane_plugin`: X-Plane's data extraction plugin
+- `relay`: External GUI program that takes the data extracted by `xplane_plugin` and sends it to iMotions over TCP
+- `baton`: C++ library for communicating with `relay`. Provides an object that handles inter-process communication (IPC) and abstracts over it for ease-of-use. Currently located in `xplane_plugin/subprojects`
 
+# Details
+## High-Level View
+The data flow is as follows:
+- `xplane_plugin` extracts the data
+- `xplane_plugin` uses the `baton` library to send the data to the `relay` program
+- `relay` sends the data to iMotions
 
-# Pilot Data Synchronization
+`relay` and `baton` are developed by this team and are not external programs/libraries.
 
-Our project is still in progress, and the current phase focuses on successfully communicating with the research platform! We are also in the process of restructuring our project build, our CI/CD pipeline, our unit tests, and our big-picture architecture. Stay tuned for our improvements! 
+`xplane_plugin` and `relay` are top level subprojects in the repo. It is currently undecided whether `baton` will be top level or not, and so for now will be found under `xplane_plugin/subprojects/`. In the event that we begin work on Prepar3D during this iteration, we can decide if `baton` is generic enough to use for both simulators and move it to the top level, or have a `baton` version for each simulator plugin as an internal dependency.
 
-## Project Overview
+## Mid-Level View
+### Why `baton`?
+At the time of writing, the current version of `iceoryx2` does not support cross-language communication. Only C++-to-C++ and Rust-to-Rust communication is possible, not C++-to-Rust. `xplane_plugin` is written in C++ and `relay` is written in Rust. Thus, `iceoryx2` cannot be used to facilitate communication between `xplane_plugin` and `relay`.
 
-This project is designed to extract key data from the X-Plane flight simulator, including Altitude, Airspeed, Vertical Airspeed, Heading attributes, and transmit it to the iMotions research platform via a TCP connection. The extracted data will be formatted according to iMotions’ API requirements, enabling users to sync the flight data with other biometric sensors in real-time to analyze pilot performance!
+However, this limitation only extends to what language the communication is compiled from. Rust-to-Rust communication where one end is compiled to a C library is valid. This is where `baton` comes in. `baton` abstracts over the finer details of `iceoryx2` communication to `relay` and is compiled to C++ despite being a Rust library. This enables the plugin (again, written in C++) to communicate with `relay` (again, written in Rust) when this otherwise would not be possible.
 
-<!--
-# Getting Started
-To perform initial project setup, run the `init.ps1` PowerShell script found in the `utils` directory. This will download a copy of XPLSDK410 and extract it into the `lib` folder. This is necessary for successfully building the plugin.
--->
+A secondary benefit to using Rust over C++ for `baton` is that we can leverage Rust's superior concurrency and safety guarantees. By managing the threading and communication in the Rust library and providing the plugin only a very limited interface by which it can pass in values to be sent to `relay`, we make a worthwhile exchange. We trade up-front complexity for vastly reduced need for debugging further down the line, as our code is more likely to be sound. This is an important consideration, as the project will be passed on to new students for next iteration. It is a much better use of developer time to work on developing features instead of being mired in deeply complex concurrency concerns similar to the ones that appeared during the first iteration of this project when we began.
 
-## Build System
-This project uses the Meson build system to build our project! More information can be found on the [Meson homepage](https://mesonbuild.com/).
+## Low-Level View
+Work in progress.
 
-## Unit Testing
-This project uses the [GoogleTest framework](https://google.github.io/googletest/) for unit testing in our project to ensure that each component functions as expected.We are currently focusing on achieving at least 80% test coverage across our codebase to ensure reliability and reduce the likelihood of defects in the system. As the project develops, we continue to refine and add more tests to cover all critical components of the project, improving robustness and identifying potential issues early in the development cycle.
+### `xplane_plugin`
 
-## Prerequisites
+### `relay`
 
-To run the code, ensure you have the following packages installed using your preferred package manager:
-- `mingw-w64` : C++ compiler
-- `meson` : build system
-- `rust` : programming language (pending) 
-- Winsock2 Library: Required for socket programming on Windows.
-- GoogleTest: Testing framework for unit tests.
+#### `iced`
 
+#### `iceoryx2`
 
-## Getting Started : Step-by-Step Build Instructions
-1. Clone the PilotDataSync repo from the github onto your local device
-2. Make sure to download and install the following dependencies from your preferred package manager (this step will be updated with package-managemer-specific instructions soon!):
-    - `mingw-w64`
-    - `meson`
-    - `rust`
-    - `gtest`
-3. Run the script `./utils/init.sh` (mac/linux) or `./utils/init.ps1` (windows) from the project root to download the XPlane SDK into the generated `./lib` folder 
-4. Next, run the following scripts in the project root:
-    - `meson setup --cross-file win.ini build` : which initializes the Meson build system
-    - `meson compile -C build` : which compiles the meson build system and places the resultant file into the `./build` folder.
-    - `meson compile -C build tests` : to build the test executable
-    - `ctest` : to run the unit tests
+#### iMotions
 
-And there you go: project built! Currently, the build system in active development and change and we will be updating this README as we go with accurate build instructions!
+### `baton`
 
-
-
-## Project Layout
-- Place source code in the `src/` directory.
-- Helpful utilities can be found in the `utils/` directory.
-- Tests and documentation go into `tests/` and `docs/` respectively.
-- The `.github` folder contains our projects' CI/CD pipeline files and any GitHub templates that we use.
-- The XPlane SDK lives in the `lib/` directory, both of which should be automatically generated when you run the initialization scripts. Do not commit and push the SDK
-- Plugins, binaries, and artifacts go into the `bin/` directory. Nothing from this directory should ever be pushed to the repo.
-
-## Styling
-<!---
- C++ code is formatted using the VSCode C/C++ Extension's format action. The rules are expanded on in `.clang-format`. Submitted code must be formatted accordingly. Invoke it in VSCode by using the command palette -> `Format document with...` -> `C/C++`, which will automatically used the provided formatting rules.
--->
-
-The code formatting requirements have recently changed due to our implementation of a CI/CD code linter and auto-formatter! Stay tuned!
-
-## Contributing
-
-To get started contributing to the project, see the [contributing guide](CONTRIBUTING.md).
-This document also includes guidelines for reporting bugs and proposing new features.
+#### `iceoryx2`

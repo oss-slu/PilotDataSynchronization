@@ -122,33 +122,6 @@ int dummy_wheel_handler(XPLMWindowID in_window_id, int x, int y, int wheel,
 void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
                        char virtual_key, void *in_refcon, int losing_focus) {}
 
-/* void runTCP(){
-    TCPClient client;
-    ThreadQueue myQueue;
-    bool stop_exec = false;
-
-    while (stop_exec = false){
-        if(myQueue.size() == 0){
-            std::this_thread::sleep_for(150ms);
-            continue;
-        }
-
-        ThreadMessage tm = myQueue.pop();
-        if (tm.end_execution_flag == true){
-            stop_exec = false;
-        } else {
-            vector <string> myVec;
-            for(int i = 0; i < 4; i++){
-                myVec.push_back(to_string(tm.values_for_packet[i]));
-            }
-            string packet = generate_packet(myVec);
-
-            client.sendData(packet);
-        }
-    } */
-
-//}
-
 volatile bool stop_exec = false;
 Logger *Logger::instance = nullptr;
 
@@ -285,6 +258,9 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API void XPluginDisable(void) {}
 
 PLUGIN_API int XPluginEnable(void) {
+  // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
+
+  /*
   // TCP server threading setup
   ThreadQueue tq;
   std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
@@ -295,9 +271,11 @@ PLUGIN_API int XPluginEnable(void) {
       .structSize = sizeof(loop_params),
       .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
       .callbackFunc = flight_loop,
-      .refcon = tq_ptr.get()};
+      .refcon = tq_ptr.get()
+  };
   XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
   XPLMScheduleFlightLoop(id, 1.0, true);
+  */
 
   return 1;
 }

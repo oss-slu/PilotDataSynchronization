@@ -59,15 +59,23 @@ xpwidgets = compiler.find_library(
   required: true
 )
 
+# rust library from subproject
+baton_subp = subproject('baton')
+baton = baton_subp.get_variable('baton_dep')
+
 # final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
 lib = shared_library(
-  'PilotDataSync.xpl',
+  'DataSync',
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
+  # dependencies: [winsock, xplm, xpwidgets, baton],
+  # baton dep temporarily removed while cross-compilation bug is handled
   dependencies: [winsock, xplm, xpwidgets],
   include_directories: [inc_dir, lib_dir],
   cpp_args: compiler_args,
   link_args: ['-static-libstdc++', '-static-libgcc', '-static'],
+  name_prefix: 'Pilot',
+  name_suffix: 'xpl'
 )
 
 if host_machine.system() == 'windows'
