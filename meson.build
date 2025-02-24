@@ -20,6 +20,10 @@ compiler_args = [
 # TODO review if this is still necessary
 add_project_arguments('-Llib/SDK/Libraries/Win', language: 'cpp')
 
+# TESTING: Does adding this make meson ci build stop yelling at me? who knows 
+add_project_arguments(['-stdlib=libc++'], language : 'cpp')
+add_project_link_arguments(['-stdlib=libc++','-lstdc++fs'], language : 'cpp')
+
 # includes
 inc_dir = include_directories('include', 'lib/SDK/CHeaders/Widgets/', 'lib/SDK/CHeaders/XPLM/')
 
