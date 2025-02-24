@@ -40,11 +40,15 @@ jobs:
       - name: Download XPlane SDK using Windows Powershell
         run: ./utils/init.ps1
 
-      - name: Setup Meson Build Directory '\build'
-        run: meson setup build
+      - name: Setup and Build Meson Project
+        run: | 
+          meson setup build
+          meson compile -C build
 
-      - name: Compile Meson 
-        run: meson compile -C build
+      - name: Test the Meson Project
+        run: |
+          meson compile -C build tests
+          ctest
 
 
 
