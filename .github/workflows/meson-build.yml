@@ -20,8 +20,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       # Basically just runs the workflow on each of these OS's and each of these versions
+      # Right now, just worried about runing / building on Windows
       matrix: 
-        os: [ macos-latest ]
+        os: [ windows-latest ]
         meson_version: ["1.4.0"]
     steps:
       - name: Checkout code
@@ -40,7 +41,7 @@ jobs:
 
       - name: Build Meson
         run: |
-          meson setup --cross-file win.ini build
+          meson setup build
           meson compile -C build
 
 
