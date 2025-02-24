@@ -46,7 +46,7 @@ jobs:
           meson compile -C build
 
       - name: Test the Meson Project
-        run: ./testsuite --gtest_also_run_disabled_tests --verbose~
+        run: ./build/testsuite --gtest_also_run_disabled_tests --verbose~
 
 
 
