@@ -38,7 +38,7 @@ jobs:
         run: pip install -r ci_requirements.txt
 
       - name: Download XPlane SDK using Windows Powershell
-        run: ./utils/init.sh
+        run: ./utils/init.ps1
 
       - name: Setup Meson Build Directory '\build'
         run: meson setup build
