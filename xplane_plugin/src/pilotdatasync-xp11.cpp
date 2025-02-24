@@ -119,14 +119,8 @@ int dummy_wheel_handler(XPLMWindowID in_window_id, int x, int y, int wheel,
   return 0;
 }
 
-void dummy_key_handler(
-    XPLMWindowID in_window_id,
-    char key,
-    XPLMKeyFlags flags,
-    char virtual_key,
-    void* in_refcon,
-    int losing_focus
-) {}
+void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
+                       char virtual_key, void *in_refcon, int losing_focus) {}
 
 volatile bool stop_exec = false;
 Logger *Logger::instance = nullptr;
@@ -264,26 +258,26 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API void XPluginDisable(void) {}
 
 PLUGIN_API int XPluginEnable(void) {
-    // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
+  // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
 
-    /*
-    // TCP server threading setup
-    ThreadQueue tq;
-    std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
-    thread_handle = std::thread(runTCP, tq_ptr);
+  /*
+  // TCP server threading setup
+  ThreadQueue tq;
+  std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
+  thread_handle = std::thread(runTCP, tq_ptr);
 
-    // Register per-time-unit callback
-    XPLMCreateFlightLoop_t loop_params = {
-        .structSize = sizeof(loop_params),
-        .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-        .callbackFunc = flight_loop,
-        .refcon = tq_ptr.get()
-    };
-    XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
-    XPLMScheduleFlightLoop(id, 1.0, true);
-    */
-    
-    return 1;
+  // Register per-time-unit callback
+  XPLMCreateFlightLoop_t loop_params = {
+      .structSize = sizeof(loop_params),
+      .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
+      .callbackFunc = flight_loop,
+      .refcon = tq_ptr.get()
+  };
+  XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
+  XPLMScheduleFlightLoop(id, 1.0, true);
+  */
+
+  return 1;
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg,
