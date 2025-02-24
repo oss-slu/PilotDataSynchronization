@@ -10,7 +10,7 @@
 #include <cmath>
 #include <string>
 #include <thread>
-//#include <memory> // meson ci build is yelling at me
+#include <memory> // meson ci build is yelling at me
 
 // #include "packet.cpp"
 
