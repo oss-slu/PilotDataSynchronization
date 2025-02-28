@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iceoryx2 = "*"
+# iceoryx2 = "*"
+interprocess = "*"
 cxx = "1.0"
 
 [build-dependencies]
@@ -12,3 +13,6 @@ cxx-build = "1.0"
 
 [lib]
 crate-type = ["staticlib"]
+
+[profile.release]
+lto = "fat"

@@ -7,11 +7,13 @@ Keep in mind that what is shown here is not entirely typical of Rust code, as th
 in order to facilitate the aforementioned interoperability.
 */
 
-use core::time::Duration;
-use iceoryx2::prelude::*;
-use std::thread;
-
-const CYCLE_TIME: Duration = Duration::from_secs(1);
+use interprocess::local_socket::{
+    prelude::*, GenericFilePath, GenericNamespaced, NameType, Stream, ToFsName,
+};
+use std::{
+    io::{prelude::*, BufReader},
+    thread,
+};
 
 // This defines the interface for the C++ codegen. This is where functions are exposed to the C++ side.
 #[cxx::bridge]
@@ -36,30 +38,47 @@ pub struct ThreadWrapper {
 
 impl ThreadWrapper {
     pub fn start(&mut self) {
+        // Rust does not have nulls. If you do not understand Options, read the Rust Book chapter 6.1
         let None = self.thread else {
             println!("Thread already started!");
             return;
         };
 
         let handle: thread::JoinHandle<_> = thread::spawn(|| {
-            // println!("Hello, from the spawned Rust thread!");
-            let node = NodeBuilder::new().create::<ipc::Service>().unwrap();
+            // OS-dependent abstraction
+            let name = if GenericNamespaced::is_supported() {
+                "baton.sock".to_ns_name::<GenericNamespaced>().unwrap()
+            } else {
+                "baton.sock".to_fs_name::<GenericFilePath>().unwrap()
+            };
 
-            let service = node
-                .service_builder(&"IPC/Test".try_into().unwrap())
-                .publish_subscribe::<u64>()
-                .open_or_create()
+            // used for read/write operations
+            let mut buffer = String::with_capacity(128);
+
+            // immediately "shadow" the Stream we create, wrapping it in a BufReader.
+            // "shadowing" lets you re-use variable names. for more, see the Rust Book chapter 3.1.
+            let conn = Stream::connect(name).unwrap();
+            let mut conn = BufReader::new(conn);
+
+            // BufReader doesn't implement the Write Trait, so we use `get_mut()` to obtain
+            // a mutable reference to the Stream that the BufReader wraps. We write using that Stream.
+            // See the Rust Book chapter 4 if you are unfamiliar with references.
+            conn.get_mut()
+                .write_all(b"Hello, from the baton prototype (Rust lib called from C++)\n")
                 .unwrap();
 
-            let publisher = service.publisher_builder().create().unwrap();
+            // read the contents from the stream into the buffer -- we don't need a mutable reference here
+            // like above because BufReader implemenets the Read Trait.
+            conn.read_line(&mut buffer).unwrap();
 
-            let mut count = 0;
-            while node.wait(CYCLE_TIME).is_ok() && count < 5 {
-                let sample = publisher.loan_uninit().unwrap();
-                let sample = sample.write_payload(1234);
-                sample.send().unwrap();
-                println!("Sent!");
-                count += 1;
+            print!("[RUST] Server answered: {buffer}");
+
+            // send a bunch of data for the frequency test in one-second intervals
+            for _ in 0..3 {
+                for _ in 0..100000 {
+                    conn.get_mut().write_all(b"\n").unwrap();
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
         });
 
@@ -68,12 +87,12 @@ impl ThreadWrapper {
 
     pub fn stop(&mut self) {
         let Some(handle) = self.thread.take() else {
-            println!("No currently running thread.");
+            println!("[RUST] No currently running thread.");
             return;
         };
 
         let _ = handle.join();
-        println!("Thread stopped successfully!");
+        println!("[RUST] Thread stopped successfully!");
         self.thread = None;
     }
 }

@@ -12,12 +12,14 @@
 **/build/
 **/.DS_STORE
 **/target/
+**/output
 
 # Automated Build System
 **/.cache/
 **/subprojects/*
-**/!subprojects/*.wrap
-**/!subprojects/baton/
+!**/subprojects/*.wrap
+!**/subprojects/baton/
+**/subprojects/baton/ipcserv/
 
 # Unit Tests
 **/googletest
