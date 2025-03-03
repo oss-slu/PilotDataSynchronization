@@ -4,13 +4,13 @@ name: Meson Build System
 # Basically, only rebuilds and tests the project when C++ is changed
 on:
   push:
-    paths:
-      - "**.cpp"
-      - "**.h"
+    # paths:
+    #   - "**.cpp"
+    #   - "**.h"
   pull_request:
-    paths:
-      - "**.cpp"
-      - "**.h"
+    # paths:
+    #   - "**.cpp"
+    #   - "**.h"
   workflow_dispatch:
 
 jobs:
