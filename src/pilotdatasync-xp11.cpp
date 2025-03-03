@@ -10,7 +10,7 @@
 #include <cmath>
 #include <string>
 #include <thread>
-#include <memory> // meson ci build is yelling at me
+#include <memory>  // Remove this when we remove threading from C++. This is here to keep meson happy
 
 // #include "packet.cpp"
 

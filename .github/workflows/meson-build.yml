@@ -1,17 +1,16 @@
+---
 name: Meson Build System
 
-# Only runs when changes are detected on ".cpp" and ".h" files
 # Basically, only rebuilds and tests the project when C++ is changed
-# Commented that out so now it runs on every push
 on:
   push:
-    #paths:
-      # - "**.cpp"
-      # - "**.h"
+    paths:
+      - "**.cpp"
+      - "**.h"
   pull_request:
-    # paths:
-      # - "**.cpp"
-      # - "**.h"
+    paths:
+      - "**.cpp"
+      - "**.h"
   workflow_dispatch:
 
 jobs:
@@ -19,7 +18,7 @@ jobs:
     name: Build and Test on ${{ matrix.os }} with Meson
     runs-on: ${{ matrix.os }}
     strategy:
-      # Basically just runs the workflow on each of these OS's and each of these versions
+      # Basically just runs the workflow on each of these OS's
       # Right now, just worried about runing / building on Windows
       matrix: 
         os: [ windows-latest ]
@@ -48,21 +47,6 @@ jobs:
       - name: Test the Meson Project
         run: ./build/testsuite --verbose~
 
-
-
-
-      # https://github.com/marketplace/actions/meson-build 
-      # NOTE: This workflow is a couple years old, so it may not interact well with the current Meson.
-     # - name: Meson Build and Test
-      #  uses: BSFishy/meson-build@v1.0.3
-      #  with:
-      #    action: test      # build project and run unit tests
-          # directory: build
-         # setup-options: --cross-file win.ini   # meson setup CLI args
-          # options: --verbose
-          #meson-version: 1.7.0  # default is an old version --> use latest
-          #ninja-version: 1.12.1 # default is an old version --> use latest
-
       # if tests fail, upload a test log?
       #- name: Upload Test Log
       #  uses: actions/upload-artifact@v4
@@ -70,4 +54,3 @@ jobs:
       #  with:
       #    name: ${{ matrix.os }}_Meson_Testlog
       #    path: builddir/meson-logs/testlog.txt
-
