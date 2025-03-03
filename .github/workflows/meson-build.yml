@@ -4,28 +4,25 @@ name: Meson Build System
 # Basically, only rebuilds and tests the project when C++ is changed
 on:
   push:
-    # paths:
-    #   - "**.cpp"
-    #   - "**.h"
+    paths:
+      - "**.cpp"
+      - "**.h"
   pull_request:
-    # paths:
-    #   - "**.cpp"
-    #   - "**.h"
+    paths:
+      - "**.cpp"
+      - "**.h"
   workflow_dispatch:
 
 jobs:
   build:
     name: Build and Test on ${{ matrix.os }} with Meson
     runs-on: ${{ matrix.os }}
+
     strategy:
-      # Basically just runs the workflow on each of these OS's
-      # Right now, just worried about runing / building on Windows
       matrix: 
         os: [ windows-latest, macos-latest ]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -40,9 +37,10 @@ jobs:
         name: Download XPlane SDK using Windows Powershell
         run: ./utils/init.ps1
 
-      - if: matrix.os != 'windows-latest'
-        name: Download XPlane SDK using Mac/Linux Bash Script
-        run: ./utils/init.sh
+      # Commented out rn because there is existing winsock code in the program.
+      # - if: matrix.os != 'windows-latest'
+      #   name: Download XPlane SDK using Mac/Linux Bash Script
+      #   run: ./utils/init.sh
 
       - name: Setup and Build Meson Project
         run: | 
