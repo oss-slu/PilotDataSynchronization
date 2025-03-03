@@ -8,12 +8,11 @@
 #include "TCPClient.cpp"
 #include "threading-tools.h"
 #include <cmath>
+#include <memory> // Remove this when we remove threading from C++. This is here to keep meson happy
 #include <string>
 #include <thread>
-#include <memory>  // Remove this when we remove threading from C++. This is here to keep meson happy
 
 // #include "packet.cpp"
-
 
 #ifdef __cplusplus
 extern "C" {

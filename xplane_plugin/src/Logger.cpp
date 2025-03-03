@@ -98,13 +98,6 @@ public:
     }
   }
 
-
-//---------------------- Testing Function ONLY
-    int testMesonBuildSystem() {
-     
-        return 0; 
-    }
-
-
-
+  //---------------------- Testing Function ONLY
+  int testMesonBuildSystem() { return 0; }
 };
