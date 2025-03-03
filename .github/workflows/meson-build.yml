@@ -33,11 +33,16 @@ jobs:
 
       # I think I need to find a better place to put this requirements directory.
       # Right now, it is in the project root
-      - name: Install Dependencies using Python Pip
+      - name: Install Dependencies with Python Pip
         run: pip install -r ci_requirements.txt
 
-      - name: Download XPlane SDK using Windows Powershell
+      - if: ${{ matrix.os }} == 'windows-latest'
+        name: Download XPlane SDK using Windows Powershell
         run: ./utils/init.ps1
+
+      - if: ${{ matrix.os }} != 'windows-latest'
+        name: Download XPlane SDK using Mac/Linux Bash Script
+        run: ./utils/init.sh
 
       - name: Setup and Build Meson Project
         run: | 
