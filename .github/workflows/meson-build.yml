@@ -20,6 +20,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # This is a github actions workflow that sets up mingw on the computer. This may be out of date so be cautious
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -37,7 +44,7 @@ jobs:
           meson compile -C build
       - name: Test the Meson Project
         run: ./build/testsuite --verbose~
-        
+
       # if tests fail, upload a test log?
       #- name: Upload Test Log
       #  uses: actions/upload-artifact@v4
@@ -47,11 +54,18 @@ jobs:
       #    path: builddir/meson-logs/testlog.txt
 
 
-  build-on-macos:
+  build-on-ubuntu:
     name: Build and Test on MacOS with Meson
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # This is a github actions workflow that sets up mingw on the computer. This may be out of date so be cautious
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -60,10 +74,10 @@ jobs:
       # Right now, it is just in the project root.
       - name: Install Dependencies with Python Pip
         run: pip install -r ci_requirements.txt
-      - name: Download XPlane SDK using Mac/Linux Bash Script
+      - name: Download XPlane SDK using Ubuntu Bash Script
         run: ./utils/init.sh
 
-      - name: Cross-Compile Meson Project for Windows on MacOS
+      - name: Cross-Compile Meson Project for Windows on Ubuntu
         run: | 
           meson setup --cross-file win.ini build
           meson compile -C build
