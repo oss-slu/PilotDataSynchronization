@@ -74,7 +74,7 @@ lib = shared_library(
   # dependencies: [winsock, xplm, xpwidgets],
   include_directories: [inc_dir, lib_dir],
   cpp_args: compiler_args,
-  link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
+  # link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
   name_prefix: 'Pilot',
   name_suffix: 'xpl'
 )
