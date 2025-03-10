@@ -2,15 +2,15 @@
 // "Hello, World" plugin code found here:
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
+#include <cmath>
+#include <string>
+#include <thread>
 #include <vector>
 
 #include "Logger.cpp"
 #include "TCPClient.cpp"
+#include "subprojects/baton/lib.rs.h"
 #include "threading-tools.h"
-#include <cmath>
-#include <memory> // Remove this when we remove threading from C++. This is here to keep meson happy
-#include <string>
-#include <thread>
 
 // #include "packet.cpp"
 
@@ -60,6 +60,9 @@ static XPLMDataRef headingPilotRef;
 // thread handle for TCP
 static std::thread thread_handle;
 
+// baton handle
+rust::cxxbridge1::Box<ThreadWrapper> baton = new_wrapper();
+
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
 
@@ -69,15 +72,15 @@ float flight_loop(float inElapsedSinceLastCall,
   // currently sends a series of test packets. once the server is stable, we
   // will send the real data
   /* ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
-  for (int i = 1; i < 4; i++) {
-      ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
-      tq_ptr->push(tm);
-  }
-  ThreadMessage tm = { {}, true};
+for (int i = 1; i < 4; i++) {
+  ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
   tq_ptr->push(tm);
+}
+ThreadMessage tm = { {}, true};
+tq_ptr->push(tm);
 
-  // return 0.0 to deactivate the loop. otherwise, return val == number of secs
-  until next callback return 0.0; */
+// return 0.0 to deactivate the loop. otherwise, return val == number of secs
+until next callback return 0.0; */
 
   ThreadQueue *tq_ptr = (ThreadQueue *)inRefcon;
 
@@ -99,7 +102,7 @@ float flight_loop(float inElapsedSinceLastCall,
 
   // Send end execution message
   /*  ThreadMessage end_tm = { {}, true};
-   tq_ptr->push(end_tm); */
+tq_ptr->push(end_tm); */
 
   // Return 1.0 to call again in 1 second
   return 1.0;
@@ -256,27 +259,34 @@ PLUGIN_API void XPluginStop() {
   g_window = NULL;
 }
 
-PLUGIN_API void XPluginDisable(void) {}
+PLUGIN_API void XPluginDisable(void) { baton->stop(); }
 
 PLUGIN_API int XPluginEnable(void) {
   // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
 
   /*
-  // TCP server threading setup
-  ThreadQueue tq;
-  std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
-  thread_handle = std::thread(runTCP, tq_ptr);
+// TCP server threading setup
+ThreadQueue tq;
+std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
+thread_handle = std::thread(runTCP, tq_ptr);
 
-  // Register per-time-unit callback
-  XPLMCreateFlightLoop_t loop_params = {
-      .structSize = sizeof(loop_params),
-      .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-      .callbackFunc = flight_loop,
-      .refcon = tq_ptr.get()
-  };
-  XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
-  XPLMScheduleFlightLoop(id, 1.0, true);
-  */
+// Register per-time-unit callback
+XPLMCreateFlightLoop_t loop_params = {
+  .structSize = sizeof(loop_params),
+  .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
+  .callbackFunc = flight_loop,
+  .refcon = tq_ptr.get()
+};
+XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
+XPLMScheduleFlightLoop(id, 1.0, true);
+*/
+
+  // baton test
+  // auto thread_wrapper = new_wrapper();
+  // thread_wrapper->start();
+  // thread_wrapper->stop();
+  // baton = new_wrapper();
+  baton->start();
 
   return 1;
 }
@@ -471,4 +481,8 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
       "Packets Sent: " + to_string(instance->get_packets_sent());
   XPLMDrawString(col_white, l + 10, get_next_y_offset(), packets_sent.c_str(),
                  NULL, xplmFont_Proportional);
+
+  // BATON TEST
+  baton->send(currentPilotAirspeed);
+  //
 }

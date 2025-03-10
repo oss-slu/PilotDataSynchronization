@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iceoryx2 = "*"
+# iceoryx2 = "*"
+interprocess = "*"
 cxx = "1.0"
+crossbeam = "*"
 
 [build-dependencies]
 cxx-build = "1.0"
 
 [lib]
 crate-type = ["staticlib"]
+
+# Fat LTO (Link-Time Optimization) means that we take a big hit to compile speed.
+# In exchange, our cross-language code should run with minimal overhead.
+[profile.release]
+lto = "fat"

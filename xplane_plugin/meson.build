@@ -9,6 +9,7 @@ fs = import('fs')
 
 # these defines are necessary as required by XPlane
 compiler_args = [
+  '-std=c++20',
   '-DXPLM200',
   '-DXPLM210',
   '-DXPLM300',
@@ -68,12 +69,12 @@ lib = shared_library(
   'DataSync',
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
-  # dependencies: [winsock, xplm, xpwidgets, baton],
+  dependencies: [winsock, xplm, xpwidgets, baton],
   # baton dep temporarily removed while cross-compilation bug is handled
-  dependencies: [winsock, xplm, xpwidgets],
+  # dependencies: [winsock, xplm, xpwidgets],
   include_directories: [inc_dir, lib_dir],
   cpp_args: compiler_args,
-  link_args: ['-static-libstdc++', '-static-libgcc', '-static'],
+  # link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
   name_prefix: 'Pilot',
   name_suffix: 'xpl'
 )

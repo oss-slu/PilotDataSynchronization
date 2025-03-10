@@ -20,16 +20,16 @@ subprocess.run([
 ])
 
 shutil.copyfile(
-    f'{outdir}/x86_64-pc-windows-gnu/release/libbaton.lib',
-    outdir
+    f'{outdir}/x86_64-pc-windows-gnu/release/libbaton.a',
+    f'{outdir}/libbaton.a'
 )
 
 shutil.copyfile(
-    f'{outdir}/x86_64-pc-windows-gnu/cxxbridge/lib.rs.cc',
-    outdir
+    f'{outdir}/x86_64-pc-windows-gnu/cxxbridge/baton/src/lib.rs.cc',
+    f'{outdir}/lib.rs.cc'
 )
 
 shutil.copyfile(
-    f'{outdir}/x86_64-pc-windows-gnu/cxxbridge/lib.rs.h',
-    outdir
+    f'{outdir}/x86_64-pc-windows-gnu/cxxbridge/baton/src/lib.rs.h',
+    f'{outdir}/lib.rs.h'
 )
