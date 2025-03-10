@@ -87,7 +87,7 @@ fn main() -> iced::Result {
 
             buffer.clear();
 
-            // send frequency test
+            // send frequency test -- three seconds of receiving 100,000 dummy inputs per second to check stability
             println!("beginning frequency test...");
             let start = std::time::Instant::now();
             let mut recvs = vec![0, 0, 0];
@@ -108,6 +108,31 @@ fn main() -> iced::Result {
             }
 
             println!("recvs: {recvs:?}");
+
+            // one minute of receiving test data from the plugin
+            println!("Beginning 1MIN_RECV test...");
+            let start = std::time::Instant::now();
+            loop {
+                let elapsed = start.elapsed();
+                if elapsed >= Duration::from_secs(60) {
+                    break;
+                }
+
+                // TODO: Create display in GUI for this instead of printing to stdout. Just doing this for ease for the
+                // demo for the time being.
+                match conn.read_line(&mut buffer) {
+                    Ok(0) => {
+                        println!(
+                            "Other end terminated connection after {elapsed:?}. Test complete!"
+                        );
+                        break;
+                    }
+                    Ok(s) => println!("Got: {buffer} ({s} bytes)"),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(e) => panic!("Got err {e}"),
+                }
+            }
+            println!("1MIN_RECV test complete!");
 
             break;
         }

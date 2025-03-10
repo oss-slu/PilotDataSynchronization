@@ -60,6 +60,9 @@ static XPLMDataRef headingPilotRef;
 // thread handle for TCP
 static std::thread thread_handle;
 
+// baton handle
+rust::cxxbridge1::Box<ThreadWrapper> baton = new_wrapper();
+
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
 
@@ -292,7 +295,9 @@ PLUGIN_API void XPluginStop() {
     g_window = NULL;
 }
 
-PLUGIN_API void XPluginDisable(void) {}
+PLUGIN_API void XPluginDisable(void) {
+    baton->stop();
+}
 
 PLUGIN_API int XPluginEnable(void) {
     // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
@@ -315,9 +320,11 @@ PLUGIN_API int XPluginEnable(void) {
   */
 
     // baton test
-    auto thread_wrapper = new_wrapper();
-    thread_wrapper->start();
-    thread_wrapper->stop();
+    // auto thread_wrapper = new_wrapper();
+    // thread_wrapper->start();
+    // thread_wrapper->stop();
+    // baton = new_wrapper();
+    baton->start();
 
     return 1;
 }
@@ -581,4 +588,8 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon) {
         NULL,
         xplmFont_Proportional
     );
+
+    // BATON TEST
+    baton->send(currentPilotAirspeed);
+    //
 }
