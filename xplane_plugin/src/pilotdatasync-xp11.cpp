@@ -8,6 +8,7 @@
 #include "TCPClient.cpp"
 #include "threading-tools.h"
 #include <cmath>
+#include <memory> // Remove this when we remove threading from C++. This is here to keep meson happy
 #include <string>
 #include <thread>
 
