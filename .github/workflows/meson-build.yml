@@ -5,14 +5,10 @@ name: Meson Build System
 # Commented out to facilitate testing
 on:
   push:
-    branches:
-      - main
     # paths:
     #   - "**.cpp"
     #   - "**.h"
   pull_request:
-    branches:
-      - main
     # paths:
     #   - "**.cpp"
     #   - "**.h"
