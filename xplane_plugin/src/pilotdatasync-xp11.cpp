@@ -75,15 +75,15 @@ float flight_loop(
     // currently sends a series of test packets. once the server is stable, we
     // will send the real data
     /* ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
-  for (int i = 1; i < 4; i++) {
-      ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
-      tq_ptr->push(tm);
-  }
-  ThreadMessage tm = { {}, true};
-  tq_ptr->push(tm);
+for (int i = 1; i < 4; i++) {
+    ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
+    tq_ptr->push(tm);
+}
+ThreadMessage tm = { {}, true};
+tq_ptr->push(tm);
 
-  // return 0.0 to deactivate the loop. otherwise, return val == number of secs
-  until next callback return 0.0; */
+// return 0.0 to deactivate the loop. otherwise, return val == number of secs
+until next callback return 0.0; */
 
     ThreadQueue* tq_ptr = (ThreadQueue*)inRefcon;
 
@@ -108,7 +108,7 @@ float flight_loop(
 
     // Send end execution message
     /*  ThreadMessage end_tm = { {}, true};
-   tq_ptr->push(end_tm); */
+ tq_ptr->push(end_tm); */
 
     // Return 1.0 to call again in 1 second
     return 1.0;
@@ -303,21 +303,21 @@ PLUGIN_API int XPluginEnable(void) {
     // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
 
     /*
-  // TCP server threading setup
-  ThreadQueue tq;
-  std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
-  thread_handle = std::thread(runTCP, tq_ptr);
+// TCP server threading setup
+ThreadQueue tq;
+std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
+thread_handle = std::thread(runTCP, tq_ptr);
 
-  // Register per-time-unit callback
-  XPLMCreateFlightLoop_t loop_params = {
-      .structSize = sizeof(loop_params),
-      .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-      .callbackFunc = flight_loop,
-      .refcon = tq_ptr.get()
-  };
-  XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
-  XPLMScheduleFlightLoop(id, 1.0, true);
-  */
+// Register per-time-unit callback
+XPLMCreateFlightLoop_t loop_params = {
+    .structSize = sizeof(loop_params),
+    .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
+    .callbackFunc = flight_loop,
+    .refcon = tq_ptr.get()
+};
+XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
+XPLMScheduleFlightLoop(id, 1.0, true);
+*/
 
     // baton test
     // auto thread_wrapper = new_wrapper();
