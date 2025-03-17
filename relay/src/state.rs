@@ -7,5 +7,7 @@ pub(crate) struct State {
     pub elapsed_time: Duration,
     pub flicker: bool,
     pub thread_handle: Option<JoinHandle<()>>,
-    pub tx: Option<std::sync::mpsc::Sender<()>>,
+    pub tx_kill: Option<std::sync::mpsc::Sender<()>>,
+    pub rx_baton: Option<std::sync::mpsc::Receiver<f32>>,
+    pub latest_baton_send: Option<f32>,
 }

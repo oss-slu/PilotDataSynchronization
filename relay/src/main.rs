@@ -20,7 +20,9 @@ use interprocess::local_socket::{
 };
 
 fn main() -> iced::Result {
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx_kill, rx_kill) = std::sync::mpsc::channel();
+
+    let (txx, rxx) = std::sync::mpsc::channel();
     // let _ = tx.send(()); // temp
     let handle = thread::spawn(move || {
         // sample pulled directly from `interprocess` documentation
@@ -49,7 +51,7 @@ fn main() -> iced::Result {
         let mut buffer = String::with_capacity(128);
 
         for conn in listener.incoming() {
-            let conn = match (rx.try_recv(), conn) {
+            let conn = match (rx_kill.try_recv(), conn) {
                 (Ok(()), _) => return,
                 (_, Ok(c)) => {
                     println!("success");
@@ -100,7 +102,10 @@ fn main() -> iced::Result {
                     _ => break,
                 };
                 match conn.read_line(&mut buffer) {
-                    Ok(0) => continue,
+                    /* Ok(0) => {
+                        println!("Termination signal received from baton");
+                        continue;
+                    } */
                     Ok(_) => recvs[idx] += 1,
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                     _ => panic!(),
@@ -108,6 +113,7 @@ fn main() -> iced::Result {
             }
 
             println!("recvs: {recvs:?}");
+            buffer.clear();
 
             // one minute of receiving test data from the plugin
             println!("Beginning 1MIN_RECV test...");
@@ -121,13 +127,28 @@ fn main() -> iced::Result {
                 // TODO: Create display in GUI for this instead of printing to stdout. Just doing this for ease for the
                 // demo for the time being.
                 match conn.read_line(&mut buffer) {
-                    Ok(0) => {
+                    /* Ok(0) => {
                         println!(
                             "Other end terminated connection after {elapsed:?}. Test complete!"
                         );
                         break;
+                    } */
+                    Ok(s) if s == 0 || buffer.len() == 0 => {
+                        buffer.clear();
+                        continue;
                     }
-                    Ok(s) => println!("Got: {buffer} ({s} bytes)"),
+                    Ok(s) => {
+                        // remove trailing newline
+                        let _ = buffer.pop();
+
+                        // display
+                        println!("Got: {buffer} ({s} bytes read)");
+
+                        if let Ok(num) = buffer.parse::<f32>() {
+                            let _ = txx.send(num);
+                        }
+                        buffer.clear();
+                    }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                     Err(e) => panic!("Got err {e}"),
                 }
@@ -139,6 +160,7 @@ fn main() -> iced::Result {
     });
 
     iced::application("RELAY", update, view)
+        .window_size((250.0, 100.0))
         .exit_on_close_request(false)
         .subscription(subscribe)
         .run_with(|| {
@@ -147,7 +169,9 @@ fn main() -> iced::Result {
                 elapsed_time: Duration::ZERO,
                 flicker: false,
                 thread_handle: Some(handle),
-                tx: Some(tx),
+                tx_kill: Some(tx_kill),
+                rx_baton: Some(rxx),
+                latest_baton_send: None,
             };
             (state, Task::none())
         })
@@ -156,13 +180,16 @@ fn main() -> iced::Result {
 fn subscribe(_state: &State) -> iced::Subscription<Message> {
     use Message as M;
 
+    // Subscription for displaying elapsed time -- temporary
     let time_sub = every(Duration::from_secs(1)).map(|_| M::Update);
-    let flicker_sub = every(Duration::from_millis(500)).map(|_| M::Flicker);
+
+    // Subscription to re-check the baton connection
+    let baton_sub = every(Duration::from_millis(10)).map(|_| M::BatonMessage);
 
     // Subscription to send a message when the window close button (big red X) is clicked.
     // Needed to execute cleanup operations before actually shutting down, such as saving etc
     let window_close = iced::window::close_requests().map(|id| M::WindowCloseRequest(id));
 
     // combine and return all subscriptions as one subscription to satisfy the return type
-    iced::Subscription::batch([time_sub, flicker_sub, window_close])
+    iced::Subscription::batch([time_sub, baton_sub, window_close])
 }

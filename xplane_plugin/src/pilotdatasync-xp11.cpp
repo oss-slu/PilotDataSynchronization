@@ -483,6 +483,6 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
                  NULL, xplmFont_Proportional);
 
   // BATON TEST
-  baton->send(currentPilotAirspeed);
+  baton->send(currentPilotElevation);
   //
 }

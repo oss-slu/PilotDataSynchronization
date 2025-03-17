@@ -7,10 +7,9 @@ Keep in mind that what is shown here is not entirely typical of Rust code, as th
 in order to facilitate the aforementioned interoperability.
 */
 
-use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use interprocess::local_socket::{
-    prelude::*, GenericFilePath, GenericNamespaced, ListenerNonblockingMode, NameType, Stream,
-    ToFsName,
+    prelude::*, GenericFilePath, GenericNamespaced, NameType, Stream, ToFsName,
 };
 use std::{
     io::{prelude::*, BufReader},
@@ -80,17 +79,17 @@ impl ThreadWrapper {
             // like above because BufReader implemenets the Read Trait.
             conn.read_line(&mut buffer).unwrap();
 
-            // print!("[RUST] Server answered: {buffer}");
+            print!("[RUST] Server answered: {buffer}");
 
             // send a bunch of data for the frequency test in one-second intervals
             for _ in 0..3 {
-                for _ in 0..100000 {
-                    let _ = conn.get_mut().write_all(b"\n");
+                for _ in 0..5 {
+                    let _ = conn.get_mut().write_all(b"0\n");
                 }
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
-            let _ = conn.get_mut().flush();
+            // let _ = conn.get_mut().flush();
 
             /* loop {
                 match rx.try_recv() {
@@ -107,17 +106,18 @@ impl ThreadWrapper {
             let start = std::time::Instant::now();
             loop {
                 if start.elapsed() >= std::time::Duration::from_secs(60) {
+                    println!("[RUST] Max time exceeded, exiting 1MIN_RECV test");
                     break;
                 }
 
                 // dummy send
-                let _ = conn.get_mut().write_all(b"123\n");
+                // let _ = conn.get_mut().write_all(b"123\n");
 
                 for message in rx.try_iter() {
                     let _ = match message {
                         ChannelSignal::Send(n) => {
-                            let s = format!("{n}\n");
-                            conn.get_mut().write_all(s.as_bytes())
+                            let s: String = format!("{n}\n");
+                            let _ = conn.get_mut().write_all(s.as_bytes());
                         }
                         ChannelSignal::Stop => return,
                     };
@@ -130,10 +130,11 @@ impl ThreadWrapper {
 
     pub fn stop(&mut self) {
         let Some(handle) = self.thread.take() else {
-            // println!("[RUST] No currently running thread.");
+            println!("[RUST] No currently running thread.");
             return;
         };
 
+        println!("[RUST] Attempting to stop thread...");
         // Signal the thread to stop operations
         if let Some(tx) = &self.tx {
             let _ = tx.send(ChannelSignal::Stop);
@@ -142,12 +143,12 @@ impl ThreadWrapper {
         // Block until thread completes
         let _ = handle.join();
 
-        // println!("[RUST] Thread stopped successfully!");
+        println!("[RUST] Thread stopped successfully!");
         self.thread = None;
     }
 
     fn send(&mut self, num: f32) {
-        // println!("[RUST] Attempted to send {num:?}");
+        println!("[RUST] Attempted to send {num:?}");
         if let Some(tx) = &self.tx {
             let _ = tx.send(ChannelSignal::Send(num));
         }

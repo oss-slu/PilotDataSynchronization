@@ -11,13 +11,9 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.elapsed_time += Duration::from_secs(1);
             Task::none()
         }
-        M::Flicker => {
-            state.flicker = !state.flicker;
-            Task::none()
-        }
         M::WindowCloseRequest(id) => {
             // pre-shutdown operations go here
-            if let Some(ref tx) = state.tx {
+            if let Some(ref tx) = state.tx_kill {
                 let _ = tx.send(());
             }
 
@@ -36,6 +32,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
 
             // necessary to actually shut down the window, otherwise the close button will appear to not work
             iced::window::close(id)
+        }
+        M::BatonMessage => {
+            if let Some(num) = state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                state.latest_baton_send = Some(num);
+            }
+            Task::none()
         }
         _ => Task::none(),
     }
