@@ -115,8 +115,7 @@ fn main() -> iced::Result {
             println!("recvs: {recvs:?}");
             buffer.clear();
 
-            // one minute of receiving test data from the plugin
-            println!("Beginning 1MIN_RECV test...");
+            // Continuously receive data from plugin
             let start = std::time::Instant::now();
             loop {
                 let elapsed = start.elapsed();
@@ -127,12 +126,6 @@ fn main() -> iced::Result {
                 // TODO: Create display in GUI for this instead of printing to stdout. Just doing this for ease for the
                 // demo for the time being.
                 match conn.read_line(&mut buffer) {
-                    /* Ok(0) => {
-                        println!(
-                            "Other end terminated connection after {elapsed:?}. Test complete!"
-                        );
-                        break;
-                    } */
                     Ok(s) if s == 0 || buffer.len() == 0 => {
                         buffer.clear();
                         continue;
@@ -153,7 +146,6 @@ fn main() -> iced::Result {
                     Err(e) => panic!("Got err {e}"),
                 }
             }
-            println!("1MIN_RECV test complete!");
 
             break;
         }

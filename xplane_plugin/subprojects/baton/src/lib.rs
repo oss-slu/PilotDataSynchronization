@@ -44,7 +44,7 @@ impl ThreadWrapper {
     pub fn start(&mut self) {
         // Rust does not have nulls. If you do not understand Options, read the Rust Book chapter 6.1
         let None = self.thread else {
-            // println!("Thread already started!");
+            println!("Thread already started!");
             return;
         };
 
@@ -89,30 +89,8 @@ impl ThreadWrapper {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
-            // let _ = conn.get_mut().flush();
-
-            /* loop {
-                match rx.try_recv() {
-                    Ok(ChannelSignal::Stop) => return,
-                    Ok(ChannelSignal::Send(n)) => {
-                        let _ = conn.get_mut().write_all(n.to_string().as_bytes());
-                    }
-                    Err(TryRecvError::Disconnected) => return,
-                    Err(TryRecvError::Empty) => thread::sleep(std::time::Duration::from_millis(50)),
-                }
-            } */
-
-            // 1MIN_RECV test
-            let start = std::time::Instant::now();
+            // Continuously send values
             loop {
-                if start.elapsed() >= std::time::Duration::from_secs(60) {
-                    println!("[RUST] Max time exceeded, exiting 1MIN_RECV test");
-                    break;
-                }
-
-                // dummy send
-                // let _ = conn.get_mut().write_all(b"123\n");
-
                 for message in rx.try_iter() {
                     let _ = match message {
                         ChannelSignal::Send(n) => {
