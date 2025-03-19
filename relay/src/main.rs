@@ -116,13 +116,7 @@ fn main() -> iced::Result {
             buffer.clear();
 
             // Continuously receive data from plugin
-            let start = std::time::Instant::now();
             loop {
-                let elapsed = start.elapsed();
-                if elapsed >= Duration::from_secs(60) {
-                    break;
-                }
-
                 // TODO: Create display in GUI for this instead of printing to stdout. Just doing this for ease for the
                 // demo for the time being.
                 match conn.read_line(&mut buffer) {
@@ -146,8 +140,6 @@ fn main() -> iced::Result {
                     Err(e) => panic!("Got err {e}"),
                 }
             }
-
-            break;
         }
     });
 
@@ -159,7 +151,6 @@ fn main() -> iced::Result {
             // for pre-run state initialization
             let state = State {
                 elapsed_time: Duration::ZERO,
-                flicker: false,
                 thread_handle: Some(handle),
                 tx_kill: Some(tx_kill),
                 rx_baton: Some(rxx),
