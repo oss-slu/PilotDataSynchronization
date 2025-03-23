@@ -6,6 +6,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <memory>
 
 #include "Logger.cpp"
 #include "TCPClient.cpp"
