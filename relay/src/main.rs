@@ -2,145 +2,24 @@ mod message;
 mod state;
 mod update;
 mod view;
+mod ipc;
 
-use std::{
-    io::{BufRead, BufReader, Write},
-    thread,
-};
+use std::thread;
 
-use self::{message::Message, state::State, update::update, view::view};
+use self::{message::Message, state::State, update::update, view::view, ipc::ipc_connection_loop};
 
 use iced::{
     time::{every, Duration},
     Task,
 };
-use interprocess::local_socket::{
-    traits::{Listener, ListenerExt},
-    GenericNamespaced, ListenerOptions, ToNsName,
-};
 
 fn main() -> iced::Result {
+    // Create initial IPC Connection and Thread
     let (tx_kill, rx_kill) = std::sync::mpsc::channel();
-
     let (txx, rxx) = std::sync::mpsc::channel();
-    // let _ = tx.send(()); // temp
-    let handle = thread::spawn(move || {
-        // sample pulled directly from `interprocess` documentation
-
-        let printname = "baton.sock";
-        let name = printname.to_ns_name::<GenericNamespaced>().unwrap();
-
-        let opts = ListenerOptions::new().name(name);
-
-        let listener = match opts.create_sync() {
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                eprintln!(
-                    "Error: could not start server because the socket file is occupied. Please check if 
-                    {printname} is in use by another process and try again."
-                );
-                return;
-            }
-            x => x.unwrap(),
-        };
-        listener
-            .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
-            .expect("Error setting non-blocking mode on listener");
-
-        eprintln!("Server running at {printname}");
-
-        let mut buffer = String::with_capacity(128);
-
-        for conn in listener.incoming() {
-            let conn = match (rx_kill.try_recv(), conn) {
-                (Ok(()), _) => return,
-                (_, Ok(c)) => {
-                    println!("success");
-                    c
-                }
-                (_, Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                (_, Err(e)) => {
-                    eprintln!("Incoming connection failed: {e}");
-                    continue;
-                }
-            };
-
-            let mut conn = BufReader::new(conn);
-            println!("Incoming connection!");
-
-            match conn.read_line(&mut buffer) {
-                Ok(_) => (),
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                _ => panic!(),
-            }
-
-            let write_res = conn
-                .get_mut()
-                .write_all(b"Hello, from the relay prototype (Rust)!\n");
-
-            match write_res {
-                Ok(_) => (),
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                _ => panic!(),
-            }
-
-            print!("Client answered: {buffer}");
-
-            buffer.clear();
-
-            // send frequency test -- three seconds of receiving 100,000 dummy inputs per second to check stability
-            println!("beginning frequency test...");
-            let start = std::time::Instant::now();
-            let mut recvs = vec![0, 0, 0];
-            loop {
-                let elapsed = std::time::Instant::now() - start;
-                let idx = match elapsed {
-                    dur if dur < Duration::from_secs(1) => 0,
-                    dur if dur < Duration::from_secs(2) => 1,
-                    dur if dur < Duration::from_secs(3) => 2,
-                    _ => break,
-                };
-                match conn.read_line(&mut buffer) {
-                    /* Ok(0) => {
-                        println!("Termination signal received from baton");
-                        continue;
-                    } */
-                    Ok(_) => recvs[idx] += 1,
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
-                }
-            }
-
-            println!("recvs: {recvs:?}");
-            buffer.clear();
-
-            // Continuously receive data from plugin
-            loop {
-                // TODO: Create display in GUI for this instead of printing to stdout. Just doing this for ease for the
-                // demo for the time being.
-                match conn.read_line(&mut buffer) {
-                    Ok(s) if s == 0 || buffer.len() == 0 => {
-                        buffer.clear();
-                        continue;
-                    }
-                    Ok(s) => {
-                        // remove trailing newline
-                        let _ = buffer.pop();
-
-                        // display
-                        println!("Got: {buffer} ({s} bytes read)");
-
-                        if let Ok(num) = buffer.parse::<f32>() {
-                            let _ = txx.send(num);
-                        }
-                        buffer.clear();
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    Err(e) => panic!("Got err {e}"),
-                }
-            }
-        }
+    let ipc_connection_handle = thread::spawn(move || {
+        println!("Initial IPC Connection!");
+        ipc_connection_loop(rx_kill, txx)
     });
 
     iced::application("RELAY", update, view)
@@ -151,7 +30,7 @@ fn main() -> iced::Result {
             // for pre-run state initialization
             let state = State {
                 elapsed_time: Duration::ZERO,
-                thread_handle: Some(handle),
+                ipc_conn_thread_handle: Some(ipc_connection_handle),
                 tx_kill: Some(tx_kill),
                 rx_baton: Some(rxx),
                 latest_baton_send: None,

@@ -1,5 +1,5 @@
 use iced::{
-    widget::{column, text},
+    widget::{column, text, button},
     Element,
 };
 
@@ -13,7 +13,11 @@ pub(crate) fn view(state: &State) -> Element<Message> {
 
     column![
         text(format!("Elapsed time: {:?}", state.elapsed_time)),
-        text(baton_data)
+        text(baton_data),
+        // create element for baton connection status with a funny emoji or something
+
+        // create button for reconnect
+        button("Reset Baton Connection!").on_press(Message::BatonReconnectMessage)
     ]
     .into()
 }
