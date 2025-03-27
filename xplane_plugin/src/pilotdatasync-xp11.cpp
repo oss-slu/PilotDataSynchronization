@@ -3,10 +3,10 @@
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
 #include <cmath>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-#include <memory>
 
 #include "Logger.cpp"
 #include "TCPClient.cpp"
