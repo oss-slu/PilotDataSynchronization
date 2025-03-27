@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Message {
     // generic time update signal
     Update,
@@ -8,4 +8,7 @@ pub(crate) enum Message {
 
     // signal to check the baton thread
     BatonMessage,
+
+    // signal to reconnect the baton connection
+    BatonReconnectMessage
 }
