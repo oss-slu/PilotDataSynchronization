@@ -7,9 +7,20 @@ use std::io::{BufRead, BufReader, Write};
 
 use iced::time::Duration;
 
+/*
+Retry connection clarification: 
+- Relay should not restart the connection from our side manually 
+    --> only autodetect and drop the current connection using the same logic we have now
+- if a new connection is attempted by xplane, then relay needs to be able to handle that connection. 
+- MAYBE: if new conn detected, then try to write to baton, then if fail drop the connection
+- MAYBE: pass a shutdown/reconnect message from baton to relay?
+- really, the only connection loop i need to call again is the "for conn in listener.incoming()" loop
+*/
+
+
+
 
 // Pulled the IPC connection loop out into it's own crate/function
-// This does break the simple file structure we had, yes, but this seems like the best place to define the function.
 pub (crate) fn ipc_connection_loop(rx_kill: std::sync::mpsc::Receiver<()>, txx: std::sync::mpsc::Sender<f32>) {
     println!("ipc_connection_loop called!");
 
@@ -19,13 +30,21 @@ pub (crate) fn ipc_connection_loop(rx_kill: std::sync::mpsc::Receiver<()>, txx: 
     let opts = ListenerOptions::new().name(name);
 
     let listener = match opts.create_sync() {
+        Ok(x) => x,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
             eprintln!(
                 "Error: could not start server because the socket file is occupied. Please check if {printname} is in use by another process and try again."
             );
             return;
-        }
-        x => x.unwrap(),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("Error: could not start server because the OS denied permission. This error is currently being workshopped: \n{e}");
+            return;
+        },
+        Err(e) => {
+            eprintln!("Other Error: {e}");
+            return;
+        },
     };
 
     listener
