@@ -31,9 +31,9 @@ fn main() -> iced::Result {
     // Connect to the server
 
     let (send, recv) = std::sync::mpsc::channel::<channelMessage>();
-    let tcp_onnection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
+    let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
         Ok(mut stream) => {
-            println!("Successfull connected.");
+            println!("Successfully connected.");
             let message = channelMessage::CONNECT;
             send.send(message);
         }
