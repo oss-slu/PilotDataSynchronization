@@ -1,3 +1,3 @@
-pub enum channelMessage {
-    CONNECT,
+pub enum ChannelMessage {
+    Connect,
 }
