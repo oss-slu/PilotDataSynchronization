@@ -3,6 +3,12 @@ mod state;
 mod update;
 mod view;
 
+use std::io::Read;
+use std::net::TcpStream;
+use std::str::from_utf8;
+mod channel;
+use channel::channelMessage;
+
 use std::{
     io::{BufRead, BufReader, Write},
     thread,
@@ -20,6 +26,23 @@ use interprocess::local_socket::{
 };
 
 fn main() -> iced::Result {
+    //tcp connection
+
+    // Connect to the server
+
+    let (send, recv) = std::sync::mpsc::channel::<channelMessage>();
+    let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
+        Ok(mut stream) => {
+            println!("Successfully connected.");
+            let message = channelMessage::CONNECT;
+            send.send(message);
+        }
+
+        Err(e) => {
+            println!("Connection failed: {}", e);
+        }
+    });
+
     let (tx_kill, rx_kill) = std::sync::mpsc::channel();
 
     let (txx, rxx) = std::sync::mpsc::channel();
