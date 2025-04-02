@@ -17,8 +17,14 @@ fn main() -> iced::Result {
     // Create initial IPC Connection and Thread
     let (tx_kill, rx_kill) = std::sync::mpsc::channel();
     let (txx, rxx) = std::sync::mpsc::channel();
+
+    
+
     let ipc_connection_handle = thread::spawn(move || {
         println!("Initial IPC Connection!");
+
+        // stick the ListenerOptions() object code back in here
+
         ipc_connection_loop(rx_kill, txx)
     });
 

@@ -9,6 +9,8 @@ use iced::time::Duration;
 
 /*
 Retry connection clarification: 
+- relay should support Baton new connection NOT relay reconnect
+
 - Relay should not restart the connection from our side manually 
     --> only autodetect and drop the current connection using the same logic we have now
 - if a new connection is attempted by xplane, then relay needs to be able to handle that connection. 
