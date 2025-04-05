@@ -2,12 +2,15 @@ use std::thread::JoinHandle;
 
 use iced::time::Duration;
 
+use crate::IpcThreadMessage;
+
 #[derive(Default)]
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
     pub ipc_conn_thread_handle: Option<JoinHandle<()>>,
     pub tx_kill: Option<std::sync::mpsc::Sender<()>>,
-    pub rx_baton: Option<std::sync::mpsc::Receiver<f32>>,
-    pub latest_baton_send: Option<f32>,
+    pub rx_baton: Option<std::sync::mpsc::Receiver<IpcThreadMessage>>,
+    pub latest_baton_send: Option<String>,
+    pub active_baton_connection: bool,
 }
