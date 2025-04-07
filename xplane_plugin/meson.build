@@ -43,7 +43,6 @@ baton = baton_subp.get_variable('baton_dep')
 lib = shared_library(
   'DataSync',
   'src/pilotdatasync-xp11.cpp',
-  'src/threading-tools.cpp',
   dependencies: [winsock, xplm, xpwidgets, xpcpp, baton],
   include_directories: [inc_dir],
   cpp_args: compiler_args,
