@@ -39,15 +39,13 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-
-      M::ConnectionMessage => {
-        println!("Check Connection Status");
-        if let Some(status) = state.recv.as_ref().and_then(|recv| recv.try_recv().ok()){
-            state.connection_status = Some(status)
-        }                                                                                           
-        Task::none()
-            
-        },
+        M::ConnectionMessage => {
+            println!("Check Connection Status");
+            if let Some(status) = state.recv.as_ref().and_then(|recv| recv.try_recv().ok()) {
+                state.connection_status = status
+            }
+            Task::none()
+        }
         _ => Task::none(),
     }
 }

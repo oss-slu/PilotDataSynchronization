@@ -179,7 +179,7 @@ fn main() -> iced::Result {
                 rx_baton: Some(rxx),
                 latest_baton_send: None,
                 recv: Some(recv),
-                connection_status: None,
+                connection_status: ChannelMessage::Disconnected,
             };
             (state, Task::none())
         })
