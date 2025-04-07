@@ -67,21 +67,18 @@ impl Baton {
             let mut buffer = String::with_capacity(128);
 
             // Connection retry loop with an exponential backoff capped at 5 seconds
-            let conn;
             let mut retry_delay = Duration::from_millis(100);
-            loop {
+            let conn = loop {
                 match Stream::connect(name.borrow()) {
-                    Ok(stream) => {
-                        conn = stream;
-                        break;
-                    }
+                    Ok(stream) => break stream,
                     Err(e) => {
                         println!("Failed to connect: {e}. Retrying in {:?}...", retry_delay);
                         thread::sleep(retry_delay);
                         retry_delay = (retry_delay * 2).min(Duration::from_secs(5));
                     }
                 };
-            }
+            };
+
             // immediately "shadow" the Stream we create, wrapping it in a BufReader.
             // "shadowing" lets you re-use variable names. for more, see the Rust Book chapter 3.1.
             conn.set_nonblocking(true).unwrap();
