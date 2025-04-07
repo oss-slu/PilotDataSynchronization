@@ -19,17 +19,9 @@ compiler_args = [
 add_project_arguments('-Llib/SDK/Libraries/Win', language: 'cpp')
 
 # includes
-inc_dir = include_directories('include', 'lib/SDK/CHeaders/Widgets/', 'lib/SDK/CHeaders/XPLM/')
+inc_dir = include_directories('include')
 
 compiler = meson.get_compiler('cpp')
-
-# slightly hacky method of retrieving the required absolute path to the precomp
-# libs until I find a better way
-lib_files = files('lib/SDK/Libraries/Win/XPLM_64.lib')
-lib_path = lib_files[0].full_path().replace('XPLM_64.lib', '')
-message(lib_path)
-  
-lib_dir = include_directories('lib/SDK/Libraries/Win/')
 
 # dependencies
 winsock = compiler.find_library(
@@ -41,6 +33,7 @@ winsock = compiler.find_library(
 xplane_sdk_proj = subproject('x-plane-sdk')
 xplm = xplane_sdk_proj.get_variable('xplm_dep')
 xpwidgets = xplane_sdk_proj.get_variable('xpwidgets_dep')
+xpcpp = xplane_sdk_proj.get_variable('xpcpp_dep')
 
 # rust library from subproject
 baton_subp = subproject('baton')
@@ -51,8 +44,8 @@ lib = shared_library(
   'DataSync',
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
-  dependencies: [winsock, xplm, xpwidgets, baton],
-  include_directories: [inc_dir, lib_dir],
+  dependencies: [winsock, xplm, xpwidgets, xpcpp, baton],
+  include_directories: [inc_dir],
   cpp_args: compiler_args,
   link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
   name_prefix: 'Pilot',
@@ -64,7 +57,6 @@ if host_machine.system() == 'windows'
 else
     test_args = []
 endif
-
 
 # gtest
 gtest_proj = subproject('gtest')

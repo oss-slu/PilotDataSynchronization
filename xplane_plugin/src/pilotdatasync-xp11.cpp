@@ -406,25 +406,25 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
   // Draw Elevation in window
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 elevationFlightmodelStr.c_str(), NULL, xplmFont_Proportional);
+                 (char*)elevationFlightmodelStr.c_str(), NULL, xplmFont_Proportional);
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 elevationPilotStr.c_str(), NULL, xplmFont_Proportional);
+                 (char*)elevationPilotStr.c_str(), NULL, xplmFont_Proportional);
   // Draw Airspeed in window
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 airspeedFlightmodelStr.c_str(), NULL, xplmFont_Proportional);
+                (char*) airspeedFlightmodelStr.c_str(), NULL, xplmFont_Proportional);
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 airspeedPilotStr.c_str(), NULL, xplmFont_Proportional);
+                (char*) airspeedPilotStr.c_str(), NULL, xplmFont_Proportional);
   // Draw Vertical Velocity in window
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 verticalVelocityFlightmodelStr.c_str(), NULL,
+                (char*) verticalVelocityFlightmodelStr.c_str(), NULL,
                  xplmFont_Proportional);
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 verticalVelocityPilotStr.c_str(), NULL, xplmFont_Proportional);
+                 (char*)verticalVelocityPilotStr.c_str(), NULL, xplmFont_Proportional);
   // Draw Heading in window
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 headingFlightmodelStr.c_str(), NULL, xplmFont_Proportional);
+                (char*) headingFlightmodelStr.c_str(), NULL, xplmFont_Proportional);
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 headingPilotStr.c_str(), NULL, xplmFont_Proportional);
+                (char*) headingPilotStr.c_str(), NULL, xplmFont_Proportional);
 
   Logger *instance = Logger::getInstance();
   if (instance == nullptr) {
@@ -432,12 +432,12 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   }
 
   // blank line
-  XPLMDrawString(col_white, l + 10, get_next_y_offset(), string("").c_str(),
+  XPLMDrawString(col_white, l + 10, get_next_y_offset(), (char*)string("").c_str(),
                  NULL, xplmFont_Proportional);
 
   string dashboard_header = "Packet Data:";
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 dashboard_header.c_str(), NULL, xplmFont_Proportional);
+                 (char*)dashboard_header.c_str(), NULL, xplmFont_Proportional);
 
   MsgLogType status = instance->get_last_status();
   string status_str;
@@ -475,12 +475,12 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   };
 
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 string("LAST STATUS: " + status_str).c_str(), NULL,
+                 (char*)string("LAST STATUS: " + status_str).c_str(), NULL,
                  xplmFont_Proportional);
 
   string packets_sent =
       "Packets Sent: " + to_string(instance->get_packets_sent());
-  XPLMDrawString(col_white, l + 10, get_next_y_offset(), packets_sent.c_str(),
+  XPLMDrawString(col_white, l + 10, get_next_y_offset(), (char*)packets_sent.c_str(),
                  NULL, xplmFont_Proportional);
 
   // BATON TEST
