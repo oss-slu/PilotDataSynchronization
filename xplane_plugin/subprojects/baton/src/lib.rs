@@ -8,13 +8,14 @@ in order to facilitate the aforementioned interoperability.
 */
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use cxx::CxxVector;
 use interprocess::local_socket::{
     prelude::*, GenericFilePath, GenericNamespaced, NameType, Stream, ToFsName,
 };
 use std::{
     io::{prelude::*, BufReader},
     thread,
-    time::Duration
+    time::Duration,
 };
 
 // This defines the interface for the C++ codegen. This is where functions are exposed to the C++ side.
@@ -29,7 +30,7 @@ mod ffi {
 
         fn stop(&mut self);
 
-        fn send(&mut self, num: f32);
+        fn send(&mut self, nums: &CxxVector<f32>);
 
         fn new_wrapper() -> Box<ThreadWrapper>;
     }
@@ -71,12 +72,12 @@ impl ThreadWrapper {
                     Ok(stream) => {
                         conn = stream;
                         break;
-                    },
+                    }
                     Err(e) => {
                         println!("Failed to connect: {e}. Retrying in {:?}...", retry_delay);
                         thread::sleep(retry_delay);
                         retry_delay = (retry_delay * 2).min(Duration::from_secs(5));
-                    },
+                    }
                 };
             }
             // immediately "shadow" the Stream we create, wrapping it in a BufReader.
@@ -113,7 +114,10 @@ impl ThreadWrapper {
                             let s: String = format!("{n}\n");
                             let _ = conn.get_mut().write_all(s.as_bytes());
                         }
-                        ChannelSignal::Stop => return,
+                        ChannelSignal::Stop => {
+                            let _ = conn.get_mut().write_all("SHUTDOWN".as_bytes());
+                            return;
+                        }
                     };
                 }
             }
@@ -141,10 +145,14 @@ impl ThreadWrapper {
         self.thread = None;
     }
 
-    fn send(&mut self, num: f32) {
-        println!("[RUST] Attempted to send {num:?}");
+    fn send(&mut self, nums: &CxxVector<f32>) {
+        let s = nums
+            .into_iter()
+            .fold(String::new(), |acc, num| format!("{acc};{num}"));
+        // let s = format!("{num1};{num2};{num3};{num4}\n");
+        println!("[RUST] Attempted to send {s}");
         if let Some(tx) = &self.tx {
-            let _ = tx.send(ChannelSignal::Send(num));
+            let _ = tx.send(ChannelSignal::Send(s));
         }
     }
 }
@@ -155,5 +163,5 @@ pub fn new_wrapper() -> Box<ThreadWrapper> {
 
 enum ChannelSignal {
     Stop,
-    Send(f32),
+    Send(String),
 }

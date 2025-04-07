@@ -484,6 +484,8 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
                  NULL, xplmFont_Proportional);
 
   // BATON TEST
-  baton->send(currentPilotElevation);
+  vector<float> send_to_baton = { currentPilotElevation, currentPilotAirspeed, currentPilotHeading, currentPilotVerticalVelocity };
+  // baton->send(currentPilotElevation);
+  baton->send(send_to_baton);
   //
 }
