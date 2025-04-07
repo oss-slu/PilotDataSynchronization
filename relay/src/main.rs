@@ -3,8 +3,16 @@ mod message;
 mod state;
 mod update;
 mod view;
+mod channel;
+use channel::ChannelMessage;
 
-use std::thread;
+use std::{
+    io::{BufRead, BufReader, Write, Read},
+    net::TcpStream,
+    str::from_utf8,
+    sync::mpsc::{Receiver, Sender},
+    thread,
+};
 
 use self::{
     ipc::ipc_connection_loop,
@@ -19,11 +27,25 @@ use iced::{
     Task, Theme,
 };
 
-use std::sync::mpsc::{Receiver, Sender};
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
 
 fn main() -> iced::Result {
+    //tcp connection
+    // Connect to the server
+    let (send, recv) = std::sync::mpsc::channel::<ChannelMessage>();
+    let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
+        Ok(mut stream) => {
+            println!("Successfully connected.");
+            let message = ChannelMessage::Connect;
+            send.send(message);
+        }
+
+        Err(e) => {
+            println!("Connection failed: {}", e);
+        }
+    });
+
     // Communication channels between the main_gui_thread and the ipc_connection_thread
     // tx_kill = transmit FROM main_gui_thread TO ipc_thread
     // named txx_kill because the only thing it does rn is send a kill message to the thread. Can be renamed
