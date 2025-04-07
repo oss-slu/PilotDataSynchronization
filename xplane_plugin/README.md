@@ -8,7 +8,7 @@ This project is designed to extract key data from the X-Plane flight simulator, 
 
 ## Prerequisites
 To run the code, ensure you have the following packages installed using your preferred package manager:
-- `mingw-w64` : C++ compiler
+- `mingw-w64` : C++ compiler toolchain
 - `meson` : build system
 - `rust` : programming language
 - Winsock2 Library: Required for socket programming on Windows. (deprecated, being removed)
@@ -28,7 +28,9 @@ To run the code, ensure you have the following packages installed using your pre
       - On MacOS, replace `[CROSSFILE]` with `mac-to-win.ini`
       - On Windows, omit the `--cross-file` flag entirely
     - `meson compile -C build` : which compiles the meson build system and places the resultant file into the `./build` folder.
-    - `meson compile -C build tests` : to build the test executable
+      - `meson compile -C build tests` builds just the test executable
+      - `meson compile -C build baton` builds `baton` and its bindings
+5. You can find the compiled `PilotDataSync.xpl` binary in the `build/` directory. It must be placed in X-Plane's Resources directory to function.
 And there you go: project built! Currently, the build system in active development and change and we will be updating this README as we go with accurate build instructions!
 
 ## Project Layout
