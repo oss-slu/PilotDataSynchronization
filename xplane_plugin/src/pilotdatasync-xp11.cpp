@@ -7,11 +7,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <string>
 
-#include "Logger.cpp"
-#include "TCPClient.cpp"
+using std::string;
+using std::vector;
+
+// #include "Logger.cpp"
+// #include "TCPClient.cpp"
 #include "subprojects/baton/lib.rs.h"
-#include "threading-tools.h"
+// #include "threading-tools.h"
 
 // #include "packet.cpp"
 
@@ -61,53 +65,11 @@ static XPLMDataRef headingPilotRef;
 // thread handle for TCP
 static std::thread thread_handle;
 
-// baton handle
-rust::cxxbridge1::Box<ThreadWrapper> baton = new_wrapper();
+// baton handle -- a "Box" is the name for a Rust pointer. This Box is handled by the cxx crate interface and acts like a normal pointer.
+rust::cxxbridge1::Box<Baton> baton = new_baton_handle();
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
-
-float flight_loop(float inElapsedSinceLastCall,
-                  float inElapsedTimeSinceLastFlightLoop, int inCounter,
-                  void *inRefcon) {
-  // currently sends a series of test packets. once the server is stable, we
-  // will send the real data
-  /* ThreadQueue *tq_ptr = (ThreadQueue*)inRefcon;
-for (int i = 1; i < 4; i++) {
-  ThreadMessage tm = { {(float)i, (float)i, (float)i, (float)i}, false };
-  tq_ptr->push(tm);
-}
-ThreadMessage tm = { {}, true};
-tq_ptr->push(tm);
-
-// return 0.0 to deactivate the loop. otherwise, return val == number of secs
-until next callback return 0.0; */
-
-  ThreadQueue *tq_ptr = (ThreadQueue *)inRefcon;
-
-  // Retrieve X-Plane datarefs
-  float altitude =
-      XPLMGetDataf(elevationFlightmodelRef); // Altitude above sea level
-  float groundSpeed = XPLMGetDataf(airspeedFlightmodelRef); // Ground speed
-  float heading = XPLMGetDataf(headingFlightmodelRef);      // Magnetic heading
-  float verticalSpeed =
-      XPLMGetDataf(verticalVelocityFlightmodelRef); // Vertical speed
-
-  std::vector<std::string> dataVector = {
-      std::to_string(altitude), std::to_string(groundSpeed),
-      std::to_string(heading), std::to_string(verticalSpeed)};
-
-  // Create thread message with the data vector
-  ThreadMessage tm = {{altitude, groundSpeed, heading, verticalSpeed}, false};
-  tq_ptr->push(tm);
-
-  // Send end execution message
-  /*  ThreadMessage end_tm = { {}, true};
-tq_ptr->push(end_tm); */
-
-  // Return 1.0 to call again in 1 second
-  return 1.0;
-}
 
 int dummy_mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
                         void *in_refcon) {
@@ -128,67 +90,6 @@ void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
                        char virtual_key, void *in_refcon, int losing_focus) {}
 
 volatile bool stop_exec = false;
-Logger *Logger::instance = nullptr;
-
-int runTCP(std::shared_ptr<ThreadQueue> thread_queue) {
-  Logger *logger = Logger::getInstance();
-
-  logger->log("Plugin initialization started");
-
-  try {
-    TCPClient client;
-    std::string serverIP = "127.0.0.1";
-    logger->log("Initializing Winsock");
-    client.initializeWinsock();
-
-    logger->log("Creating socket");
-    client.createSocket();
-
-    logger->log("Attempting to connect to server");
-    if (!client.connectToServer(serverIP)) {
-      logger->log("Server connection failed", MsgLogType::CONN_FAIL);
-      // Handle connection failure
-      return 0;
-    }
-
-    logger->log("Server connection successful", MsgLogType::CONN_PASS);
-
-    bool stop_exec = false;
-
-    while (!stop_exec) {
-      if (thread_queue->size() == 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
-        continue;
-      }
-
-      ThreadMessage tm = thread_queue->pop();
-      if (tm.end_execution_flag) {
-        logger->log("Received end execution flag", MsgLogType::END);
-        stop_exec = true;
-      } else {
-        std::vector<std::string> myVec;
-        for (int i = 0; i < 4; i++) {
-          myVec.push_back(std::to_string(tm.values_for_packet[i]));
-        }
-
-        std::string packet = generate_packet(myVec);
-        logger->log("Generating packet: " + packet);
-
-        if (!client.sendData(packet)) {
-          logger->log("Failed to send packet", MsgLogType::SEND_FAIL);
-        } else {
-          logger->log("Packet sent successfully", MsgLogType::SEND_PASS);
-        }
-      }
-    }
-  } catch (const std::exception &e) {
-    logger->log("Exception occurred: " + std::string(e.what()),
-                MsgLogType::ERR);
-    return 0;
-  }
-
-  return 1;
-}
 
 PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   strcpy(outName, "PilotDataSyncPlugin");
@@ -263,30 +164,6 @@ PLUGIN_API void XPluginStop() {
 PLUGIN_API void XPluginDisable(void) { baton->stop(); }
 
 PLUGIN_API int XPluginEnable(void) {
-  // TEMPORARILY DISABLED PENDING REPLACEMENT VIA BATON
-
-  /*
-// TCP server threading setup
-ThreadQueue tq;
-std::shared_ptr<ThreadQueue> tq_ptr = std::make_shared<ThreadQueue>();
-thread_handle = std::thread(runTCP, tq_ptr);
-
-// Register per-time-unit callback
-XPLMCreateFlightLoop_t loop_params = {
-  .structSize = sizeof(loop_params),
-  .phase = xplm_FlightLoop_Phase_BeforeFlightModel,
-  .callbackFunc = flight_loop,
-  .refcon = tq_ptr.get()
-};
-XPLMFlightLoopID id = XPLMCreateFlightLoop(&loop_params);
-XPLMScheduleFlightLoop(id, 1.0, true);
-*/
-
-  // baton test
-  // auto thread_wrapper = new_wrapper();
-  // thread_wrapper->start();
-  // thread_wrapper->stop();
-  // baton = new_wrapper();
   baton->start();
 
   return 1;
@@ -426,11 +303,6 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
                 (char*) headingPilotStr.c_str(), NULL, xplmFont_Proportional);
 
-  Logger *instance = Logger::getInstance();
-  if (instance == nullptr) {
-    return;
-  }
-
   // blank line
   XPLMDrawString(col_white, l + 10, get_next_y_offset(), (char*)string("").c_str(),
                  NULL, xplmFont_Proportional);
@@ -439,53 +311,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   XPLMDrawString(col_white, l + 10, get_next_y_offset(),
                  (char*)dashboard_header.c_str(), NULL, xplmFont_Proportional);
 
-  MsgLogType status = instance->get_last_status();
-  string status_str;
-  switch (status) {
-  case MsgLogType::NONE:
-    status_str = "NONE";
-    break;
-  case MsgLogType::SEND:
-    status_str = "SEND";
-    break;
-  case MsgLogType::SEND_PASS:
-    status_str = "SEND_PASS";
-    break;
-  case MsgLogType::SEND_FAIL:
-    status_str = "SEND_FAIL";
-    break;
-  case MsgLogType::CONN:
-    status_str = "CONN";
-    break;
-  case MsgLogType::CONN_PASS:
-    status_str = "CONN_PASS";
-    break;
-  case MsgLogType::CONN_FAIL:
-    status_str = "CONN_FAIL";
-    break;
-  case MsgLogType::END:
-    status_str = "END";
-    break;
-  case MsgLogType::ERR:
-    status_str = "ERR";
-    break;
-  default:
-    status_str = "N/A";
-    break;
-  };
-
-  XPLMDrawString(col_white, l + 10, get_next_y_offset(),
-                 (char*)string("LAST STATUS: " + status_str).c_str(), NULL,
-                 xplmFont_Proportional);
-
-  string packets_sent =
-      "Packets Sent: " + to_string(instance->get_packets_sent());
-  XPLMDrawString(col_white, l + 10, get_next_y_offset(), (char*)packets_sent.c_str(),
-                 NULL, xplmFont_Proportional);
-
-  // BATON TEST
+  // Send flight data to Relay via Baton
   vector<float> send_to_baton = { currentPilotElevation, currentPilotAirspeed, currentPilotHeading, currentPilotVerticalVelocity };
-  // baton->send(currentPilotElevation);
   baton->send(send_to_baton);
-  //
 }

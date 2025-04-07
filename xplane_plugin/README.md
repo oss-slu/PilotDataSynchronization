@@ -43,6 +43,12 @@ And there you go: project built! Currently, the build system in active developme
 ### Baton
 Our X-Plane plugin uses a library written for this project that we call Baton, located in `subprojects/baton`. This library handles IPC communication between the plugin and Relay. It is written in Rust and compiles to C++-compatible code. Check its `README.md` for more, as it is essential for this project.
 
+#### Typical Baton Workflow
+- Make changes in `subprojects/baton`.
+- `meson compile -C build baton` to rebuild `baton` and update headers.
+- Make related changes to the C++ side in `pilotdatasync-xp11.cpp`.
+- `meson compile -C build` to generate the new `PilotDataSync.xpl` plugin.
+
 ## Styling
 <!---
  C++ code is formatted using the VSCode C/C++ Extension's format action. The rules are expanded on in `.clang-format`. Submitted code must be formatted accordingly. Invoke it in VSCode by using the command palette -> `Format document with...` -> `C/C++`, which will automatically used the provided formatting rules.

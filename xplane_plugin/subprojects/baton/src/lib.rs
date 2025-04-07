@@ -24,7 +24,7 @@ mod ffi {
     extern "Rust" {
         // [cxx] Defining a struct in this way makes it opaque on the C++ side; I don't want the C++ side
         // of the code to reach in and mess with my thread handle in any way.
-        type ThreadWrapper;
+        type Baton;
 
         fn start(&mut self);
 
@@ -32,17 +32,17 @@ mod ffi {
 
         fn send(&mut self, nums: &CxxVector<f32>);
 
-        fn new_wrapper() -> Box<ThreadWrapper>;
+        fn new_baton_handle() -> Box<Baton>;
     }
 }
 
 #[derive(Default)]
-pub struct ThreadWrapper {
+pub struct Baton {
     thread: Option<std::thread::JoinHandle<()>>,
     tx: Option<Sender<ChannelSignal>>,
 }
 
-impl ThreadWrapper {
+impl Baton {
     pub fn start(&mut self) {
         // Rust does not have nulls. If you do not understand Options, read the Rust Book chapter 6.1
         let None = self.thread else {
@@ -54,6 +54,8 @@ impl ThreadWrapper {
         self.tx = Some(tx);
 
         let handle: thread::JoinHandle<_> = thread::spawn(move || {
+            // TODO implement continuous retry
+
             // OS-dependent abstraction
             let name = if GenericNamespaced::is_supported() {
                 "baton.sock".to_ns_name::<GenericNamespaced>().unwrap()
@@ -98,6 +100,7 @@ impl ThreadWrapper {
 
             print!("[RUST] Server answered: {buffer}");
 
+            // TODO remove this or replace with a shorter handshake
             // send a bunch of data for the frequency test in one-second intervals
             for _ in 0..3 {
                 for _ in 0..5 {
@@ -106,6 +109,7 @@ impl ThreadWrapper {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
+            // TODO make more sophisticated, potentially refactor with continuous retry change todo above
             // Continuously send values
             loop {
                 for message in rx.try_iter() {
@@ -157,8 +161,8 @@ impl ThreadWrapper {
     }
 }
 
-pub fn new_wrapper() -> Box<ThreadWrapper> {
-    Box::new(ThreadWrapper::default())
+pub fn new_baton_handle() -> Box<Baton> {
+    Box::new(Baton::default())
 }
 
 enum ChannelSignal {
