@@ -1,5 +1,5 @@
 # init
-project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'], meson_version: '1.7.0')
+project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'], meson_version: '>=1.7.0')
 
 # imports
 fs = import('fs')
@@ -41,24 +41,29 @@ winsock = compiler.find_library(
 )
 
 # retrieve the xplm precompiled library and wreap it as a dependency
-xplm = compiler.find_library(
-  'XPLM_64',
-  dirs: lib_path,
-  has_headers: [
-    'XPLMPlugin.h',
-    'XPLMDefs.h',
-    'XPLMDataAccess.h',
-    'XPLMUtilities.h',
-    'XPLMDisplay.h'
-  ],
-  header_include_directories: inc_dir,
-  required: true
-)
-xpwidgets = compiler.find_library(
-  'XPWidgets_64',
-  dirs: lib_path,
-  required: true
-)
+# xplm = compiler.find_library(
+#   'XPLM_64',
+#   dirs: lib_path,
+#   has_headers: [
+#     'XPLMPlugin.h',
+#     'XPLMDefs.h',
+#     'XPLMDataAccess.h',
+#     'XPLMUtilities.h',
+#     'XPLMDisplay.h'
+#   ],
+#   header_include_directories: inc_dir,
+#   required: true
+# )
+# xpwidgets = compiler.find_library(
+#   'XPWidgets_64',
+#   dirs: lib_path,
+#   required: true
+# )
+
+# x-plane sdk handled by wrapDB instead of installing it manually
+xplane_sdk_proj = subproject('x-plane-sdk')
+xplm = xplane_sdk_proj.get_variable('xplm_dep')
+xpwidgets = xplane_sdk_proj.get_variable('xpwidgets_dep')
 
 # rust library from subproject
 baton_subp = subproject('baton')
@@ -70,8 +75,6 @@ lib = shared_library(
   'src/pilotdatasync-xp11.cpp',
   'src/threading-tools.cpp',
   dependencies: [winsock, xplm, xpwidgets, baton],
-  # baton dep temporarily removed while cross-compilation bug is handled
-  # dependencies: [winsock, xplm, xpwidgets],
   include_directories: [inc_dir, lib_dir],
   cpp_args: compiler_args,
   link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
@@ -80,7 +83,7 @@ lib = shared_library(
 )
 
 if host_machine.system() == 'windows'
-    test_args = ['-DGTEST_ENABLE_CATCH_EXCEPTIONS_=0']
+    test_args = ['-DGTEST_ENABLE_CATCH_EXCEPTIONS_=0', '-std=c++20']
 else
     test_args = []
 endif
