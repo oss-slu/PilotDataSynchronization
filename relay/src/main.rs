@@ -51,7 +51,7 @@ fn main() -> iced::Result {
                 return;
             }
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Error: could not start server because the OS denied permission. This error is currently being workshopped: \n{e}");
+                eprintln!("Error: could not start server because the OS denied permission: \n{e}");
                 return;
             }
             Err(e) => {
