@@ -3,9 +3,6 @@ project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'], meson_
 
 # imports
 fs = import('fs')
- 
-# download sdk if not present
-# TODO
 
 # these defines are necessary as required by XPlane
 compiler_args = [
@@ -39,26 +36,6 @@ winsock = compiler.find_library(
   'ws2_32',
   has_headers: ['winsock2.h', 'ws2tcpip.h'],
 )
-
-# retrieve the xplm precompiled library and wreap it as a dependency
-# xplm = compiler.find_library(
-#   'XPLM_64',
-#   dirs: lib_path,
-#   has_headers: [
-#     'XPLMPlugin.h',
-#     'XPLMDefs.h',
-#     'XPLMDataAccess.h',
-#     'XPLMUtilities.h',
-#     'XPLMDisplay.h'
-#   ],
-#   header_include_directories: inc_dir,
-#   required: true
-# )
-# xpwidgets = compiler.find_library(
-#   'XPWidgets_64',
-#   dirs: lib_path,
-#   required: true
-# )
 
 # x-plane sdk handled by wrapDB instead of installing it manually
 xplane_sdk_proj = subproject('x-plane-sdk')
