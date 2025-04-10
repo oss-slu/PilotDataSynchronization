@@ -15,7 +15,7 @@ on:
 
 jobs:
   build-on-windows:
-    name: Build and Test on Windows with Meson  
+    name: Build and Test on Windows  
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +29,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           update: true
-          install: >-
-            base-devel
-            mingw-w64-x86_64-toolchain
+          install: mingw-w64-x86_64-toolchain
 
       # I need to find a better place to put this `ci_requirements.txt` file.
       # Right now, it is just in the project root.
@@ -57,48 +55,7 @@ jobs:
           cd xplane_plugin/
           ./build/testsuite --verbose~
 
-
       - name: Build Relay as Release
         run: | 
           cd relay/
           cargo build --release --target=x86_64-pc-windows-gnu
-
-
-  # build-on-ubuntu:
-  #   name: Build and Test on Ubuntu with Meson
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     # This is a github actions workflow that sets up mingw on the computer. 
-  #     # This may be out of date so be cautious
-  #     - name: Set up MinGW
-  #       uses: egor-tensin/setup-mingw@v2
-  #       with:
-  #         platform: x64
-
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: '3.x'
-  #     # I need to find a better place to put this `ci_requirements.txt` file.
-  #     # Right now, it is just in the project root.
-  #     - name: Install Dependencies with Python Pip
-  #       run: pip install -r ci_requirements.txt
-  #     - name: Download XPlane SDK using Ubuntu Bash Script
-  #       run: ./utils/init.sh
-
-  #     - name: Cross-Compile Meson Project for Windows on Ubuntu
-  #       run: | 
-  #         meson setup --cross-file win.ini build
-  #         meson compile -C build
-  #     - name: Test the Meson Project
-  #       run: ./build/testsuite --verbose~
-
-      # if tests fail, upload a test log?
-      #- name: Upload Test Log
-      #  uses: actions/upload-artifact@v4
-      #  if: failure()
-      #  with:
-      #    name: MacOS_Meson_Testlog
-      #    path: builddir/meson-logs/testlog.txt
