@@ -60,8 +60,8 @@ IndentWrappedFunctionNames: false
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: Inner
-PointerAlignment: Left
-ReferenceAlignment: Left              # New in v13. int &name  ==>  int& name
+PointerAlignment: Right
+ReferenceAlignment: Right              # New in v13. int &name  ==>  int& name
 ReflowComments: false
 SeparateDefinitionBlocks: Always      # New in v14.
 SortIncludes: true
