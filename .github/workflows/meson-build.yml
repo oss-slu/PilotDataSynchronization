@@ -25,6 +25,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+          
       # I need to find a better place to put this `ci_requirements.txt` file.
       # Right now, it is just in the project root.
       - name: Install Dependencies with Python Pip
@@ -35,15 +36,24 @@ jobs:
           cd xplane_plugin/
           ./utils/init.ps1
 
-      - name: Setup and Build Meson Project on Windows
+      - name: Setup and Build XPlanePlugin and Baton
         run: | 
           cd xplane_plugin/
           meson setup build
           meson compile -C build
-      - name: Test the Meson Project
+
+      - name: Test XPlanePlugin and Baton
         run: |
           cd xplane_plugin/
           ./build/testsuite --verbose~
+
+      - name: Update rustup target for Relay
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Build Relay as Release
+        run: | 
+          cd relay/
+          cargo build --release --target=x86_64-pc-windows-gnu
 
       # if tests fail, upload a test log?
       #- name: Upload Test Log
