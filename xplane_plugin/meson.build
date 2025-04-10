@@ -1,5 +1,5 @@
 # init
-project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'], meson_version: '1.7.0')
+project('PilotDataSyncPlugin', 'cpp', default_options: ['cpp_std=c++20'], meson_version: '>=1.7.0')
 
 # imports
 fs = import('fs')
