@@ -31,9 +31,18 @@ jobs:
           update: true
           install: mingw-w64-x86_64-toolchain
 
+      # TESTING: does caching dependencies reduce runtime of workflow?
+      - name: Fetch cached Python dependencies (may miss)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('ci_requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+              
       # I need to find a better place to put this `ci_requirements.txt` file.
       # Right now, it is just in the project root.
-      - name: Install Dependencies with Python Pip
+      - name: Install (maybe cached) dependencies with Pip
         run: pip install -r ci_requirements.txt
 
       - name: Download XPlane SDK for XPlanePlugin and Baton
@@ -44,18 +53,30 @@ jobs:
       - name: Update rustup target for Relay
         run: rustup target add x86_64-pc-windows-gnu
 
-      - name: Setup and Build XPlanePlugin and Baton
+      - name: Meson setup and build XPlanePlugin and Baton
         run: | 
           cd xplane_plugin/
           meson setup build
           meson compile -C build
 
-      - name: Test XPlanePlugin and Baton
+      - name: Meson test XPlanePlugin and Baton
         run: |
           cd xplane_plugin/
           ./build/testsuite --verbose~
 
-      - name: Build Relay as Release
+      - name: Fetch Relay's cached cargo depedencies (may miss)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            relay/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # CONSIDER: Only build Relay if it changed?
+      - name: Build Relay as Release (maybe cached)
         run: | 
           cd relay/
           cargo build --release --target=x86_64-pc-windows-gnu
