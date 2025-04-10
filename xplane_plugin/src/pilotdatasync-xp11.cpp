@@ -25,7 +25,6 @@ extern "C" {
 
 #include "XPLMDisplay.h"
 
-
 #include "XPLMGraphics.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
