@@ -35,9 +35,9 @@ jobs:
           VALIDATE_CLANG_FORMAT: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
-          # VALIDATE_RUST_CLIPPY: true
+          VALIDATE_RUST_CLIPPY: true
           FIX_CLANG_FORMAT: true
-          # FIX_RUST_CLIPPY: true
+          FIX_RUST_CLIPPY: true
 
           # I need to talk to the team about linting YAML and Markdown Prettier.
           # This will let us check and auto-fix styling issues in our
