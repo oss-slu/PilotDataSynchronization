@@ -60,7 +60,8 @@ jobs:
   #   steps:
   #     - uses: actions/checkout@v4
 
-  #     # This is a github actions workflow that sets up mingw on the computer. This may be out of date so be cautious
+  #     # This is a github actions workflow that sets up mingw on the computer. 
+  #     # This may be out of date so be cautious
   #     - name: Set up MinGW
   #       uses: egor-tensin/setup-mingw@v2
   #       with:
