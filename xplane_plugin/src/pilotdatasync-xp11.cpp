@@ -9,9 +9,7 @@
 #include <vector>
 
 #include "Logger.cpp"
-
 #include "TCPClient.cpp"
-
 #include "subprojects/baton/lib.rs.h"
 #include "threading-tools.h"
 
@@ -22,7 +20,6 @@ extern "C" {
 #endif
 
 #include "XPLMDataAccess.h"
-
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
 #include "XPLMProcessing.h"
