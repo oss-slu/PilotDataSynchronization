@@ -25,9 +25,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # - name: Copy .clang-format to root for Super-Linter
-      #   run: cp xplane_plugin/.clang-format .clang-format
         
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
@@ -35,7 +32,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_ALL_CODEBASE: true
           MULTI_STATUS: true
-          # CLANG_FORMAT_FILE_NAME: ".clang-format"
           VALIDATE_CLANG_FORMAT: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
@@ -51,9 +47,7 @@ jobs:
           # VALIDATE_MARKDOWN_PRETTIER
           # FIX_MARKDOWN_PRETTIER
 
-      # - name: Remove temp .clang-format file from project root
-      #   run: rm -rf .clang-format
-      
+          
       - name: Auto Commit Fixed Files
         uses: stefanzweifel/git-auto-commit-action@v5
         id: auto-commit-action #mandatory for the output to show up in ${{ steps }}
