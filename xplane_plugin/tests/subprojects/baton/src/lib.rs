@@ -8,14 +8,12 @@ in order to facilitate the aforementioned interoperability.
 */
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
-use cxx::CxxVector;
 use interprocess::local_socket::{
     prelude::*, GenericFilePath, GenericNamespaced, NameType, Stream, ToFsName,
 };
 use std::{
     io::{prelude::*, BufReader},
     thread,
-    time::Duration,
 };
 
 // This defines the interface for the C++ codegen. This is where functions are exposed to the C++ side.
@@ -24,25 +22,25 @@ mod ffi {
     extern "Rust" {
         // [cxx] Defining a struct in this way makes it opaque on the C++ side; I don't want the C++ side
         // of the code to reach in and mess with my thread handle in any way.
-        type Baton;
+        type ThreadWrapper;
 
         fn start(&mut self);
 
         fn stop(&mut self);
 
-        fn send(&mut self, nums: &CxxVector<f32>);
+        fn send(&mut self, num: f32);
 
-        fn new_baton_handle() -> Box<Baton>;
+        fn new_wrapper() -> Box<ThreadWrapper>;
     }
 }
 
 #[derive(Default)]
-pub struct Baton {
+pub struct ThreadWrapper {
     thread: Option<std::thread::JoinHandle<()>>,
     tx: Option<Sender<ChannelSignal>>,
 }
 
-impl Baton {
+impl ThreadWrapper {
     pub fn start(&mut self) {
         // Rust does not have nulls. If you do not understand Options, read the Rust Book chapter 6.1
         let None = self.thread else {
@@ -54,8 +52,6 @@ impl Baton {
         self.tx = Some(tx);
 
         let handle: thread::JoinHandle<_> = thread::spawn(move || {
-            // TODO implement continuous retry
-
             // OS-dependent abstraction
             let name = if GenericNamespaced::is_supported() {
                 "baton.sock".to_ns_name::<GenericNamespaced>().unwrap()
@@ -66,21 +62,9 @@ impl Baton {
             // used for read/write operations
             let mut buffer = String::with_capacity(128);
 
-            // Connection retry loop with an exponential backoff capped at 5 seconds
-            let mut retry_delay = Duration::from_millis(100);
-            let conn = loop {
-                match Stream::connect(name.borrow()) {
-                    Ok(stream) => break stream,
-                    Err(e) => {
-                        println!("Failed to connect: {e}. Retrying in {:?}...", retry_delay);
-                        thread::sleep(retry_delay);
-                        retry_delay = (retry_delay * 2).min(Duration::from_secs(5));
-                    }
-                };
-            };
-
             // immediately "shadow" the Stream we create, wrapping it in a BufReader.
             // "shadowing" lets you re-use variable names. for more, see the Rust Book chapter 3.1.
+            let conn = Stream::connect(name).unwrap();
             conn.set_nonblocking(true).unwrap();
             let mut conn = BufReader::new(conn);
 
@@ -97,7 +81,6 @@ impl Baton {
 
             print!("[RUST] Server answered: {buffer}");
 
-            // TODO remove this or replace with a shorter handshake
             // send a bunch of data for the frequency test in one-second intervals
             for _ in 0..3 {
                 for _ in 0..5 {
@@ -106,7 +89,6 @@ impl Baton {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
-            // TODO make more sophisticated, potentially refactor with continuous retry change todo above
             // Continuously send values
             loop {
                 for message in rx.try_iter() {
@@ -115,10 +97,7 @@ impl Baton {
                             let s: String = format!("{n}\n");
                             let _ = conn.get_mut().write_all(s.as_bytes());
                         }
-                        ChannelSignal::Stop => {
-                            let _ = conn.get_mut().write_all("SHUTDOWN".as_bytes());
-                            return;
-                        }
+                        ChannelSignal::Stop => return,
                     };
                 }
             }
@@ -146,23 +125,19 @@ impl Baton {
         self.thread = None;
     }
 
-    fn send(&mut self, nums: &CxxVector<f32>) {
-        let s = nums
-            .into_iter()
-            .fold(String::new(), |acc, num| format!("{acc};{num}"));
-        // let s = format!("{num1};{num2};{num3};{num4}\n");
-        println!("[RUST] Attempted to send {s}");
+    fn send(&mut self, num: f32) {
+        println!("[RUST] Attempted to send {num:?}");
         if let Some(tx) = &self.tx {
-            let _ = tx.send(ChannelSignal::Send(s));
+            let _ = tx.send(ChannelSignal::Send(num));
         }
     }
 }
 
-pub fn new_baton_handle() -> Box<Baton> {
-    Box::new(Baton::default())
+pub fn new_wrapper() -> Box<ThreadWrapper> {
+    Box::new(ThreadWrapper::default())
 }
 
 enum ChannelSignal {
     Stop,
-    Send(String),
+    Send(f32),
 }
