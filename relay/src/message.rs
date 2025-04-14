@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Message {
     // generic time update signal
     Update,
@@ -8,9 +8,6 @@ pub(crate) enum Message {
 
     // signal to check the baton thread
     BatonMessage,
-
-    ConnectionMessage
-
 }
 
 // Enum for messages from within the IPC connection thread
