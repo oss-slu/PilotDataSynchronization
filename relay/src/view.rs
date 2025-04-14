@@ -1,5 +1,5 @@
 use iced::{
-    widget::{column, container, text},
+    widget::{button, column, container, text},
     Element,
 };
 
@@ -19,9 +19,16 @@ pub(crate) fn view(state: &State) -> Element<Message> {
         format!(":( No Baton Connection")
     };
 
+    let connection_status = match &state.connection_status {
+        Some(channel_msg) => format!("{:?}", channel_msg), // Using debug formatting
+        None => "No connection established".to_string(),
+    };
+
     column![
         text(format!("Elapsed time: {:?}", state.elapsed_time)),
         text(baton_data),
+        text(format!("Connection Staus: {}", connection_status)),
+        button("Check Connection Status").on_press(Message::ConnectionMessage)
         // if we use containers, it boxes up the text elements and makes them easier to read
         container(text(baton_connect_status))
             .padding(10)

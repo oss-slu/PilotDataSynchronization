@@ -8,7 +8,7 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::str::from_utf8;
 mod channel;
-use channel::channelMessage;
+use channel::ChannelMessage;
 
 use std::{
     io::{BufRead, BufReader, Write},
@@ -40,11 +40,11 @@ fn main() -> iced::Result {
 
     // Connect to the server
 
-    let (send, recv) = std::sync::mpsc::channel::<channelMessage>();
+    let (send, recv) = std::sync::mpsc::channel::<ChannelMessage>();
     let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
         Ok(mut stream) => {
             println!("Successfully connected.");
-            let message = channelMessage::CONNECT;
+            let message = ChannelMessage::Connect;
             send.send(message);
         }
 
@@ -109,6 +109,8 @@ fn main() -> iced::Result {
                 tx_kill: Some(tx_kill),
                 rx_baton: Some(rxx),
                 latest_baton_send: None,
+                recv: Some(recv),
+                connection_status: None,
                 active_baton_connection: false,
             };
             (state, Task::none())
