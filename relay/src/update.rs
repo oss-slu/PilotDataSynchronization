@@ -1,6 +1,6 @@
 use iced::{time::Duration, Task};
 
-use crate::{Message, State};
+use crate::{IpcThreadMessage, Message, State};
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -27,16 +27,21 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                     std::env::consts::OS
                 )
             };
-            // std::fs::remove_file("/tmp/baton.sock").unwrap();
             std::fs::remove_file(socket_file_path).unwrap();
 
             // necessary to actually shut down the window, otherwise the close button will appear to not work
             iced::window::close(id)
         }
         M::BatonMessage => {
-            if let Some(num) = state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok()) {
-                state.latest_baton_send = Some(num);
-            }
+            // if we get a message from the ipc_connection_thread, do something with it
+            match state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                Some(IpcThreadMessage::BatonData(data)) => {
+                    state.latest_baton_send = Some(data);
+                    state.active_baton_connection = true;
+                }
+                Some(IpcThreadMessage::BatonShutdown) => state.active_baton_connection = false,
+                None => { /* do nothing */ }
+            };
             Task::none()
         }
         M::ConnectionMessage => {

@@ -8,10 +8,10 @@ This project is designed to extract key data from the X-Plane flight simulator, 
 
 ## Prerequisites
 To run the code, ensure you have the following packages installed using your preferred package manager:
-- `mingw-w64` : C++ compiler
+- `mingw-w64` : C++ compiler toolchain
 - `meson` : build system
-- `rust` : programming language (pending) 
-- Winsock2 Library: Required for socket programming on Windows.
+- `rust` : programming language
+- Winsock2 Library: Required for socket programming on Windows. (deprecated, being removed)
 - GoogleTest: Testing framework for unit tests.
 
 ## Getting Started : Step-by-Step Build Instructions
@@ -21,11 +21,16 @@ To run the code, ensure you have the following packages installed using your pre
     - `meson`
     - `rust`
     - `gtest`
-3. Run the script `./utils/init.sh` (mac/linux) or `./utils/init.ps1` (windows) from the project root to download the XPlane SDK into the generated `./lib` folder 
+3. Run `rustup target add x86_64-pc-windows-gnu` to ensure you have the correct build target installed for the Rust toolchain
 4. Next, run the following scripts in the project root:
-    - `meson setup --cross-file win.ini build` : which initializes the Meson build system
+    - `meson setup --cross-file [CROSSFILE] build` : which initializes the Meson build system
+      - On Linux/WSL2, replace `[CROSSFILE]` with `lin-to-win.ini`
+      - On MacOS, replace `[CROSSFILE]` with `mac-to-win.ini`
+      - On Windows, omit the `--cross-file` flag entirely
     - `meson compile -C build` : which compiles the meson build system and places the resultant file into the `./build` folder.
-    - `meson compile -C build tests` : to build the test executable
+      - `meson compile -C build tests` builds just the test executable
+      - `meson compile -C build baton` builds `baton` and its bindings
+5. You can find the compiled `PilotDataSync.xpl` binary in the `build/` directory. It must be placed in X-Plane's Resources directory to function.
 And there you go: project built! Currently, the build system in active development and change and we will be updating this README as we go with accurate build instructions!
 
 ## Project Layout
@@ -33,8 +38,16 @@ And there you go: project built! Currently, the build system in active developme
 - Helpful utilities can be found in the `utils/` directory.
 - Tests and documentation go into `tests/` and `docs/` respectively.
 - The `.github` folder contains our projects' CI/CD pipeline files and any GitHub templates that we use.
-- The XPlane SDK lives in the `lib/` directory, both of which should be automatically generated when you run the initialization scripts. Do not commit and push the SDK
 - Plugins, binaries, and artifacts go into the `bin/` directory. Nothing from this directory should ever be pushed to the repo.
+
+### Baton
+Our X-Plane plugin uses a library written for this project that we call Baton, located in `subprojects/baton`. This library handles IPC communication between the plugin and Relay. It is written in Rust and compiles to C++-compatible code. Check its `README.md` for more, as it is essential for this project.
+
+#### Typical Baton Workflow
+- Make changes in `subprojects/baton`.
+- `meson compile -C build baton` to rebuild `baton` and update headers.
+- Make related changes to the C++ side in `pilotdatasync-xp11.cpp`.
+- `meson compile -C build` to generate the new `PilotDataSync.xpl` plugin.
 
 ## Styling
 <!---
