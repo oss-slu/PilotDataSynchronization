@@ -30,6 +30,11 @@ jobs:
       - name: Install Dependencies with Python Pip
         run: pip install -r ci_requirements.txt
 
+      - name: Download XPlane SDK using Windows Powershell
+        run: |
+          cd xplane_plugin/
+          ./utils/init.ps1
+
       - name: Setup and Build Meson Project on Windows
         run: | 
           cd xplane_plugin/
