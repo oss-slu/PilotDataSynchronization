@@ -1,3 +1,8 @@
+# Pilot Data Synchronization
+[![Super-Linter](https://github.com/<OWNER>/<REPOSITORY>/actions/workflows/<WORKFLOW_FILE_NAME>/badge.svg)](https://github.com/marketplace/actions/super-linter)
+
+Automating data collection for SLU Aviation researchers between the XPlane Flight Simulator and iMotions research platform. Click the link to be taken to our [OSS@SLU page](https://oss-slu.github.io/docs/project_pilot_data_synchronization/about)!
+
 # Overview
 - `xplane_plugin`: X-Plane's data extraction plugin
 - `relay`: External GUI program that takes the data extracted by `xplane_plugin` and sends it to iMotions over TCP
