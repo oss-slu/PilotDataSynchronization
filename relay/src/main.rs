@@ -3,16 +3,19 @@ mod state;
 mod update;
 mod view;
 
-use std::io::Read;
-use std::net::TcpStream;
-use std::str::from_utf8;
+use std::{
+    net::TcpStream,
+    sync::mpsc::{Receiver, Sender},
+};
 mod channel;
-use channel::ChannelMessage;
+use channel::ToTcpThreadMessage;
 
 use std::{
     io::{BufRead, BufReader, Write},
     thread,
 };
+
+use anyhow::Result;
 
 use self::{message::Message, state::State, update::update, view::view};
 
@@ -26,28 +29,10 @@ use interprocess::local_socket::{
 };
 
 fn main() -> iced::Result {
-    //tcp connection
-
-    // Connect to the server
-
-    let (send, recv) = std::sync::mpsc::channel::<ChannelMessage>();
-    let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
-        Ok(mut stream) => {
-            println!("Successfully connected.");
-            let message = ChannelMessage::Connect;
-            send.send(message);
-        }
-
-        Err(e) => {
-            println!("Connection failed: {}", e);
-        }
-    });
-
-    let (tx_kill, rx_kill) = std::sync::mpsc::channel();
-
-    let (txx, rxx) = std::sync::mpsc::channel();
+    let (tx_ipc_to_thread, rx_ipc_from_main) = std::sync::mpsc::channel();
+    let (tx_ipc_to_main, rx_ipc_from_thread) = std::sync::mpsc::channel();
     // let _ = tx.send(()); // temp
-    let handle = thread::spawn(move || {
+    let ipc_thread_handle = thread::spawn(move || {
         // sample pulled directly from `interprocess` documentation
 
         let printname = "baton.sock";
@@ -74,7 +59,7 @@ fn main() -> iced::Result {
         let mut buffer = String::with_capacity(128);
 
         for conn in listener.incoming() {
-            let conn = match (rx_kill.try_recv(), conn) {
+            let conn = match (rx_ipc_from_main.try_recv(), conn) {
                 (Ok(()), _) => return,
                 (_, Ok(c)) => {
                     println!("success");
@@ -154,9 +139,9 @@ fn main() -> iced::Result {
                         // display
                         println!("Got: {buffer} ({s} bytes read)");
 
-                        if let Ok(num) = buffer.parse::<f32>() {
-                            let _ = txx.send(num);
-                        }
+                        let _ = tx_ipc_to_main
+                            .send(channel::IpcThreadMessage::BatonData(buffer.clone()));
+
                         buffer.clear();
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
@@ -174,12 +159,15 @@ fn main() -> iced::Result {
             // for pre-run state initialization
             let state = State {
                 elapsed_time: Duration::ZERO,
-                thread_handle: Some(handle),
-                tx_kill: Some(tx_kill),
-                rx_baton: Some(rxx),
+                ipc_thread_handle: Some(ipc_thread_handle),
+                tcp_thread_handle: None,
+                tx_ipc_to_thread: Some(tx_ipc_to_thread),
+                rx_ipc_from_thread: Some(rx_ipc_from_thread),
                 latest_baton_send: None,
-                recv: Some(recv),
-                connection_status: ChannelMessage::Disconnected,
+                tx_tcp_to_thread: None,
+                rx_tcp_from_thread: None,
+                tcp_connection_status: false,
+                ..Default::default() // This automatically initializes all struct fields with defined defaults
             };
             (state, Task::none())
         })
