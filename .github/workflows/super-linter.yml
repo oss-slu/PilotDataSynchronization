@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-        
+
       - name: Run Super-Linter with Auto-Fix
         uses: super-linter/super-linter@v7.2.1
         env:
@@ -33,9 +33,7 @@ jobs:
           VALIDATE_CLANG_FORMAT: true
           VALIDATE_GITHUB_ACTIONS: true
           VALIDATE_YAML: true
-          VALIDATE_RUST_CLIPPY: true
           FIX_CLANG_FORMAT: true
-          FIX_RUST_CLIPPY: true
 
           # I need to talk to the team about linting YAML and Markdown Prettier.
           # This will let us check and auto-fix styling issues in our
@@ -45,20 +43,12 @@ jobs:
           # VALIDATE_MARKDOWN_PRETTIER
           # FIX_MARKDOWN_PRETTIER
 
-          
       - name: Auto Commit Fixed Files
         uses: stefanzweifel/git-auto-commit-action@v5
-        id: auto-commit-action #mandatory for the output to show up in ${{ steps }}
         with:
           commit_message: Auto-fix linting issues
+
           commit_user_name: Super Linter!
           commit_user_email: auto-linter@github.com
           commit_author: SuperLinter <auto-linter@github.com>
-
-      - name: "Run if changes have been detected"
-        if: steps.auto-commit-action.outputs.changes_detected == 'true'
-        run: echo "Changes!"
-  
-      - name: "Run if no changes have been detected"
-        if: steps.auto-commit-action.outputs.changes_detected == 'false'
-        run: echo "No Changes!"
+    
