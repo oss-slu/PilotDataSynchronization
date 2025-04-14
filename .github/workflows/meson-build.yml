@@ -1,4 +1,3 @@
----
 name: Meson Build System
 
 # Basically, only rebuilds and tests the project when C++ is changed
