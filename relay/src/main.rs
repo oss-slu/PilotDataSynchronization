@@ -1,38 +1,35 @@
-mod ipc;
 mod message;
 mod state;
 mod update;
 mod view;
+
+use std::io::Read;
+use std::net::TcpStream;
+use std::str::from_utf8;
 mod channel;
 use channel::ChannelMessage;
 
 use std::{
-    io::{BufRead, BufReader, Write, Read},
-    net::TcpStream,
-    str::from_utf8,
-    sync::mpsc::{Receiver, Sender},
+    io::{BufRead, BufReader, Write},
     thread,
 };
 
-use self::{
-    ipc::ipc_connection_loop,
-    message::{IpcThreadMessage, Message},
-    state::State,
-    update::update,
-    view::view,
-};
+use self::{message::Message, state::State, update::update, view::view};
 
 use iced::{
     time::{every, Duration},
-    Task, Theme,
+    Task,
 };
-
-
-use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
+use interprocess::local_socket::{
+    traits::{Listener, ListenerExt},
+    GenericNamespaced, ListenerOptions, ToNsName,
+};
 
 fn main() -> iced::Result {
     //tcp connection
+
     // Connect to the server
+
     let (send, recv) = std::sync::mpsc::channel::<ChannelMessage>();
     let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
         Ok(mut stream) => {
@@ -46,73 +43,146 @@ fn main() -> iced::Result {
         }
     });
 
-    // Communication channels between the main_gui_thread and the ipc_connection_thread
-    // tx_kill = transmit FROM main_gui_thread TO ipc_thread
-    // named txx_kill because the only thing it does rn is send a kill message to the thread. Can be renamed
     let (tx_kill, rx_kill) = std::sync::mpsc::channel();
-    // txx = transmit FROM ipc_thread TO main_gui_thread
-    let (txx, rxx): (Sender<IpcThreadMessage>, Receiver<IpcThreadMessage>) =
-        std::sync::mpsc::channel();
 
-    // IPC connection Thread
-    let ipc_connection_handle = thread::spawn(move || {
-        println!("Initial IPC Connection!");
+    let (txx, rxx) = std::sync::mpsc::channel();
+    // let _ = tx.send(()); // temp
+    let handle = thread::spawn(move || {
+        // sample pulled directly from `interprocess` documentation
 
-        // Create new IPC Socket Listener builder
         let printname = "baton.sock";
         let name = printname.to_ns_name::<GenericNamespaced>().unwrap();
+
         let opts = ListenerOptions::new().name(name);
 
-        // Create the actual IPC Socket Listener
         let listener = match opts.create_sync() {
-            Ok(x) => x,
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
                 eprintln!(
-                    "Error: could not start server because the socket file is occupied. Please check if {printname} is in use by another process and try again."
+                    "Error: could not start server because the socket file is occupied. Please check if 
+                    {printname} is in use by another process and try again."
                 );
                 return;
             }
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Error: could not start server because the OS denied permission: \n{e}");
-                return;
-            }
-            Err(e) => {
-                eprintln!("Other Error: {e}");
-                return;
-            }
+            x => x.unwrap(),
         };
-
         listener
             .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
             .expect("Error setting non-blocking mode on listener");
 
-        eprintln!("Server running at {printname}\n");
+        eprintln!("Server running at {printname}");
 
-        // Run the connection loop with the created socket listener
-        ipc_connection_loop(&listener, rx_kill, txx)
+        let mut buffer = String::with_capacity(128);
+
+        for conn in listener.incoming() {
+            let conn = match (rx_kill.try_recv(), conn) {
+                (Ok(()), _) => return,
+                (_, Ok(c)) => {
+                    println!("success");
+                    c
+                }
+                (_, Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                (_, Err(e)) => {
+                    eprintln!("Incoming connection failed: {e}");
+                    continue;
+                }
+            };
+
+            let mut conn = BufReader::new(conn);
+            println!("Incoming connection!");
+
+            match conn.read_line(&mut buffer) {
+                Ok(_) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                _ => panic!(),
+            }
+
+            let write_res = conn
+                .get_mut()
+                .write_all(b"Hello, from the relay prototype (Rust)!\n");
+
+            match write_res {
+                Ok(_) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                _ => panic!(),
+            }
+
+            print!("Client answered: {buffer}");
+
+            buffer.clear();
+
+            // send frequency test -- three seconds of receiving 100,000 dummy inputs per second to check stability
+            println!("beginning frequency test...");
+            let start = std::time::Instant::now();
+            let mut recvs = vec![0, 0, 0];
+            loop {
+                let elapsed = std::time::Instant::now() - start;
+                let idx = match elapsed {
+                    dur if dur < Duration::from_secs(1) => 0,
+                    dur if dur < Duration::from_secs(2) => 1,
+                    dur if dur < Duration::from_secs(3) => 2,
+                    _ => break,
+                };
+                match conn.read_line(&mut buffer) {
+                    /* Ok(0) => {
+                        println!("Termination signal received from baton");
+                        continue;
+                    } */
+                    Ok(_) => recvs[idx] += 1,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    _ => panic!(),
+                }
+            }
+
+            println!("recvs: {recvs:?}");
+            buffer.clear();
+
+            // Continuously receive data from plugin
+            loop {
+                // TODO: Create display in GUI for this instead of printing to stdout. Just doing this for ease for the
+                // demo for the time being.
+                match conn.read_line(&mut buffer) {
+                    Ok(s) if s == 0 || buffer.len() == 0 => {
+                        buffer.clear();
+                        continue;
+                    }
+                    Ok(s) => {
+                        // remove trailing newline
+                        let _ = buffer.pop();
+
+                        // display
+                        println!("Got: {buffer} ({s} bytes read)");
+
+                        if let Ok(num) = buffer.parse::<f32>() {
+                            let _ = txx.send(num);
+                        }
+                        buffer.clear();
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(e) => panic!("Got err {e}"),
+                }
+            }
+        }
     });
 
     iced::application("RELAY", update, view)
-        .window_size((400.0, 200.0))
+        .window_size((250.0, 100.0))
         .exit_on_close_request(false)
         .subscription(subscribe)
-        .theme(theme)
         .run_with(|| {
             // for pre-run state initialization
             let state = State {
                 elapsed_time: Duration::ZERO,
-                ipc_conn_thread_handle: Some(ipc_connection_handle),
+                thread_handle: Some(handle),
                 tx_kill: Some(tx_kill),
                 rx_baton: Some(rxx),
                 latest_baton_send: None,
-                active_baton_connection: false,
+                recv: Some(recv),
+                connection_status: ChannelMessage::Disconnected,
             };
             (state, Task::none())
         })
-}
-
-fn theme(_state: &State) -> Theme {
-    Theme::TokyoNight
 }
 
 fn subscribe(_state: &State) -> iced::Subscription<Message> {
