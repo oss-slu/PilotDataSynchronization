@@ -1,21 +1,19 @@
+---
 name: Meson Build System
 
-# Basically, only rebuilds and tests the project when C++ is changed
-# Commented out to facilitate testing
+# Rebuilds and tests projects when inside a PR or pushing to main
 on:
   push:
-    # paths:
-    #   - "**.cpp"
-    #   - "**.h"
-  pull_request:
-    # paths:
-    #   - "**.cpp"
-    #   - "**.h"
+    branches:
+      - main
+  pull_request: 
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build-on-windows:
-    name: Build and Test on Windows with Meson  
+    name: Build and Test on Windows  
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,64 +22,66 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      # I need to find a better place to put this `ci_requirements.txt` file.
-      # Right now, it is just in the project root.
-      - name: Install Dependencies with Python Pip
+
+      - name: Setup MSYS2 and install/update MinGW toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: mingw-w64-x86_64-toolchain
+
+      - name: Fetch cached Python dependencies (may miss)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('ci_requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+              
+      - name: Install dependencies with Pip (maybe cached)
         run: pip install -r ci_requirements.txt
 
-      - name: Setup and Build Meson Project on Windows
+      - name: Download XPlane SDK for XPlanePlugin and Baton
+        run: |
+          cd xplane_plugin/
+          ./utils/init.ps1
+
+      - name: Update rustup target for Relay
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Fetch cached Meson build dir for XPlanePlugin and Baton
+        uses: actions/cache@v4
+        with:
+          path: xplane_plugin/build
+          key: ${{ runner.os }}-meson-${{ hashFiles('xplane_plugin/meson.build') }}
+          restore-keys: |
+            ${{ runner.os }}-meson-
+      
+      - name: Meson setup and build XPlanePlugin and Baton
         run: | 
           cd xplane_plugin/
           meson setup build
           meson compile -C build
-      - name: Test the Meson Project
+
+      - name: Meson test XPlanePlugin and Baton
         run: |
           cd xplane_plugin/
           ./build/testsuite --verbose~
 
-      # if tests fail, upload a test log?
-      #- name: Upload Test Log
-      #  uses: actions/upload-artifact@v4
-      #  if: failure()
-      #  with:
-      #    name: Windows_Meson_Testlog
-      #    path: builddir/meson-logs/testlog.txt
+      - name: Fetch Relay's cached cargo depedencies (may miss)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            relay/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Relay as Release (maybe cached)
+        run: | 
+          cd relay/
+          cargo build --release --target=x86_64-pc-windows-gnu
 
 
-  # build-on-ubuntu:
-  #   name: Build and Test on Ubuntu with Meson
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     # This is a github actions workflow that sets up mingw on the computer. This may be out of date so be cautious
-  #     - name: Set up MinGW
-  #       uses: egor-tensin/setup-mingw@v2
-  #       with:
-  #         platform: x64
-
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: '3.x'
-  #     # I need to find a better place to put this `ci_requirements.txt` file.
-  #     # Right now, it is just in the project root.
-  #     - name: Install Dependencies with Python Pip
-  #       run: pip install -r ci_requirements.txt
-  #     - name: Download XPlane SDK using Ubuntu Bash Script
-  #       run: ./utils/init.sh
-
-  #     - name: Cross-Compile Meson Project for Windows on Ubuntu
-  #       run: | 
-  #         meson setup --cross-file win.ini build
-  #         meson compile -C build
-  #     - name: Test the Meson Project
-  #       run: ./build/testsuite --verbose~
-
-      # if tests fail, upload a test log?
-      #- name: Upload Test Log
-      #  uses: actions/upload-artifact@v4
-      #  if: failure()
-      #  with:
-      #    name: MacOS_Meson_Testlog
-      #    path: builddir/meson-logs/testlog.txt
+# CONSIDER: Only build Relay if it changed?
