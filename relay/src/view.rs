@@ -28,7 +28,7 @@ pub(crate) fn view(state: &State) -> Element<Message> {
         text(format!("Elapsed time: {:?}", state.elapsed_time)),
         text(baton_data),
         text(format!("Connection Staus: {}", connection_status)),
-        button("Check Connection Status").on_press(Message::ConnectionMessage)
+        button("Check Connection Status").on_press(Message::ConnectionMessage),
         // if we use containers, it boxes up the text elements and makes them easier to read
         container(text(baton_connect_status))
             .padding(10)

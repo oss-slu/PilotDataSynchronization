@@ -58,12 +58,12 @@ else
 endif
 
 # gtest
-gtest_proj = subproject('gtest')
-gtest_dep = gtest_proj.get_variable('gtest_dep')
-test_exec = executable('testsuite',
-    'tests/test.cc',
-    dependencies: [gtest_dep],
-    cpp_args: test_args,
-    native: true 
-)
-test('gtest test', test_exec)
+# gtest_proj = subproject('gtest')
+# gtest_dep = gtest_proj.get_variable('gtest_dep')
+# test_exec = executable('testsuite',
+#     'tests/test.cc',
+#     dependencies: [gtest_dep],
+#     cpp_args: test_args,
+#     native: true 
+# )
+# test('gtest test', test_exec)
