@@ -1,6 +1,6 @@
 use iced::{time::Duration, Task};
 
-use crate::{Message, State};
+use crate::{FromIpcThreadMessage, Message, State};
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -34,15 +34,17 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             iced::window::close(id)
         }
         M::BatonMessage => {
-            if let Some(num) = state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok()) {
-                state.latest_baton_send = Some(num);
+            if let Some(FromIpcThreadMessage::BatonData(s)) =
+                state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok())
+            {
+                state.latest_baton_send = Some(s);
             }
             Task::none()
         }
         M::ConnectionMessage => {
             println!("Check Connection Status");
             if let Some(status) = state.recv.as_ref().and_then(|recv| recv.try_recv().ok()) {
-                state.connection_status = status
+                state.connection_status = Some(status)
             }
             Task::none()
         }

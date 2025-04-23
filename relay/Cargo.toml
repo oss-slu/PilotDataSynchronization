@@ -7,3 +7,4 @@ edition = "2021"
 iced = { version = "*", features = ["tokio"] }
 anyhow = "*"
 interprocess = "*"
+crossbeam = "*"
