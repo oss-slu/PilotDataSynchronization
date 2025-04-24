@@ -1,4 +1,4 @@
-mod channel_manager;
+mod bichannel;
 mod ipc;
 mod message;
 mod state;
@@ -41,7 +41,7 @@ fn main() -> iced::Result {
 
     // Connect to the server
 
-    let (tx_to_parent_thread, rx_from_tcp_thread) = std::sync::mpsc::channel::<ChannelMessage>();
+    /* let (tx_to_parent_thread, rx_from_tcp_thread) = std::sync::mpsc::channel::<ChannelMessage>();
     let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
         Ok(mut stream) => {
             println!("Successfully connected.");
@@ -52,7 +52,7 @@ fn main() -> iced::Result {
         Err(e) => {
             println!("Connection failed: {}", e);
         }
-    });
+    }); */
 
     let (tx_to_ipc_thread, rx_kill) = std::sync::mpsc::channel();
     let (tx_to_parent_thread, rx_from_parent_thread) = std::sync::mpsc::channel();
@@ -69,13 +69,13 @@ fn main() -> iced::Result {
                 tx_kill: Some(tx_to_ipc_thread),
                 rx_baton: Some(rx_from_parent_thread),
                 latest_baton_send: None,
-                recv: Some(rx_from_tcp_thread),
+                // recv: Some(rx_from_tcp_thread),
                 connection_status: None,
                 active_baton_connection: false,
                 ..Default::default()
             };
 
-            state.ipc_connect();
+            state.ipc_connect().expect("IPC connection failure");
 
             (state, Task::none())
         })

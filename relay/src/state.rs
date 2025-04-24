@@ -7,9 +7,9 @@ use std::thread::JoinHandle;
 
 use iced::time::Duration;
 
-use crate::channel_manager;
-use crate::channel_manager::BiChildComm;
-use crate::channel_manager::BiParentComm;
+use crate::bichannel;
+use crate::bichannel::ChildBiChannel;
+use crate::bichannel::ParentBiChannel;
 use crate::message::FromIpcThreadMessage;
 use crate::message::FromTcpThreadMessage;
 use crate::message::ToIpcThreadMessage;
@@ -37,8 +37,8 @@ pub(crate) struct State {
     pub active_baton_connection: bool,
     pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
 
-    pub ipc_bichannel: Option<BiParentComm<ToIpcThreadMessage, FromIpcThreadMessage>>,
-    pub tcp_bichannel: Option<BiParentComm<ToTcpThreadMessage, FromTcpThreadMessage>>,
+    pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
+    pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
 }
 
 impl State {
@@ -48,10 +48,10 @@ impl State {
         }
 
         // TODO
-        let (ipc_bichannel, mut bichannel): (
-            BiParentComm<ToIpcThreadMessage, FromIpcThreadMessage>,
-            BiChildComm<ToIpcThreadMessage, FromIpcThreadMessage>,
-        ) = channel_manager::create_bichannels();
+        let (ipc_bichannel, mut child_bichannel): (
+            ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>,
+            ChildBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>,
+        ) = bichannel::create_bichannels();
         let ipc_thread_handle = std::thread::spawn(move || {
             // sample pulled directly from `interprocess` documentation
 
@@ -79,7 +79,7 @@ impl State {
             let mut buffer = String::with_capacity(128);
 
             for conn in listener.incoming() {
-                let conn = match (bichannel.is_killswitch(), conn) {
+                let conn = match (child_bichannel.is_killswitch(), conn) {
                     (true, _) => return,
                     (_, Ok(c)) => {
                         println!("success");
@@ -162,14 +162,14 @@ impl State {
                             // baton shutdown message received. Send shutdown message and break to next connection
                             // if the first 8 letters or so contains "SHUTDOWN",
                             if buffer.starts_with("SHUTDOWN") {
-                                let _ =
-                                    bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                                let _ = child_bichannel
+                                    .send_to_parent(FromIpcThreadMessage::BatonShutdown);
                                 break;
                             } else {
                                 // actual baton data received
-                                let _ = bichannel.send_to_parent(FromIpcThreadMessage::BatonData(
-                                    buffer.clone(),
-                                ));
+                                let _ = child_bichannel.send_to_parent(
+                                    FromIpcThreadMessage::BatonData(buffer.clone()),
+                                );
                             }
 
                             buffer.clear();
@@ -183,7 +183,7 @@ impl State {
 
         self.ipc_bichannel = Some(ipc_bichannel);
 
-        todo!()
+        Ok(())
     }
 
     pub fn tcp_connect(&mut self) -> Result<()> {
@@ -192,7 +192,7 @@ impl State {
         }
 
         // TODO
-        let (tcp_bichannel, bichannel) = channel_manager::create_bichannels();
+        let (tcp_bichannel, child_bichannel) = bichannel::create_bichannels();
         let tcp_thread_handle = std::thread::spawn(move || {});
 
         self.ipc_bichannel = Some(tcp_bichannel);

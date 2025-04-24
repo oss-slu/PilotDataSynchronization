@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use std::sync::{Arc, Mutex};
 
-pub(crate) struct BiParentComm<ParentToChildMsg, ChildToParentMsg>
+pub(crate) struct ParentBiChannel<ParentToChildMsg, ChildToParentMsg>
 where
     ParentToChildMsg: Send + Sync,
     ChildToParentMsg: Send + Sync,
@@ -11,7 +11,7 @@ where
     killswitch: Arc<Mutex<bool>>,
 }
 
-pub(crate) struct BiChildComm<ParentToChildMsg, ChildToParentMsg>
+pub(crate) struct ChildBiChannel<ParentToChildMsg, ChildToParentMsg>
 where
     ParentToChildMsg: Send + Sync,
     ChildToParentMsg: Send + Sync,
@@ -22,8 +22,8 @@ where
 }
 
 pub(crate) fn create_bichannels<ParentToChildMsg, ChildToParentMsg>() -> (
-    BiParentComm<ParentToChildMsg, ChildToParentMsg>,
-    BiChildComm<ParentToChildMsg, ChildToParentMsg>,
+    ParentBiChannel<ParentToChildMsg, ChildToParentMsg>,
+    ChildBiChannel<ParentToChildMsg, ChildToParentMsg>,
 )
 where
     ParentToChildMsg: Send + Sync,
@@ -35,13 +35,13 @@ where
     let (tx_to_child, rx_from_parent) = crossbeam::channel::unbounded();
     let (tx_to_parent, rx_from_child) = crossbeam::channel::unbounded();
 
-    let parent_comm: BiParentComm<ParentToChildMsg, ChildToParentMsg> = BiParentComm {
+    let parent_comm: ParentBiChannel<ParentToChildMsg, ChildToParentMsg> = ParentBiChannel {
         parent_to_child: tx_to_child,
         child_to_parent: rx_from_child,
         killswitch,
     };
 
-    let child_comm: BiChildComm<ParentToChildMsg, ChildToParentMsg> = BiChildComm {
+    let child_comm: ChildBiChannel<ParentToChildMsg, ChildToParentMsg> = ChildBiChannel {
         parent_to_child: rx_from_parent,
         child_to_parent: tx_to_parent,
         killswitch: killswitch_clone,
@@ -50,7 +50,7 @@ where
     (parent_comm, child_comm)
 }
 
-impl<ParentToChildMsg, ChildToParentMsg> BiParentComm<ParentToChildMsg, ChildToParentMsg>
+impl<ParentToChildMsg, ChildToParentMsg> ParentBiChannel<ParentToChildMsg, ChildToParentMsg>
 where
     ParentToChildMsg: Send + Sync,
     ChildToParentMsg: Send + Sync,
@@ -71,12 +71,12 @@ where
             .map_err(|e| anyhow!("Converted crossbeam error: {}", e.to_string()))
     }
 
-    pub fn recv_messages_iter(&self) -> Vec<ChildToParentMsg> {
+    pub fn received_messages(&self) -> Vec<ChildToParentMsg> {
         self.child_to_parent.try_iter().collect()
     }
 }
 
-impl<ParentToChildMsg, ChildToParentMsg> BiChildComm<ParentToChildMsg, ChildToParentMsg>
+impl<ParentToChildMsg, ChildToParentMsg> ChildBiChannel<ParentToChildMsg, ChildToParentMsg>
 where
     ParentToChildMsg: Send + Sync,
     ChildToParentMsg: Send + Sync,
