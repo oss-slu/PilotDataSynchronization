@@ -19,10 +19,7 @@ pub(crate) fn view(state: &State) -> Element<Message> {
         format!(":( No Baton Connection")
     };
 
-    let connection_status = match &state.connection_status {
-        Some(channel_msg) => format!("{:?}", channel_msg), // Using debug formatting
-        None => "No connection established".to_string(),
-    };
+    let connection_status = state.tcp_connected;
 
     column![
         text(format!("Elapsed time: {:?}", state.elapsed_time)),

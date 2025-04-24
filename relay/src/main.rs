@@ -1,4 +1,5 @@
-mod ipc;
+mod bichannel;
+// mod ipc;
 mod message;
 mod state;
 mod update;
@@ -7,8 +8,8 @@ mod view;
 use std::io::Read;
 use std::net::TcpStream;
 use std::str::from_utf8;
-mod channel;
-use channel::ChannelMessage;
+// mod channel;
+// use channel::ChannelMessage;
 
 use std::{
     io::{BufRead, BufReader, Write},
@@ -16,8 +17,8 @@ use std::{
 };
 
 use self::{
-    ipc::ipc_connection_loop,
-    message::{IpcThreadMessage, Message},
+    // ipc::ipc_connection_loop,
+    message::{FromIpcThreadMessage, Message},
     state::State,
     update::update,
     view::view,
@@ -25,12 +26,12 @@ use self::{
 
 use iced::{
     time::{every, Duration},
-    Task, Theme,
+    Task,
 };
-
-use std::sync::mpsc::{Receiver, Sender};
-
-use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
+use interprocess::local_socket::{
+    traits::{Listener, ListenerExt},
+    GenericNamespaced, ListenerOptions, ToNsName,
+};
 
 fn main() -> iced::Result {
     // Communication channels between the main_gui_thread and the ipc_connection_thread
@@ -40,85 +41,39 @@ fn main() -> iced::Result {
 
     // Connect to the server
 
-    let (send, recv) = std::sync::mpsc::channel::<ChannelMessage>();
+    /* let (tx_to_parent_thread, rx_from_tcp_thread) = std::sync::mpsc::channel::<ChannelMessage>();
     let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
         Ok(mut stream) => {
             println!("Successfully connected.");
             let message = ChannelMessage::Connect;
-            send.send(message);
+            tx_to_parent_thread.send(message);
         }
 
         Err(e) => {
             println!("Connection failed: {}", e);
         }
-    });
+    }); */
 
-    let (tx_kill, rx_kill) = std::sync::mpsc::channel();
-    // txx = transmit FROM ipc_thread TO main_gui_thread
-    let (txx, rxx): (Sender<IpcThreadMessage>, Receiver<IpcThreadMessage>) =
-        std::sync::mpsc::channel();
-
-    // IPC connection Thread
-    let ipc_connection_handle = thread::spawn(move || {
-        println!("Initial IPC Connection!");
-
-        // Create new IPC Socket Listener builder
-        let printname = "baton.sock";
-        let name = printname.to_ns_name::<GenericNamespaced>().unwrap();
-        let opts = ListenerOptions::new().name(name);
-
-        // Create the actual IPC Socket Listener
-        let listener = match opts.create_sync() {
-            Ok(x) => x,
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                eprintln!(
-                    "Error: could not start server because the socket file is occupied. Please check if {printname} is in use by another process and try again."
-                );
-                return;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Error: could not start server because the OS denied permission: \n{e}");
-                return;
-            }
-            Err(e) => {
-                eprintln!("Other Error: {e}");
-                return;
-            }
-        };
-
-        listener
-            .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
-            .expect("Error setting non-blocking mode on listener");
-
-        eprintln!("Server running at {printname}\n");
-
-        // Run the connection loop with the created socket listener
-        ipc_connection_loop(&listener, rx_kill, txx)
-    });
+    // let (tx_to_ipc_thread, rx_kill) = std::sync::mpsc::channel();
+    // let (tx_to_parent_thread, rx_from_parent_thread) = std::sync::mpsc::channel();
+    // let _ = tx.send(()); // temp
 
     iced::application("RELAY", update, view)
-        .window_size((400.0, 200.0))
+        .window_size((250.0, 100.0))
         .exit_on_close_request(false)
         .subscription(subscribe)
-        .theme(theme)
         .run_with(|| {
             // for pre-run state initialization
-            let state = State {
+            let mut state = State {
                 elapsed_time: Duration::ZERO,
-                ipc_conn_thread_handle: Some(ipc_connection_handle),
-                tx_kill: Some(tx_kill),
-                rx_baton: Some(rxx),
-                latest_baton_send: None,
-                recv: Some(recv),
-                connection_status: None,
-                active_baton_connection: false,
+                ..Default::default()
             };
+
+            state.ipc_connect().expect("IPC connection failure");
+            // state.tcp_connect().expect("TCP connection failure"); // may not need to panic, recoverable error
+
             (state, Task::none())
         })
-}
-
-fn theme(_state: &State) -> Theme {
-    Theme::TokyoNight
 }
 
 fn subscribe(_state: &State) -> iced::Subscription<Message> {

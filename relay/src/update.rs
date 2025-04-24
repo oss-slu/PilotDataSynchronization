@@ -1,6 +1,6 @@
 use iced::{time::Duration, Task};
 
-use crate::{IpcThreadMessage, Message, State};
+use crate::{bichannel, message::ToIpcThreadMessage, FromIpcThreadMessage, Message, State};
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -13,8 +13,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         M::WindowCloseRequest(id) => {
             // pre-shutdown operations go here
-            if let Some(ref tx) = state.tx_kill {
-                let _ = tx.send(());
+            if let Some(ref bichannel) = state.ipc_bichannel {
+                let _ = bichannel.killswitch_engage();
+            }
+
+            if let Some(ref bichannel) = state.tcp_bichannel {
+                let _ = bichannel.killswitch_engage();
             }
 
             // delete socket file
@@ -34,25 +38,32 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         M::BatonMessage => {
             // if we get a message from the ipc_connection_thread, do something with it
-            match state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok()) {
-                Some(IpcThreadMessage::BatonData(data)) => {
+            match state
+                .ipc_bichannel
+                .as_ref()
+                .and_then(|bichannel| bichannel.try_recv().ok())
+            {
+                Some(FromIpcThreadMessage::BatonData(data)) => {
                     state.latest_baton_send = Some(data);
                     state.active_baton_connection = true;
                 }
-                Some(IpcThreadMessage::BatonShutdown) => state.active_baton_connection = false,
-                None => { /* do nothing */ }
+                Some(FromIpcThreadMessage::BatonShutdown) => state.active_baton_connection = false,
+                _ => { /* do nothing */ }
             };
             Task::none()
         }
 
-      M::ConnectionMessage => {
-        println!("Check Connection Status");
-        if let Some(status) = state.recv.as_ref().and_then(|recv| recv.try_recv().ok()){
-            state.connection_status = Some(status)
-        }                                                                                           
-        Task::none()
-            
-        },
+        M::ConnectionMessage => {
+            println!("Check Connection Status");
+            if let Some(status) = state
+                .tcp_bichannel
+                .as_ref()
+                .and_then(|bichannel| bichannel.try_recv().ok())
+            {
+                state.tcp_connected = status
+            }
+            Task::none()
+        }
         _ => Task::none(),
     }
 }
