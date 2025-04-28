@@ -47,7 +47,7 @@ fn main() -> iced::Result {
     // let _ = tx.send(()); // temp
 
     iced::application("RELAY", update, view)
-        .window_size((250.0, 100.0))
+        .window_size((450.0, 300.0))
         .exit_on_close_request(false)
         .subscription(subscribe)
         .run_with(|| {
@@ -72,15 +72,12 @@ fn subscribe(_state: &State) -> iced::Subscription<Message> {
     use Message as M;
 
     // Subscription for displaying elapsed time -- temporary
-    let time_sub = every(Duration::from_secs(1)).map(|_| M::Update);
-
-    // Subscription to re-check the baton connection
-    let baton_sub = every(Duration::from_millis(10)).map(|_| M::BatonMessage);
+    let time_sub = every(Duration::from_millis(10)).map(|_| M::Update);
 
     // Subscription to send a message when the window close button (big red X) is clicked.
     // Needed to execute cleanup operations before actually shutting down, such as saving etc
     let window_close = iced::window::close_requests().map(|id| M::WindowCloseRequest(id));
 
     // combine and return all subscriptions as one subscription to satisfy the return type
-    iced::Subscription::batch([time_sub, baton_sub, window_close])
+    iced::Subscription::batch([time_sub, window_close])
 }

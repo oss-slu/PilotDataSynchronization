@@ -8,7 +8,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     #[allow(unreachable_patterns)]
     match message {
         M::Update => {
-            state.elapsed_time += Duration::from_secs(1);
+            state.elapsed_time += Duration::from_millis(10);
 
             // check for messages from IPC thread
             if let Some(ipc_bichannel) = &state.ipc_bichannel {
@@ -16,13 +16,14 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                     match message {
                         FromIpcThreadMessage::BatonData(data) => {
                             state.tcp_bichannel.as_mut().map(|tcp_bichannel| {
-                                tcp_bichannel.send_to_child(ToTcpThreadMessage::Send(data))
+                                tcp_bichannel.send_to_child(ToTcpThreadMessage::Send(data.clone()))
                             });
+                            state.latest_baton_send = Some(data);
+                            state.active_baton_connection = true;
                         }
                         FromIpcThreadMessage::BatonShutdown => {
-                            state
-                                .tcp_disconnect()
-                                .expect("Error attempting to shut down TCP server");
+                            let _ = state.tcp_disconnect();
+                            state.active_baton_connection = false;
                         }
                         _ => (),
                     }
@@ -65,23 +66,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             // necessary to actually shut down the window, otherwise the close button will appear to not work
             iced::window::close(id)
         }
-        M::BatonMessage => {
-            // if we get a message from the ipc_connection_thread, do something with it
-            match state
-                .ipc_bichannel
-                .as_ref()
-                .and_then(|bichannel| bichannel.try_recv().ok())
-            {
-                Some(FromIpcThreadMessage::BatonData(data)) => {
-                    state.latest_baton_send = Some(data);
-                    state.active_baton_connection = true;
-                }
-                Some(FromIpcThreadMessage::BatonShutdown) => state.active_baton_connection = false,
-                _ => { /* do nothing */ }
-            };
-            Task::none()
-        }
-
         M::ConnectionMessage => {
             if let Some(status) = state
                 .tcp_bichannel
@@ -94,7 +78,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-
         M::ConnectIpc => {
             if let Err(e) = state.ipc_connect() {
                 state.log_event(format!("Error: {e:?}"));
@@ -122,7 +105,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         M::TcpAddrFieldUpdate(addr) => {
             // Update the TCP address text input in the GUI
-            state.tcp_addr_field = addr;
+            let is_chars_valid = addr.chars().all(|c| c.is_numeric() || c == '.' || c == ':');
+            let dot_count = addr.chars().filter(|&c| c == '.').count();
+            let colon_count = addr.chars().filter(|&c| c == ':').count();
+            if is_chars_valid && dot_count <= 3 && colon_count <= 1 {
+                state.tcp_addr_field = addr;
+            }
             Task::none()
         }
         _ => Task::none(),

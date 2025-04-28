@@ -183,6 +183,18 @@ impl State {
         Ok(res?)
     }
 
+    pub fn _is_ipc_connected(&self) -> bool {
+        if let Some(status) = self
+            .ipc_bichannel
+            .as_ref()
+            .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
+        {
+            status
+        } else {
+            false
+        }
+    }
+
     pub fn tcp_connect(&mut self, address: String) -> Result<()> {
         if self.tcp_thread_handle.is_some() {
             bail!("TCP thread already exists.")
@@ -222,7 +234,7 @@ impl State {
 
         self.tcp_thread_handle = Some(tcp_thread_handle);
 
-        todo!()
+        Ok(())
     }
 
     pub fn tcp_disconnect(&mut self) -> Result<()> {
@@ -242,6 +254,18 @@ impl State {
             .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
 
         Ok(res?)
+    }
+
+    pub fn _is_tcp_connected(&self) -> bool {
+        if let Some(status) = self
+            .tcp_bichannel
+            .as_ref()
+            .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
+        {
+            status
+        } else {
+            false
+        }
     }
 
     pub fn log_event(&mut self, event: String) {

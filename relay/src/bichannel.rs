@@ -82,7 +82,7 @@ where
         self.child_to_parent.try_iter().collect()
     }
 
-    pub fn try_recv(&self) -> Result<ChildToParentMsg> {
+    pub fn _try_recv(&self) -> Result<ChildToParentMsg> {
         self.child_to_parent
             .try_recv()
             .map_err(|e| anyhow!("Converted crossbeam error: {}", e.to_string()))

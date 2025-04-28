@@ -6,9 +6,6 @@ pub(crate) enum Message {
     // signal for pre-shutdown procedures and the ID for our window, which is to be closed
     WindowCloseRequest(iced::window::Id),
 
-    // signal to check the baton thread
-    BatonMessage,
-
     ConnectionMessage,
 
     ConnectIpc,
