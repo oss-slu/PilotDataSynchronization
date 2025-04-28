@@ -10,7 +10,7 @@ use crate::{Message, State};
 pub(crate) fn view(state: &State) -> Element<Message> {
     // need to update view function with float parsing? perhaps? idk
     let baton_data = match &state.latest_baton_send {
-        Some(num) => format!("[BATON] Pilot Elevation: {num:.3} ft"),
+        Some(data) => format!("[BATON]: {data}"),
         None => "No data from baton.".into(),
     };
 
@@ -26,7 +26,7 @@ pub(crate) fn view(state: &State) -> Element<Message> {
     column![
         text(format!("Elapsed time: {:?}", state.elapsed_time)),
         text(baton_data),
-        text(format!("Connection Staus: {}", connection_status)),
+        text(format!("TCP Connection Status: {}", connection_status)),
         button("Check Connection Status").on_press(Message::ConnectionMessage),
         // if we use containers, it boxes up the text elements and makes them easier to read
         container(text(baton_connect_status))

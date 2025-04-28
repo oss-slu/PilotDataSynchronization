@@ -223,7 +223,9 @@ impl State {
                 for message in child_bichannel.received_messages() {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
-                            let _ = stream.write_all(data.as_bytes());
+                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n")
+                                .to_string();
+                            let _ = stream.write_all(packet.as_bytes());
                         }
                     }
                 }
