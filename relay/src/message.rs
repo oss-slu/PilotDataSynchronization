@@ -17,6 +17,8 @@ pub(crate) enum Message {
     DisconnectTcp,
 
     TcpAddrFieldUpdate(String),
+
+    Tick,
 }
 
 pub(crate) enum ToIpcThreadMessage {}

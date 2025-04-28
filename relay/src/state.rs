@@ -16,6 +16,7 @@ use crate::message::ToIpcThreadMessage;
 use crate::message::ToTcpThreadMessage;
 
 // use crate::ChannelMessage;
+use crate::mychart::MyChart;
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
 
@@ -36,6 +37,7 @@ pub(crate) struct State {
     // pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
+    pub chart: MyChart,
 }
 
 impl State {

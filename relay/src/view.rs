@@ -1,8 +1,8 @@
 use std::net::ToSocketAddrs;
 
 use iced::{
-    widget::{button, column, container, row, text, text_input},
-    Element,
+    widget::{button, column, container, row, text, text_input, Column, Text},
+    {Element, Length},
 };
 
 use crate::{Message, State};
@@ -52,6 +52,12 @@ pub(crate) fn view(state: &State) -> Element<Message> {
             .spacing(5)
         },
         button("Disconnect TCP").on_press(Message::DisconnectTcp),
+        text("Iced test chart"),
+        container(state.chart.view())
+            .width(Length::Fill)
+            .height(Length::Fixed(300.0))
+            .center_x(Length::Fill)
+            .center_y(Length::Shrink),
     ]
     .padding(10)
     .into()
