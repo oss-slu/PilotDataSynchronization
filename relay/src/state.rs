@@ -2,6 +2,7 @@ use std::thread::JoinHandle;
 
 use iced::time::Duration;
 
+use crate::mychart::MyChart;
 use crate::ChannelMessage;
 
 #[derive(Default)]
@@ -14,4 +15,5 @@ pub(crate) struct State {
     pub connection_status: ChannelMessage,
     pub latest_baton_send: Option<f32>,
     pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
+    pub chart: MyChart,
 }
