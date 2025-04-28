@@ -2,19 +2,20 @@ mod message;
 mod state;
 mod update;
 mod view;
+mod mychart;
 
 use std::io::Read;
 use std::net::TcpStream;
 use std::str::from_utf8;
 mod channel;
-use channel::channelMessage;
+use channel::ChannelMessage;
 
 use std::{
     io::{BufRead, BufReader, Write},
     thread,
 };
 
-use self::{message::Message, state::State, update::update, view::view};
+use self::{message::Message, state::State, update::update, view::view, mychart::MyChart};
 
 use iced::{
     time::{every, Duration},
@@ -30,11 +31,11 @@ fn main() -> iced::Result {
 
     // Connect to the server
 
-    let (send, recv) = std::sync::mpsc::channel::<channelMessage>();
+    let (send, recv) = std::sync::mpsc::channel::<ChannelMessage>();
     let tcp_connection = thread::spawn(move || match TcpStream::connect("127.0.0.1:7878") {
         Ok(mut stream) => {
             println!("Successfully connected.");
-            let message = channelMessage::CONNECT;
+            let message = ChannelMessage::Connect;
             send.send(message);
         }
 
@@ -180,6 +181,7 @@ fn main() -> iced::Result {
                 latest_baton_send: None,
                 recv: Some(recv),
                 connection_status: ChannelMessage::Disconnected,
+                chart: MyChart::new(),
             };
             (state, Task::none())
         })
@@ -198,6 +200,10 @@ fn subscribe(_state: &State) -> iced::Subscription<Message> {
     // Needed to execute cleanup operations before actually shutting down, such as saving etc
     let window_close = iced::window::close_requests().map(|id| M::WindowCloseRequest(id));
 
+    //chart 
+    const FPS: u64 = 50;
+    let update_me = every(Duration::from_millis(1000 / FPS)).map(|_| M::Tick);
+
     // combine and return all subscriptions as one subscription to satisfy the return type
-    iced::Subscription::batch([time_sub, baton_sub, window_close])
+    iced::Subscription::batch([time_sub, baton_sub, window_close, update_me])
 }
