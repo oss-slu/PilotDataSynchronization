@@ -1,8 +1,8 @@
 mod message;
+mod mychart;
 mod state;
 mod update;
 mod view;
-mod mychart;
 
 use std::io::Read;
 use std::net::TcpStream;
@@ -15,7 +15,7 @@ use std::{
     thread,
 };
 
-use self::{message::Message, state::State, update::update, view::view, mychart::MyChart};
+use self::{message::Message, mychart::MyChart, state::State, update::update, view::view};
 
 use iced::{
     time::{every, Duration},
@@ -200,7 +200,7 @@ fn subscribe(_state: &State) -> iced::Subscription<Message> {
     // Needed to execute cleanup operations before actually shutting down, such as saving etc
     let window_close = iced::window::close_requests().map(|id| M::WindowCloseRequest(id));
 
-    //chart 
+    //chart
     const FPS: u64 = 50;
     let update_me = every(Duration::from_millis(1000 / FPS)).map(|_| M::Tick);
 

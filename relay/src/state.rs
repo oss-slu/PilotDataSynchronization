@@ -2,8 +2,8 @@ use std::thread::JoinHandle;
 
 use iced::time::Duration;
 
-use crate::ChannelMessage;
 use crate::mychart::MyChart;
+use crate::ChannelMessage;
 
 #[derive(Default)]
 #[allow(unused)]

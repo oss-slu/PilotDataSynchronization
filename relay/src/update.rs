@@ -51,11 +51,11 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
 
         M::Tick => {
             let mut rng = rand::thread_rng();
-            let x: f32 = rng.gen_range(1.0..=5.0); 
+            let x: f32 = rng.gen_range(1.0..=5.0);
             let y: f32 = rng.gen_range(-1.0..=1.0);
             //std::println!("Updating: {} and {}!", x, y);
 
-            state.chart.points.push((x,y));
+            state.chart.points.push((x, y));
 
             Task::none()
         }

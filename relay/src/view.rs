@@ -1,5 +1,5 @@
 use iced::{
-    widget::{button, column, text, Column, Text, container},
+    widget::{button, column, container, text, Column, Text},
     {Element, Length},
 };
 
@@ -20,8 +20,8 @@ pub(crate) fn view(state: &State) -> Element<Message> {
         button("Check Connection Status").on_press(Message::ConnectionMessage),
         text("Iced test chart"),
         container(state.chart.view())
-            .width(Length::Fill)   
-            .height(Length::Fixed(300.0)) 
+            .width(Length::Fill)
+            .height(Length::Fixed(300.0))
             .center_x(Length::Fill)
             .center_y(Length::Shrink),
     ]

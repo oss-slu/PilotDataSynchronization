@@ -9,8 +9,7 @@ pub(crate) enum Message {
     // signal to check the baton thread
     BatonMessage,
 
-    ConnectionMessage, 
+    ConnectionMessage,
 
     Tick,
-
 }
