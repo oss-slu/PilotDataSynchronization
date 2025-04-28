@@ -9,10 +9,12 @@
 #include <thread>
 #include <vector>
 
+#include "Logger.cpp"
+#include "TCPClient.cpp"
 #include "subprojects/baton/lib.rs.h"
+#include "threading-tools.h"
 
-using std::string;
-using std::vector;
+// #include "packet.cpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,9 +59,11 @@ static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
 static XPLMDataRef headingPilotRef;
 
-// baton handle -- a "Box" is the name for a Rust pointer. This Box is handled
-// by the cxx crate interface and acts like a normal pointer.
-rust::cxxbridge1::Box<Baton> baton = new_baton_handle();
+// thread handle for TCP
+static std::thread thread_handle;
+
+// baton handle
+rust::cxxbridge1::Box<ThreadWrapper> baton = new_wrapper();
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void* in_refcon);
@@ -104,6 +108,67 @@ void dummy_key_handler(
 ) {}
 
 volatile bool stop_exec = false;
+Logger *Logger::instance = nullptr;
+
+int runTCP(std::shared_ptr<ThreadQueue> thread_queue) {
+  Logger *logger = Logger::getInstance();
+
+  logger->log("Plugin initialization started");
+
+  try {
+    TCPClient client;
+    std::string serverIP = "127.0.0.1";
+    logger->log("Initializing Winsock");
+    client.initializeWinsock();
+
+    logger->log("Creating socket");
+    client.createSocket();
+
+    logger->log("Attempting to connect to server");
+    if (!client.connectToServer(serverIP)) {
+      logger->log("Server connection failed", MsgLogType::CONN_FAIL);
+      // Handle connection failure
+      return 0;
+    }
+
+    logger->log("Server connection successful", MsgLogType::CONN_PASS);
+
+    bool stop_exec = false;
+
+    while (!stop_exec) {
+      if (thread_queue->size() == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        continue;
+      }
+
+      ThreadMessage tm = thread_queue->pop();
+      if (tm.end_execution_flag) {
+        logger->log("Received end execution flag", MsgLogType::END);
+        stop_exec = true;
+      } else {
+        std::vector<std::string> myVec;
+        for (int i = 0; i < 4; i++) {
+          myVec.push_back(std::to_string(tm.values_for_packet[i]));
+        }
+
+        std::string packet = generate_packet(myVec);
+        logger->log("Generating packet: " + packet);
+
+        if (!client.sendData(packet)) {
+          logger->log("Failed to send packet", MsgLogType::SEND_FAIL);
+        } else {
+          logger->log("Packet sent successfully", MsgLogType::SEND_PASS);
+        }
+      }
+    }
+  } catch (const std::exception &e) {
+    logger->log("Exception occurred: " + std::string(e.what()),
+                MsgLogType::ERR);
+    return 0;
+  }
+
+  return 1;
+}
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     strcpy(outName, "PilotDataSyncPlugin");
@@ -181,7 +246,6 @@ PLUGIN_API void XPluginDisable(void) {
 
 PLUGIN_API int XPluginEnable(void) {
     baton->start();
-
     return 1;
 }
 

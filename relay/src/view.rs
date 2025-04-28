@@ -14,7 +14,6 @@ pub(crate) fn view(state: &State) -> Element<Message> {
         None => "No data from baton.".into(),
     };
 
-    // make this better. Perhaps add a funny emoji or sm
     let baton_connect_status = if state.active_baton_connection {
         format!("Baton Status: Connected")
     } else {

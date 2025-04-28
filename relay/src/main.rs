@@ -61,6 +61,7 @@ fn main() -> iced::Result {
                 state.event_log.push(format!(
                     "Error connecting to IPC during GUI initialization: {e:?}"
                 ));
+
             };
             // state.tcp_connect().expect("TCP connection failure"); // may not need to panic, recoverable error
 
