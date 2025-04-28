@@ -1,5 +1,5 @@
 use iced::{
-    widget::{button, column, container, text},
+    widget::{button, column, container, text, text_input},
     Element,
 };
 
@@ -30,7 +30,13 @@ pub(crate) fn view(state: &State) -> Element<Message> {
         container(text(baton_connect_status))
             .padding(10)
             .center(400)
-            .style(container::rounded_box)
+            .style(container::rounded_box),
+        text_input("127.0.0.1:9999", &state.tcp_addr_field)
+            .on_input(|addr| Message::TcpAddrFieldUpdate(addr)),
+        button("Connect IPC").on_press(Message::ConnectIpc),
+        button("Disconnect IPC").on_press(Message::DisconnectIpc),
+        button("Connect TCP").on_press(Message::ConnectTcp),
+        button("Disconect TCP").on_press(Message::DisconnectTcp),
     ]
     .into()
 }

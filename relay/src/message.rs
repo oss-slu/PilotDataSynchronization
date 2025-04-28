@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum Message {
     // generic time update signal
     Update,
@@ -10,6 +10,16 @@ pub(crate) enum Message {
     BatonMessage,
 
     ConnectionMessage,
+
+    ConnectIpc,
+
+    DisconnectIpc,
+
+    ConnectTcp,
+
+    DisconnectTcp,
+
+    TcpAddrFieldUpdate(String),
 }
 
 pub(crate) enum ToIpcThreadMessage {}
@@ -23,8 +33,8 @@ pub(crate) enum FromIpcThreadMessage {
     BatonShutdown,
 }
 
-pub(crate) enum ToTcpThreadMessage {}
-
-pub(crate) enum FromTcpThreadMessage {
-    Connected,
+pub(crate) enum ToTcpThreadMessage {
+    Send(String),
 }
+
+pub(crate) enum FromTcpThreadMessage {}

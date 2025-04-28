@@ -5,16 +5,8 @@ mod state;
 mod update;
 mod view;
 
-use std::io::Read;
-use std::net::TcpStream;
-use std::str::from_utf8;
 // mod channel;
 // use channel::ChannelMessage;
-
-use std::{
-    io::{BufRead, BufReader, Write},
-    thread,
-};
 
 use self::{
     // ipc::ipc_connection_loop,
@@ -27,10 +19,6 @@ use self::{
 use iced::{
     time::{every, Duration},
     Task,
-};
-use interprocess::local_socket::{
-    traits::{Listener, ListenerExt},
-    GenericNamespaced, ListenerOptions, ToNsName,
 };
 
 fn main() -> iced::Result {
@@ -69,7 +57,11 @@ fn main() -> iced::Result {
                 ..Default::default()
             };
 
-            state.ipc_connect().expect("IPC connection failure");
+            if let Err(e) = state.ipc_connect() {
+                state.event_log.push(format!(
+                    "Error connecting to IPC during GUI initialization: {e:?}"
+                ));
+            };
             // state.tcp_connect().expect("TCP connection failure"); // may not need to panic, recoverable error
 
             (state, Task::none())

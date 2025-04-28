@@ -9,6 +9,7 @@ where
     parent_to_child: crossbeam::channel::Sender<ParentToChildMsg>,
     child_to_parent: crossbeam::channel::Receiver<ChildToParentMsg>,
     killswitch: Arc<Mutex<bool>>,
+    connected_to_endpoint: Arc<Mutex<bool>>,
 }
 
 pub(crate) struct ChildBiChannel<ParentToChildMsg, ChildToParentMsg>
@@ -19,6 +20,7 @@ where
     parent_to_child: crossbeam::channel::Receiver<ParentToChildMsg>,
     child_to_parent: crossbeam::channel::Sender<ChildToParentMsg>,
     killswitch: Arc<Mutex<bool>>,
+    connected_to_endpoint: Arc<Mutex<bool>>,
 }
 
 pub(crate) fn create_bichannels<ParentToChildMsg, ChildToParentMsg>() -> (
@@ -32,6 +34,9 @@ where
     let killswitch = Arc::new(Mutex::from(false));
     let killswitch_clone = killswitch.clone();
 
+    let connected_to_endpoint = Arc::new(Mutex::from(false));
+    let connected_to_endpoint_clone = connected_to_endpoint.clone();
+
     let (tx_to_child, rx_from_parent) = crossbeam::channel::unbounded();
     let (tx_to_parent, rx_from_child) = crossbeam::channel::unbounded();
 
@@ -39,12 +44,14 @@ where
         parent_to_child: tx_to_child,
         child_to_parent: rx_from_child,
         killswitch,
+        connected_to_endpoint,
     };
 
     let child_comm: ChildBiChannel<ParentToChildMsg, ChildToParentMsg> = ChildBiChannel {
         parent_to_child: rx_from_parent,
         child_to_parent: tx_to_parent,
         killswitch: killswitch_clone,
+        connected_to_endpoint: connected_to_endpoint_clone,
     };
 
     (parent_comm, child_comm)
@@ -80,6 +87,14 @@ where
             .try_recv()
             .map_err(|e| anyhow!("Converted crossbeam error: {}", e.to_string()))
     }
+
+    pub fn is_conn_to_endpoint(&self) -> Result<bool> {
+        let Ok(conn_status) = self.connected_to_endpoint.lock() else {
+            bail!("Failed to acquire mutex lock.")
+        };
+
+        Ok(*conn_status)
+    }
 }
 
 impl<ParentToChildMsg, ChildToParentMsg> ChildBiChannel<ParentToChildMsg, ChildToParentMsg>
@@ -103,5 +118,15 @@ where
 
     pub fn received_messages(&self) -> Vec<ParentToChildMsg> {
         self.parent_to_child.try_iter().collect()
+    }
+
+    pub fn set_is_conn_to_endpoint(&mut self, new_conn_status: bool) -> Result<()> {
+        let Ok(mut conn_status) = self.connected_to_endpoint.lock() else {
+            bail!("Failed to acquire mutex lock.")
+        };
+
+        *conn_status = new_conn_status;
+
+        Ok(())
     }
 }
