@@ -59,15 +59,15 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         },
         M::AirspeedToggle(value) => {
-            state.altitude_toggle = value;
+            state.airspeed_toggle = value;
             Task::none()
         },
         M::VerticalAirspeedToggle(value) => {
-            state.altitude_toggle = value;
+            state.vertical_airspeed_toggle = value;
             Task::none()
         },
         M::OtherToggle(value) => {
-            state.altitude_toggle = value;
+            state.other_toggle = value;
             Task::none()
         },
         M::CreateXMLFile => {

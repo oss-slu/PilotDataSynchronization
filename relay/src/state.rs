@@ -23,5 +23,4 @@ pub(crate) struct State {
     pub airspeed_toggle: bool,
     pub vertical_airspeed_toggle: bool,
     pub other_toggle: bool,
-
 }
