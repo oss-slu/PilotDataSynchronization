@@ -112,6 +112,13 @@ fn main() -> iced::Result {
                 recv: Some(recv),
                 connection_status: None,
                 active_baton_connection: false,
+
+                // Variables for the UI XML Creation toggles
+                card_open: false,
+                altitude_toggle: true,
+                airspeed_toggle: true,
+                vertical_airspeed_toggle: true,
+                other_toggle: true,
             };
             (state, Task::none())
         })

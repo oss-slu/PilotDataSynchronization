@@ -17,4 +17,11 @@ pub(crate) struct State {
     pub latest_baton_send: Option<String>,
     pub active_baton_connection: bool,
     pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
+
+    pub card_open: bool, 
+    pub altitude_toggle: bool,
+    pub airspeed_toggle: bool,
+    pub vertical_airspeed_toggle: bool,
+    pub other_toggle: bool,
+
 }

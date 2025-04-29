@@ -10,6 +10,17 @@ pub(crate) enum Message {
     BatonMessage,
 
     ConnectionMessage,
+
+    CreateXMLFile,
+
+    // Toggle buttons to generate XML file in UI
+    AltitudeToggle(bool),
+    AirspeedToggle(bool),
+    VerticalAirspeedToggle(bool),
+    OtherToggle(bool),
+    
+    CardOpen,
+    CardClose,
 }
 
 // Enum for messages from within the IPC connection thread
