@@ -1,6 +1,8 @@
 use iced::{time::Duration, Task};
+use rand::Rng;
 
 use crate::{message::ToTcpThreadMessage, FromIpcThreadMessage, Message, State};
+use crate::Message::Tick; 
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -112,6 +114,17 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                 state.tcp_addr_field = addr;
             }
             Task::none()
+        }
+
+        M::Tick => {
+            let mut rng = rand::thread_rng(); 
+            let x: usize = rng.gen_range(1..=5);
+
+            state.chart.update();
+            state.chart.add(x);
+
+            Task::none()
+
         }
         _ => Task::none(),
     }

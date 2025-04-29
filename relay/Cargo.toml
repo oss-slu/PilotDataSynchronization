@@ -8,3 +8,6 @@ iced = { version = "*", features = ["tokio"] }
 anyhow = "*"
 interprocess = "*"
 crossbeam = "0.8.4"
+plotters = "0.3.7"
+plotters-iced = "0.11.0"
+rand = "0.9.1"

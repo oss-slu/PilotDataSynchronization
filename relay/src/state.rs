@@ -8,6 +8,7 @@ use std::thread::JoinHandle;
 
 use iced::time::Duration;
 
+use crate::mychart::MyChart;
 use crate::bichannel;
 use crate::bichannel::ParentBiChannel;
 use crate::message::FromIpcThreadMessage;
@@ -36,6 +37,7 @@ pub(crate) struct State {
     // pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
+    pub chart: MyChart,
 }
 
 impl State {
