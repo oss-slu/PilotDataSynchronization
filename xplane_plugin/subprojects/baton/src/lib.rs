@@ -8,13 +8,14 @@ in order to facilitate the aforementioned interoperability.
 */
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use cxx::CxxVector;
 use interprocess::local_socket::{
     prelude::*, GenericFilePath, GenericNamespaced, NameType, Stream, ToFsName,
 };
 use std::{
     io::{prelude::*, BufReader},
     thread,
-    time::Duration
+    time::Duration,
 };
 
 // This defines the interface for the C++ codegen. This is where functions are exposed to the C++ side.
@@ -23,25 +24,25 @@ mod ffi {
     extern "Rust" {
         // [cxx] Defining a struct in this way makes it opaque on the C++ side; I don't want the C++ side
         // of the code to reach in and mess with my thread handle in any way.
-        type ThreadWrapper;
+        type Baton;
 
         fn start(&mut self);
 
         fn stop(&mut self);
 
-        fn send(&mut self, num: f32);
+        fn send(&mut self, nums: &CxxVector<f32>);
 
-        fn new_wrapper() -> Box<ThreadWrapper>;
+        fn new_baton_handle() -> Box<Baton>;
     }
 }
 
 #[derive(Default)]
-pub struct ThreadWrapper {
+pub struct Baton {
     thread: Option<std::thread::JoinHandle<()>>,
     tx: Option<Sender<ChannelSignal>>,
 }
 
-impl ThreadWrapper {
+impl Baton {
     pub fn start(&mut self) {
         // Rust does not have nulls. If you do not understand Options, read the Rust Book chapter 6.1
         let None = self.thread else {
@@ -53,6 +54,8 @@ impl ThreadWrapper {
         self.tx = Some(tx);
 
         let handle: thread::JoinHandle<_> = thread::spawn(move || {
+            // TODO implement continuous retry
+
             // OS-dependent abstraction
             let name = if GenericNamespaced::is_supported() {
                 "baton.sock".to_ns_name::<GenericNamespaced>().unwrap()
@@ -64,21 +67,18 @@ impl ThreadWrapper {
             let mut buffer = String::with_capacity(128);
 
             // Connection retry loop with an exponential backoff capped at 5 seconds
-            let conn;
             let mut retry_delay = Duration::from_millis(100);
-            loop {
+            let conn = loop {
                 match Stream::connect(name.borrow()) {
-                    Ok(stream) => {
-                        conn = stream;
-                        break;
-                    },
+                    Ok(stream) => break stream,
                     Err(e) => {
                         println!("Failed to connect: {e}. Retrying in {:?}...", retry_delay);
                         thread::sleep(retry_delay);
                         retry_delay = (retry_delay * 2).min(Duration::from_secs(5));
-                    },
+                    }
                 };
-            }
+            };
+
             // immediately "shadow" the Stream we create, wrapping it in a BufReader.
             // "shadowing" lets you re-use variable names. for more, see the Rust Book chapter 3.1.
             conn.set_nonblocking(true).unwrap();
@@ -97,6 +97,7 @@ impl ThreadWrapper {
 
             print!("[RUST] Server answered: {buffer}");
 
+            // TODO remove this or replace with a shorter handshake
             // send a bunch of data for the frequency test in one-second intervals
             for _ in 0..3 {
                 for _ in 0..5 {
@@ -105,6 +106,7 @@ impl ThreadWrapper {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
+            // TODO make more sophisticated, potentially refactor with continuous retry change todo above
             // Continuously send values
             loop {
                 for message in rx.try_iter() {
@@ -113,7 +115,10 @@ impl ThreadWrapper {
                             let s: String = format!("{n}\n");
                             let _ = conn.get_mut().write_all(s.as_bytes());
                         }
-                        ChannelSignal::Stop => return,
+                        ChannelSignal::Stop => {
+                            let _ = conn.get_mut().write_all("SHUTDOWN\n".as_bytes());
+                            return;
+                        }
                     };
                 }
             }
@@ -141,19 +146,23 @@ impl ThreadWrapper {
         self.thread = None;
     }
 
-    fn send(&mut self, num: f32) {
-        println!("[RUST] Attempted to send {num:?}");
+    fn send(&mut self, nums: &CxxVector<f32>) {
+        let s = nums
+            .into_iter()
+            .fold(String::new(), |acc, num| format!("{acc};{num}"));
+        // let s = format!("{num1};{num2};{num3};{num4}\n");
+        println!("[RUST] Attempted to send {s}");
         if let Some(tx) = &self.tx {
-            let _ = tx.send(ChannelSignal::Send(num));
+            let _ = tx.send(ChannelSignal::Send(s));
         }
     }
 }
 
-pub fn new_wrapper() -> Box<ThreadWrapper> {
-    Box::new(ThreadWrapper::default())
+pub fn new_baton_handle() -> Box<Baton> {
+    Box::new(Baton::default())
 }
 
 enum ChannelSignal {
     Stop,
-    Send(f32),
+    Send(String),
 }

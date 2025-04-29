@@ -1,6 +1,7 @@
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub enum ChannelMessage {
     Connect,
     #[default]
-    Disconnected,
+    Disconnected, 
 }
+

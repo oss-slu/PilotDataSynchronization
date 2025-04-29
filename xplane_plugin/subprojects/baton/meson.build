@@ -1,7 +1,7 @@
 project(
   'baton',
   ['cpp'],
-  meson_version: '1.7.0',
+  meson_version: '>=1.7.0',
 )
 
 baton_tgt = custom_target(
