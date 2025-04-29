@@ -57,7 +57,6 @@ pub(crate) fn view(state: &State) -> Element<Message> {
             .height(Length::Fixed(300.0))
             .center_x(Length::Fill)
             .center_y(Length::Shrink),
-    
     ]
     .padding(10)
     .into()

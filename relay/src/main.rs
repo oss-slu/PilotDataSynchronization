@@ -1,10 +1,10 @@
 mod bichannel;
 // mod ipc;
 mod message;
+mod mychart;
 mod state;
 mod update;
 mod view;
-mod mychart;
 
 // mod channel;
 // use channel::ChannelMessage;
@@ -79,7 +79,7 @@ fn subscribe(_state: &State) -> iced::Subscription<Message> {
     // Needed to execute cleanup operations before actually shutting down, such as saving etc
     let window_close = iced::window::close_requests().map(|id| M::WindowCloseRequest(id));
 
-    const FPS: u64 = 50; 
-    let update_me = every(Duration::from_millis(1000 / FPS)).map(|_| M::Tick);    // combine and return all subscriptions as one subscription to satisfy the return type
+    //const FPS: u64 = 50;
+    let update_me = every(Duration::from_secs(1)).map(|_| M::Tick); // combine and return all subscriptions as one subscription to satisfy the return type
     iced::Subscription::batch([time_sub, window_close, update_me])
 }

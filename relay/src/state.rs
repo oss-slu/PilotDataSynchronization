@@ -8,13 +8,13 @@ use std::thread::JoinHandle;
 
 use iced::time::Duration;
 
-use crate::mychart::MyChart;
 use crate::bichannel;
 use crate::bichannel::ParentBiChannel;
 use crate::message::FromIpcThreadMessage;
 use crate::message::FromTcpThreadMessage;
 use crate::message::ToIpcThreadMessage;
 use crate::message::ToTcpThreadMessage;
+use crate::mychart::MyChart;
 
 // use crate::ChannelMessage;
 

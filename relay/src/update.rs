@@ -1,8 +1,7 @@
 use iced::{time::Duration, Task};
-use rand::Rng;
 
 use crate::{message::ToTcpThreadMessage, FromIpcThreadMessage, Message, State};
-use crate::Message::Tick; 
+//use crate::Message::Tick;
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -22,6 +21,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                             });
                             state.latest_baton_send = Some(data);
                             state.active_baton_connection = true;
+                            state.chart.counter += 1; //edit here
                         }
                         FromIpcThreadMessage::BatonShutdown => {
                             let _ = state.tcp_disconnect();
@@ -117,14 +117,10 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
 
         M::Tick => {
-            let mut rng = rand::thread_rng(); 
-            let x: usize = rng.gen_range(1..=5);
-
             state.chart.update();
-            state.chart.add(x);
+            state.chart.add(state.chart.counter);
 
             Task::none()
-
         }
         _ => Task::none(),
     }
