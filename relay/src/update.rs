@@ -10,7 +10,10 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     #[allow(unreachable_patterns)]
     match message {
         M::Update => {
-            state.elapsed_time += Duration::from_secs(1);
+            state.elapsed_time += Duration::from_millis(10);
+
+            
+
             Task::none()
         }
         M::WindowCloseRequest(id) => {
@@ -39,6 +42,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             if let Some(num) = state.rx_baton.as_ref().and_then(|rx| rx.try_recv().ok()) {
                 state.latest_baton_send = Some(num);
             }
+
             Task::none()
         }
         M::ConnectionMessage => {
@@ -51,11 +55,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
 
         M::Tick => {
             let mut rng = rand::thread_rng();
-            let x: f32 = rng.gen_range(1.0..=5.0);
-            let y: f32 = rng.gen_range(-1.0..=1.0);
+            let x: usize = rng.gen_range(1..=5);
+            //let y: f32 = rng.gen_range(-1.0..=1.0);
             //std::println!("Updating: {} and {}!", x, y);
-
-            state.chart.points.push((x, y));
+            
+            state.chart.update();
+            state.chart.add(x);
 
             Task::none()
         }

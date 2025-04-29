@@ -191,7 +191,7 @@ fn subscribe(_state: &State) -> iced::Subscription<Message> {
     use Message as M;
 
     // Subscription for displaying elapsed time -- temporary
-    let time_sub = every(Duration::from_secs(1)).map(|_| M::Update);
+    let time_sub = every(Duration::from_millis(10)).map(|_| M::Update);
 
     // Subscription to re-check the baton connection
     let baton_sub = every(Duration::from_millis(10)).map(|_| M::BatonMessage);

@@ -1,6 +1,8 @@
 extern crate iced;
 extern crate plotters;
 
+use std::{collections::VecDeque, time::Instant};
+
 use crate::{Message, State};
 use iced::{
     widget::{Column, Container, Text},
@@ -10,11 +12,17 @@ use plotters::{coord::Shift, prelude::*};
 use plotters_backend::DrawingBackend;
 use plotters_iced::{plotters_backend, Chart, ChartWidget, DrawingArea};
 
+use std::time::Duration;
+
+
 #[allow(unused)]
-#[derive(Default)]
+//#[derive(Default)]
 pub(crate) struct MyChart {
-    pub points: Vec<(f32, f32)>,
+    pub points: VecDeque<usize>, //create deque
+    pub counter: usize, 
+    pub last_check_time: Instant,
 }
+
 
 impl MyChart {
     pub fn view(&self) -> Element<Message> {
@@ -26,12 +34,36 @@ impl MyChart {
     }
 
     pub fn new() -> Self {
-        Self { points: Vec::new() }
+        Self { 
+            points: VecDeque::from([0; 60]),
+            counter: 0, 
+            last_check_time: Instant::now(), 
+        }
     }
+
+    pub fn update(&mut self){
+        if self.last_check_time.elapsed() < Duration::from_secs(1){
+            return 
+        } 
+
+        //assume one second has passed 
+        if self.points.len() > 60{ 
+            let _ = self.points.pop_back(); 
+        }
+
+
+        self.points.push_front(self.counter);
+        self.counter = 0; 
+    }
+
+    pub fn add (&mut self, val: usize){
+        self.counter += val; 
+    }
+
 }
 
 impl Chart<Message> for MyChart {
-    type State = Vec<(f32, f32)>;
+    type State = VecDeque<usize>;
 
     fn build_chart<DB: DrawingBackend>(&self, _state: &Self::State, _builder: ChartBuilder<DB>) {}
 
@@ -44,16 +76,31 @@ impl Chart<Message> for MyChart {
 
         chart.configure_mesh().draw().unwrap();
 
+        let mut points: Vec<usize> = self.points.clone().into_iter().collect();
+
+        let data: Vec<(f32, f32)> = points[0..60]
+            .iter()
+            .rev()
+            .enumerate()
+            .map(|(idx, &x)| (idx as f32, x as f32))
+            .collect();
+
         chart
             /* .draw_series(LineSeries::new(state.clone(), &RED))
             .unwrap(); */
             .draw_series(
                 LineSeries::new(
                     //self.points.iter().map(|x| (x.0, x.1)),
-                    self.points.iter().cloned(),
+                    data,
                     &RED,
                 ), //.border_style(ShapeStyle::from(RGBColor = RGBColor(0, 175, 255)).stroke_width(2)),
             )
             .expect("failed to draw chart data");
+    }
+}
+
+impl Default for MyChart{
+    fn default() -> Self {
+        Self::new()
     }
 }
