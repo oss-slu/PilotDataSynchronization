@@ -67,7 +67,7 @@ impl Chart<Message> for MyChart {
             //.build_cartesian_2d(-1f32..100f32, -1.5f32..1.5f32)
             .x_label_area_size(40)
             .y_label_area_size(40)
-            .build_cartesian_2d(0.0..60.0, 0.0..5.0)
+            .build_cartesian_2d(0.0..60.0, 0.0..20.0)
             .unwrap();
 
         chart
