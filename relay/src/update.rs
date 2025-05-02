@@ -93,7 +93,15 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
     // FIXME: How to make this file show up in the Downloads folder? Or do I want to just have file download in project root?
     let mut file = File::create("iMotions.xml").expect("Creating XML File");
 
-    // TODO: Check if all datarefs are false. If so, don't generate anything? or figure this out ngl
+    // Check if all dataref toggles are false. If so, return error message
+    if !state.altitude_toggle && !state.airspeed_toggle 
+        && !state.vertical_airspeed_toggle && !state.other_toggle 
+    {
+        state.error_message = Some("Please select at least one dataref toggle".into());
+        return Task::none()    
+    }
+
+    state.error_message = None; // Clear previous error
 
     // TODO: Replace this with actual xml file contents. Get from the XPlane API.
     let mut contents = String::from("xml document header\n");

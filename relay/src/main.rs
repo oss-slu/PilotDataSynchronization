@@ -114,6 +114,7 @@ fn main() -> iced::Result {
                 active_baton_connection: false,
 
                 // Variables for the UI XML Creation toggles
+                error_message: None,
                 card_open: false,
                 altitude_toggle: true,
                 airspeed_toggle: true,
