@@ -19,9 +19,9 @@ pub(crate) struct State {
     pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
 
     pub error_message: Option<String>,
-    pub card_open: bool, 
+    pub card_open: bool,
     pub altitude_toggle: bool,
     pub airspeed_toggle: bool,
     pub vertical_airspeed_toggle: bool,
-    pub other_toggle: bool,
+    pub heading_toggle: bool,
 }

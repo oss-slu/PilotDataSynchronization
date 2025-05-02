@@ -17,8 +17,8 @@ pub(crate) enum Message {
     AltitudeToggle(bool),
     AirspeedToggle(bool),
     VerticalAirspeedToggle(bool),
-    OtherToggle(bool),
-    
+    HeadingToggle(bool),
+
     CardOpen,
     CardClose,
 }

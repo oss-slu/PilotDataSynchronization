@@ -119,7 +119,7 @@ fn main() -> iced::Result {
                 altitude_toggle: true,
                 airspeed_toggle: true,
                 vertical_airspeed_toggle: true,
-                other_toggle: true,
+                heading_toggle: true,
             };
             (state, Task::none())
         })
