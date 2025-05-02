@@ -87,7 +87,8 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
 // Creates a default XML file when a button is clicked in the GUI
 fn create_xml_file(state: &mut State) -> Task<Message> {
     // Get the user's downloads directory
-    let mut downloads_path = dirs::download_dir().expect("Retrieving the user's Downloads file directory.");
+    let mut downloads_path =
+        dirs::download_dir().expect("Retrieving the user's Downloads file directory.");
     downloads_path.push("iMotions.xml");
 
     // Create file in downloads directory. If alr there, will overwrite the existing file.
