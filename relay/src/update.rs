@@ -100,7 +100,7 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
     }
     state.error_message = None; // Clear previous error
 
-    // TODO: Replace this with actual xml file contents. Get from the XPlane API.
+    // NOTE: This XML formatting was found in the PilotDataSync Slack. Double check this is the correct formatting.
     let mut contents = String::from(
         "<EventSource Version=\"1\" Id=\"PilotDataSync\" Name=\"Positional Flight Data\">\n",
     );
@@ -157,10 +157,11 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
 
         contents.push_str(&heading_str);
     }
+    contents.push_str("</EventSource>");
 
-    // Write contents to that file
+    // Write XML file
     file.write_all(contents.as_bytes())
         .expect("Writing to XML file");
 
-    Task::none() // Return that we need for the Update logic
+    Task::none() // Return type that we need for the Update logic
 }
