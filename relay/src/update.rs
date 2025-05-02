@@ -86,8 +86,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
 
 // Creates a default XML file when a button is clicked in the GUI
 fn create_xml_file(state: &mut State) -> Task<Message> {
-    // FIXME: How to make this file show up in the Downloads folder? Or do I want to just have file download in project root?
-    let mut file = File::create("iMotions.xml").expect("Creating XML File");
+    // Get the user's downloads directory
+    let mut downloads_path = dirs::download_dir().expect("Retrieving the user's Downloads file directory.");
+    downloads_path.push("iMotions.xml");
+
+    // Create file in downloads directory. If alr there, will overwrite the existing file.
+    let mut file = File::create(&downloads_path).expect("Creating XML File.");
 
     // Check if all dataref toggles are false. If so, return error message
     if !state.altitude_toggle

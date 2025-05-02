@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 iced = { version = "*", features = ["tokio"] }
 iced_aw = { version = "0.12.0", default-features = false, features = ["card"] }
-
+dirs = "5.0"
 anyhow = "*"
 interprocess = "*"
