@@ -116,7 +116,7 @@ impl Baton {
                             let _ = conn.get_mut().write_all(s.as_bytes());
                         }
                         ChannelSignal::Stop => {
-                            let _ = conn.get_mut().write_all("SHUTDOWN".as_bytes());
+                            let _ = conn.get_mut().write_all("SHUTDOWN\n".as_bytes());
                             return;
                         }
                     };

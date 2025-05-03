@@ -3,7 +3,7 @@
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
 #include <cmath>
-#include <format>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -178,9 +178,9 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   float msToKnotsRate = 1.94384;
 
   auto build_str = [](string label, string unit, float value) {
-    string suffix = !std::isnan(value) ? std::format("{} {}", value, unit)
+    string suffix = !std::isnan(value) ? std::to_string(value) + " " + unit
                                        : "(Error Reading Data)";
-    return std::format("{}: {}", label, suffix);
+    return label + ": " + suffix;
   };
 
   // Create strings from DataRefs to display in plugin window

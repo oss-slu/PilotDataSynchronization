@@ -1,5 +1,7 @@
+use std::net::ToSocketAddrs;
+
 use iced::{
-    widget::{button, column, container, text, toggler},
+    widget::{button, column, row, container, text, text_input, toggler},
     Element, Length,
 };
 use iced_aw::{helpers::card, style};
@@ -8,61 +10,52 @@ use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
 
+// TODO: Stick all UI elements into their own functions and make ALL functions return UIElement and NOT strings
 // TODO: Fix the close button on the UI card. It displays a chinese character meaning "plowed earth"?????
 pub(crate) fn view(state: &State) -> UIElement {
     let mut elements: Vec<UIElement> = Vec::new();
 
+    // OPTIONAL Error message
     if let Some(error) = spawn_error_message(state) {
         elements.push(error.into());
     }
 
-    elements.push(
-        button("Check Connection Status")
-            .on_press(Message::ConnectionMessage)
-            .into(),
-    );
-
+    // Elapsed Time Text
     elements.push(text(format!("Elapsed time: {:?}", state.elapsed_time)).into());
+
+    // Baton Latest Send Text 
     elements.push(text(get_baton_data(state)).into());
-    elements.push(
-        text(format!(
-            "Connection Status: {}",
-            get_connection_status(state)
-        ))
-        .into(),
-    );
+    // Unnecessary????? or should this be in here? idk man
+    // // Final wrapped container with styling
+    // elements.push(
+    //     container(text(get_baton_connect_status(state)))
+    //         .padding(10)
+    //         .center(400)
+    //         .style(container::rounded_box)
+    //         .into(),
+    // );
+
+
+    // TCP Connection Status elements
+    elements.push(text(format!("TCP Connection Status: {}", state.tcp_connected)).into());
+    elements.push(button("Check TCP Connection Status").on_press(Message::ConnectionMessage).into());
+
+    // IPC Connect/Disconnect Buttons
+    elements.push(button("Connect IPC").on_press(Message::ConnectIpc).into());
+    elements.push(button("Disconnect IPC").on_press(Message::DisconnectIpc).into());
+
+    // TCP Connect/Disconnect buttons
+    elements.push(tcp_connect_button(state));
+    elements.push(button("Disconnect TCP").on_press(Message::DisconnectTcp).into());
 
     // XML popup
     elements.push(xml_downloader_popup(state));
-
-    // Final wrapped container with styling
-    elements.push(
-        container(text(get_baton_connect_status(state)))
-            .padding(10)
-            .center(400)
-            .style(container::rounded_box)
-            .into(),
-    );
 
     // Create and return the GUI column from that vector
     column(elements).into()
 }
 
-fn get_baton_data(state: &State) -> String {
-    // need to update view function with float parsing? perhaps? idk
-    match &state.latest_baton_send {
-        Some(num) => format!("[BATON] Pilot Elevation: {num:.3} ft"),
-        None => "No data from baton.".into(),
-    }
-}
-
-fn get_connection_status(state: &State) -> String {
-    match &state.connection_status {
-        Some(channel_msg) => format!("{:?}", channel_msg),
-        None => "No connection established".to_string(),
-    }
-}
-
+// Perhaps unnecessary with new changes?
 fn get_baton_connect_status(state: &State) -> String {
     if state.active_baton_connection {
         ":) Baton Connected!".to_string()
@@ -70,6 +63,19 @@ fn get_baton_connect_status(state: &State) -> String {
         ":( No Baton Connection".to_string()
     }
 }
+
+fn get_baton_data(state: &State) -> String {
+    // need to update view function with float parsing? perhaps? idk
+    match &state.latest_baton_send {
+        Some(data) => format!("[BATON]: {data:.3}"),
+        None => "No data from baton.".into(),
+    }
+}
+
+fn get_tcp_connect_status(state: &State) -> String {
+    format!("TCP Connection Status: {}", state.tcp_connected)
+}
+
 
 fn spawn_error_message(state: &State) -> Option<UIElement> {
     if let Some(error) = &state.error_message {
@@ -116,5 +122,28 @@ fn xml_downloader_popup(state: &State) -> UIElement {
         button("Open XML Download Menu")
             .on_press(Message::CardOpen)
             .into()
+    }
+}
+
+
+fn tcp_connect_button(state: &State) -> UIElement {
+    if state.tcp_addr_field.to_socket_addrs().is_ok() {
+        row![
+            button("Connect TCP").on_press(Message::ConnectTcp),
+            text_input("127.0.0.1:9999", &state.tcp_addr_field)
+                .on_input(|addr| Message::TcpAddrFieldUpdate(addr)),
+            text("Address input is valid")
+        ]
+        .spacing(5)
+        .into()
+    } else {
+        row![
+            button("Connect TCP"),
+            text_input("127.0.0.1:9999", &state.tcp_addr_field)
+                .on_input(|addr| Message::TcpAddrFieldUpdate(addr)),
+            text("Address input is invalid")
+        ]
+        .spacing(5)
+        .into()
     }
 }

@@ -9,3 +9,4 @@ iced_aw = { version = "0.12.0", default-features = false, features = ["card"] }
 dirs = "5.0"
 anyhow = "*"
 interprocess = "*"
+crossbeam = "0.8.4"

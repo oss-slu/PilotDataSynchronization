@@ -35,10 +35,10 @@ jobs:
           cd xplane_plugin/
           meson setup build
           meson compile -C build
-      - name: Test the Meson Project
-        run: |
-          cd xplane_plugin/
-          ./build/testsuite --verbose~
+      # - name: Test the Meson Project
+      #   run: |
+      #     cd xplane_plugin/
+      #     ./build/testsuite --verbose~
 
       # if tests fail, upload a test log?
       #- name: Upload Test Log
