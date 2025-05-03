@@ -105,13 +105,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             Task::none()
         }
-        M::ConnectionMessage => {
-            println!("Check Connection Status");
-            if let Some(status) = state.recv.as_ref().and_then(|recv| recv.try_recv().ok()) {
-                state.connection_status = Some(status)
-            }
-            Task::none()
-        }
         // Toggle messages for GUI XML generator
         M::AltitudeToggle(value) => {
             state.altitude_toggle = value;
