@@ -53,15 +53,15 @@ impl Default for State {
         State {
             elapsed_time: Duration::ZERO,
             event_log: Vec::new(),
-        
+
             ipc_thread_handle: None,
             tcp_thread_handle: None,
-        
+
             tcp_connected: false,
             tcp_addr_field: String::new(),
             latest_baton_send: None,
             active_baton_connection: false,
-        
+
             error_message: None,
             card_open: false,
             altitude_toggle: true,
@@ -73,9 +73,7 @@ impl Default for State {
             tcp_bichannel: None,
         }
     }
-
 }
-
 
 impl State {
     pub fn ipc_connect(&mut self) -> Result<()> {
