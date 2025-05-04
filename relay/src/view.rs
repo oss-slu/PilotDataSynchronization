@@ -1,3 +1,19 @@
+//! This module defines the UI View layout using ICED.
+//!
+//! UI elements should be defined as **separate functions** and added to the UI elements vector
+//! instead of being written inline in the `view` function.
+//!
+//! This improves modularity, testing, and code readability.
+//!
+//! Examples:
+//!     ```fn spawn_error_message(state: &State) -> Option<UIElement> { /* ... */ } ```
+//!     ``` if let Some(error_element) = spawn_error_message(state) {
+//!             elements.push(error_element.into());
+//!         }   ```
+//!
+//!     ``` fn ipc_disconnect_button(_state: &State) -> UIElement {/* ... */}   ```
+//!     ``` elements.push(tcp_disconnect_button(state)); ```
+
 use std::net::ToSocketAddrs;
 
 use iced::{
