@@ -114,6 +114,12 @@ When making changes to the codebase, it's important to keep the documentation up
 - Add or update code comments to explain complex or non-obvious parts of the code.
 - Include any necessary configuration or setup instructions for new features or changes.
 
+## UI Guidelines: 
+`relay/src/view.rs`
+- All ICED UI elements must be placed in standalone helper functions.
+- The main `view()` function should only **compose** these elements, not build them directly.
+- This makes the codebase modular and readable for future contributors.
+
 ## Writing Unit Tests
 
 We encourage contributors to write unit tests for their code changes to ensure the stability and reliability of the project. When writing unit tests:

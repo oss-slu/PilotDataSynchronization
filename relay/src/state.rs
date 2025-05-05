@@ -19,7 +19,6 @@ use crate::message::ToTcpThreadMessage;
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
 
-#[derive(Default)]
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
@@ -34,8 +33,46 @@ pub(crate) struct State {
     pub latest_baton_send: Option<String>,
     pub active_baton_connection: bool,
     // pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
+
+    // Optional GUI error message
+    pub error_message: Option<String>,
+    // Is GUI pop-up card open
+    pub card_open: bool,
+    // GUI Toggle state elements
+    pub altitude_toggle: bool,
+    pub airspeed_toggle: bool,
+    pub vertical_airspeed_toggle: bool,
+    pub heading_toggle: bool,
+
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
+}
+
+impl Default for State {
+    fn default() -> State {
+        State {
+            elapsed_time: Duration::ZERO,
+            event_log: Vec::new(),
+
+            ipc_thread_handle: None,
+            tcp_thread_handle: None,
+
+            tcp_connected: false,
+            tcp_addr_field: String::new(),
+            latest_baton_send: None,
+            active_baton_connection: false,
+
+            error_message: None,
+            card_open: false,
+            altitude_toggle: true,
+            airspeed_toggle: true,
+            vertical_airspeed_toggle: true,
+            heading_toggle: true,
+
+            ipc_bichannel: None,
+            tcp_bichannel: None,
+        }
+    }
 }
 
 impl State {
