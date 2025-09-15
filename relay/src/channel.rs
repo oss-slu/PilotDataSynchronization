@@ -2,6 +2,5 @@
 pub enum ChannelMessage {
     Connect,
     #[default]
-    Disconnected, 
+    Disconnected,
 }
-

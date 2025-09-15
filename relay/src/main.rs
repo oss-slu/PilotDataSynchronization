@@ -53,7 +53,6 @@ fn main() -> iced::Result {
         .run_with(|| {
             // for pre-run state initialization
             let mut state = State {
-                elapsed_time: Duration::ZERO,
                 ..Default::default()
             };
 

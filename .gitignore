@@ -30,3 +30,6 @@
 
 # GitHub Actions leftovers
 **/github_conf
+
+# Auto-generated iMotions.xml file from GUI
+iMotions.xml

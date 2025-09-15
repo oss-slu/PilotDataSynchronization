@@ -15,11 +15,16 @@ use crate::message::FromTcpThreadMessage;
 use crate::message::ToIpcThreadMessage;
 use crate::message::ToTcpThreadMessage;
 
+//Code added for tcp packet count -Nyla Hughes
+use std::collections::VecDeque; 
+use std::time::Instant; 
+//
+
+
 // use crate::ChannelMessage;
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
 
-#[derive(Default)]
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
@@ -34,8 +39,63 @@ pub(crate) struct State {
     pub latest_baton_send: Option<String>,
     pub active_baton_connection: bool,
     // pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
+
+    // Optional GUI error message
+    pub error_message: Option<String>,
+    // Is GUI pop-up card open
+    pub card_open: bool,
+    // GUI Toggle state elements
+    pub altitude_toggle: bool,
+    pub airspeed_toggle: bool,
+    pub vertical_airspeed_toggle: bool,
+    pub heading_toggle: bool,
+
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
+
+    // Added this for the tcp packet counter -Nyla Hughes
+    pub sent_ts: VecDeque<Instant>,
+    pub packets_last_60s: usize,
+    // using click timestamps to track clicks in last 60 seconds just to make sure things work. 
+    //Im using clicks as a place holder until I can implement actual packet sending -Nyla Hughes
+    pub click_ts: VecDeque<Instant>,
+    pub clicks_last_60s: usize,
+    //
+
+}
+
+impl Default for State {
+    fn default() -> State {
+        State {
+            elapsed_time: Duration::ZERO,
+            event_log: Vec::new(),
+
+            ipc_thread_handle: None,
+            tcp_thread_handle: None,
+
+            tcp_connected: false,
+            tcp_addr_field: String::new(),
+            latest_baton_send: None,
+            active_baton_connection: false,
+
+            error_message: None,
+            card_open: false,
+            altitude_toggle: true,
+            airspeed_toggle: true,
+            vertical_airspeed_toggle: true,
+            heading_toggle: true,
+
+            ipc_bichannel: None,
+            tcp_bichannel: None,
+
+             // Added this for the tcp packet counter -Nyla Hughes
+            click_ts: VecDeque::new(),
+            clicks_last_60s: 0,
+            sent_ts: VecDeque::new(),
+            packets_last_60s: 0,
+            //
+        }
+    }
 }
 
 impl State {
@@ -273,4 +333,30 @@ impl State {
     pub fn log_event(&mut self, event: String) {
         self.event_log.push(event);
     }
+
+    // code added for tcp packet count -Nyla Hughes
+    // records a click
+    pub fn record_click(&mut self) {
+        let now = Instant::now();
+        self.click_ts.push_back(now);
+        self.remove_old_clicks(now);
+    }
+    /// refresh the count of clicks in the last 60 seconds
+    pub fn refresh_click_metrics(&mut self) {
+        let now = Instant::now();
+        self.remove_old_clicks(now);
+        self.clicks_last_60s = self.click_ts.len();
+    }
+    // remove clicks older than 60 seconds 
+    fn remove_old_clicks(&mut self, now: Instant) {
+        let window = std::time::Duration::from_secs(60);
+        while let Some(&t) = self.click_ts.front() {
+            if now.duration_since(t) > window {
+                self.click_ts.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+    //
 }

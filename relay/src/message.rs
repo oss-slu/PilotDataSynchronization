@@ -8,6 +8,18 @@ pub(crate) enum Message {
 
     ConnectionMessage,
 
+    CreateXMLFile,
+
+    // Toggle buttons to generate XML file in UI
+    AltitudeToggle(bool),
+    AirspeedToggle(bool),
+    VerticalAirspeedToggle(bool),
+    HeadingToggle(bool),
+
+    // Messages for the GUI Card pop-up
+    CardOpen,
+    CardClose,
+
     ConnectIpc,
 
     DisconnectIpc,
