@@ -184,6 +184,7 @@ fn xml_downloader_popup(state: &State) -> UIElement {
     }
 }
 
+
 fn send_packet_button(state: &State) -> Option<UIElement> {
     if state.active_baton_connection {
         Some(
@@ -192,6 +193,9 @@ fn send_packet_button(state: &State) -> Option<UIElement> {
                 .into(),
         )
     } else {
-        None
+        Some(
+            button("Send Packet (No Baton Connection)")
+                .into(),
+        )
     }
 }
