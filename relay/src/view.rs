@@ -42,11 +42,8 @@ pub(crate) fn view(state: &State) -> UIElement {
     elements.push(baton_data_element(state));
     elements.push(baton_connect_status_element(state));
 
-    //added for tcp packet count -Nyla Hughes
-    //elements.push(tcp_packet_count_element(state));
-    // Clicks in the last 60 seconds -Nyla Hughes
-    elements.push(clicks_last_60s_element(state));
-    //
+    // ADDED THIS @L45: live TCP metrics (auto-hides when idle)
+    elements.push(metrics_block(state));
 
     // TCP Connection Status elements
     elements.push(tcp_connect_status_element(state));
@@ -98,24 +95,46 @@ fn baton_connect_status_element(state: &State) -> UIElement {
 fn baton_data_element(state: &State) -> UIElement {
     // need to update view function with float parsing? perhaps? idk
     let baton_data = match &state.latest_baton_send {
-        Some(data) => format!("[BATON]: {data:.3}"),
+        Some(data) => format!("[BATON]: {data}"), // ADDED THIS @L101
         None => "No data from baton.".into(),
     };
     text(baton_data).into()
 }
 
-//*  amount of packets sent over TCP connection -Nyla Hughes
-// fn tcp_packet_count_element(state: &State) -> UIElement {
-   // text(format!("TCP Packets Sent:")).to_string()}
-    // will look something like text(format!("TCP Packets Sent: {}", state.tcp_packet_count)).to_string()
-    // Once implemented -Nyla Hughes *//
-//This just tracks clicks in the last 60 seconds to make sure the counting works -Nyla Hughes
-fn clicks_last_60s_element(state: &State) -> UIElement {
-    text(format!("'packets' sent in the last 60s: {}", state.clicks_last_60s)).into()
+// ADDED THIS @L107: metrics block (packets over last 60s + human-readable throughput)
+fn metrics_block(state: &State) -> UIElement {
+    if !state.show_metrics {
+        // Hide when idle (no packets and ~0 bps)
+        return text("").into();
+    }
+
+    let packets_60 = state.packets_last_60s;
+    let bps_str = human_bps(state.bps);
+
+    column![
+        text(format!("Packets sent (last 60s): {packets_60}")),
+        text(format!("Throughput: {bps_str}")),
+    ]
+    .into()
 }
-//
 
-
+// ADDED THIS @L121: render bits per second with units
+fn human_bps(bps: f64) -> String {
+    const K: f64 = 1_000.0;
+    if bps < K {
+        return format!("{:.0} bps", bps);
+    }
+    let kbps = bps / K;
+    if kbps < K {
+        return format!("{:.1} Kbps", kbps);
+    }
+    let mbps = kbps / K;
+    if mbps < K {
+        return format!("{:.2} Mbps", mbps);
+    }
+    let gbps = mbps / K;
+    format!("{:.2} Gbps", gbps)
+}
 
 fn tcp_connect_status_element(state: &State) -> UIElement {
     text(format!("TCP Connection Status: {}", state.tcp_connected)).into()
