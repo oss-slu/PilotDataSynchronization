@@ -42,7 +42,7 @@ pub(crate) fn view(state: &State) -> UIElement {
     elements.push(baton_data_element(state));
     elements.push(baton_connect_status_element(state));
 
-    // ADDED THIS @L45: live TCP metrics (auto-hides when idle)
+    // Added this for tcp counter - Nyla Hughes
     elements.push(metrics_block(state));
 
     // TCP Connection Status elements
@@ -95,16 +95,17 @@ fn baton_connect_status_element(state: &State) -> UIElement {
 fn baton_data_element(state: &State) -> UIElement {
     // need to update view function with float parsing? perhaps? idk
     let baton_data = match &state.latest_baton_send {
-        Some(data) => format!("[BATON]: {data}"), // ADDED THIS @L101
+        //added this for tcp counter - Nyla Hughes
+        Some(data) => format!("[BATON]: {data}"), 
+        //
         None => "No data from baton.".into(),
     };
     text(baton_data).into()
 }
 
-// ADDED THIS @L107: metrics block (packets over last 60s + human-readable throughput)
+// Added this for tcp counter - Nyla Hughes
 fn metrics_block(state: &State) -> UIElement {
     if !state.show_metrics {
-        // Hide when idle (no packets and ~0 bps)
         return text("").into();
     }
 
@@ -112,13 +113,11 @@ fn metrics_block(state: &State) -> UIElement {
     let bps_str = human_bps(state.bps);
 
     column![
-        text(format!("Packets sent (last 60s): {packets_60}")),
+        text(format!("Packets sent in the last 60's: {packets_60}")),
         text(format!("Throughput: {bps_str}")),
     ]
     .into()
 }
-
-// ADDED THIS @L121: render bits per second with units
 fn human_bps(bps: f64) -> String {
     const K: f64 = 1_000.0;
     if bps < K {
