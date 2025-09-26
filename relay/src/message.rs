@@ -1,3 +1,4 @@
+use std::time::Instant;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     // generic time update signal
@@ -45,5 +46,7 @@ pub(crate) enum FromIpcThreadMessage {
 pub(crate) enum ToTcpThreadMessage {
     Send(String),
 }
-
-pub(crate) enum FromTcpThreadMessage {}
+//added this for tcp counter - Nyla Hughes
+pub(crate) enum FromTcpThreadMessage {
+    Sent { bytes: usize, at: Instant },
+}

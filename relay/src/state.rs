@@ -10,10 +10,17 @@ use iced::time::Duration;
 
 use crate::bichannel;
 use crate::bichannel::ParentBiChannel;
+
 use crate::message::FromIpcThreadMessage;
 use crate::message::FromTcpThreadMessage;
 use crate::message::ToIpcThreadMessage;
 use crate::message::ToTcpThreadMessage;
+
+//Code added for tcp packet count -Nyla Hughes
+use std::collections::VecDeque; 
+use std::time::Instant; 
+//
+
 
 // use crate::ChannelMessage;
 
@@ -46,6 +53,15 @@ pub(crate) struct State {
 
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
+
+    // Added this for the tcp packet counter -Nyla Hughes
+    pub sent_packet_times: VecDeque<Instant>,     
+    pub sent_samples: VecDeque<(Instant, usize)>, 
+    pub packets_last_60s: usize,                  
+    pub bps: f64,                                 
+    pub show_metrics: bool,   
+    //
+
 }
 
 impl Default for State {
@@ -71,6 +87,13 @@ impl Default for State {
 
             ipc_bichannel: None,
             tcp_bichannel: None,
+
+             // Added this for the tcp packet counter -Nyla Hughes
+            sent_packet_times: VecDeque::new(),
+            sent_samples: VecDeque::new(),
+            packets_last_60s: 0,
+            bps: 0.0,
+            show_metrics: false,
         }
     }
 }
@@ -260,9 +283,21 @@ impl State {
                 for message in child_bichannel.received_messages() {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
-                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n")
-                                .to_string();
-                            let _ = stream.write_all(packet.as_bytes());
+                            // added this for tcp packet count -Nyla Hughes
+                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n");
+                            match stream.write_all(packet.as_bytes()) {
+                                Ok(()) => {
+                                    let _ = child_bichannel.send_to_parent(
+                                        FromTcpThreadMessage::Sent {
+                                            bytes: packet.len(),
+                                            at: Instant::now(),
+                                        },
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!("TCP send failed: {e}");
+                                }
+                            }
                         }
                     }
                 }
@@ -309,5 +344,44 @@ impl State {
 
     pub fn log_event(&mut self, event: String) {
         self.event_log.push(event);
+    }
+
+    // Added this for tcp packet count -Nyla Hughes
+    pub fn on_tcp_packet_sent(&mut self, bytes: usize) {
+        let now = Instant::now();
+        self.sent_packet_times.push_back(now);
+        self.sent_samples.push_back((now, bytes));
+        self.refresh_metrics(now);
+    }
+
+    pub fn refresh_metrics_now(&mut self) {
+        let now = Instant::now();
+        self.refresh_metrics(now);
+    }
+
+    fn refresh_metrics(&mut self, now: Instant) {
+        // last 60 seconds -> packet count
+        let window60 = std::time::Duration::from_secs(60);
+        while let Some(&t) = self.sent_packet_times.front() {
+            if now.duration_since(t) > window60 {
+                self.sent_packet_times.pop_front();
+            } else {
+                break;
+            }
+        }
+        self.packets_last_60s = self.sent_packet_times.len();
+
+        // last 1 second -> throughput
+        let window1 = std::time::Duration::from_secs(1);
+        while let Some(&(t, _)) = self.sent_samples.front() {
+            if now.duration_since(t) > window1 {
+                self.sent_samples.pop_front();
+            } else {
+                break;
+            }
+        }
+        let bytes_last_1s: usize = self.sent_samples.iter().map(|&(_, b)| b).sum();
+        self.bps = (bytes_last_1s as f64) * 8.0;
+        self.show_metrics = self.packets_last_60s > 0 || self.bps >= 1.0;
     }
 }
