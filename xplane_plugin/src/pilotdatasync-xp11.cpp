@@ -10,7 +10,6 @@
 #include <thread>
 #include <vector>
 
-
 #include "subprojects/baton/lib.rs.h"
 
 using std::string;
