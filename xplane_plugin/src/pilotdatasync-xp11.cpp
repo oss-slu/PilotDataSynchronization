@@ -27,6 +27,27 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+/* added for catching DataRef errors - Nyla Hughes 
+#include <cstdio>
+#include <limits>
+
+static float get_float(XPLMDataRef ref, const char* name) {
+  if (!ref) {
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "[DataRef] Missing or null: %s\n", name);
+    XPLMDebugString(buf);
+    return std::numeric_limits<float>::quiet_NaN();
+  }
+  XPLMDataTypeID t = XPLMGetDataRefTypes(ref);
+  if ((t & xplmType_Float) == 0) { // bare-minimum: only accept float
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "[DataRef] Type mismatch (need float): %s\n", name);
+    XPLMDebugString(buf);
+    return std::numeric_limits<float>::quiet_NaN();
+  }
+  return XPLMGetDataf(ref);
+}
+*/
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
                       LPVOID lpReserved) {
