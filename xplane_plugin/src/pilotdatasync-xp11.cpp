@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 
+
 #include "subprojects/baton/lib.rs.h"
 
 using std::string;
@@ -24,6 +25,7 @@ extern "C" {
 #include "XPLMGraphics.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
+#include <GL/gl.h>
 
 #ifdef __cplusplus
 }
