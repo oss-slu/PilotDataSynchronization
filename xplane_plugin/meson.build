@@ -39,11 +39,46 @@ xpcpp = xplane_sdk_proj.get_variable('xpcpp_dep')
 baton_subp = subproject('baton')
 baton = baton_subp.get_variable('baton_dep')
 
-# final output. KEEP IN MIND THAT THE FINAL OUTPUT STILL NEEDS TO BE MANUALLY RENAMED
+# Add this line to define opengl_dep
+opengl_dep = compiler.find_library('opengl32', required: host_machine.system() == 'windows')
+
+# dependencies
+deps = [winsock, xplm, xpwidgets, xpcpp, baton]
+
+if host_machine.system() == 'windows'
+  deps += [opengl_dep]
+endif
+
+
+
+
+
+# x-plane sdk handled by wrapDB instead of installing it manually
+xplane_sdk_proj = subproject('x-plane-sdk')
+xplm = xplane_sdk_proj.get_variable('xplm_dep')
+xpwidgets = xplane_sdk_proj.get_variable('xpwidgets_dep')
+xpcpp = xplane_sdk_proj.get_variable('xpcpp_dep')
+
+# rust library from subproject
+baton_subp = subproject('baton')
+baton = baton_subp.get_variable('baton_dep')
+
+# dependencies
+winsock = compiler.find_library(
+  'ws2_32',
+  has_headers: ['winsock2.h', 'ws2tcpip.h'],
+)
+
+deps = [winsock, xplm, xpwidgets, xpcpp, baton]
+
+if host_machine.system() == 'windows'
+  deps += [opengl_dep]
+endif
+
 lib = shared_library(
   'DataSync',
   'src/pilotdatasync-xp11.cpp',
-  dependencies: [winsock, xplm, xpwidgets, xpcpp, baton],
+  dependencies: deps,
   include_directories: [inc_dir],
   cpp_args: compiler_args,
   link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
