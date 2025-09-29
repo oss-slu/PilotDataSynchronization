@@ -42,6 +42,11 @@ pub(crate) fn view(state: &State) -> UIElement {
     elements.push(baton_data_element(state));
     elements.push(baton_connect_status_element(state));
 
+    // Send Packet button (Only if baton is running) - Jacob
+    if let Some(send_btn) = send_packet_button(state) {
+        elements.push(send_btn);
+    }
+
     // TCP Connection Status elements
     elements.push(tcp_connect_status_element(state));
     elements.push(check_tcp_status_button(state));
@@ -176,5 +181,21 @@ fn xml_downloader_popup(state: &State) -> UIElement {
         button("Open XML Download Menu")
             .on_press(Message::CardOpen)
             .into()
+    }
+}
+
+
+fn send_packet_button(state: &State) -> Option<UIElement> {
+    if state.active_baton_connection {
+        Some(
+            button("Send Packet")
+                .on_press(Message::SendPacket)
+                .into(),
+        )
+    } else {
+        Some(
+            button("Send Packet (No Baton Connection)")
+                .into(),
+        )
     }
 }

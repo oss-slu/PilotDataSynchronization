@@ -3,6 +3,7 @@
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
 #include <cmath>
+#include <ctime>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -84,6 +85,51 @@ void dummy_key_handler(XPLMWindowID in_window_id, char key, XPLMKeyFlags flags,
 
 volatile bool stop_exec = false;
 
+static int button_left = 0, button_top = 0, button_right = 0, button_bottom = 0;
+static std::string last_send_timestamp = "";
+
+// Helper to get current timestamp as string
+std::string get_current_timestamp() {
+  std::time_t now = std::time(nullptr);
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+  return buf;
+}
+
+// Update the mouse handler to detect button clicks
+int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
+                  void *in_refcon) {
+  if (is_down) {
+    // Button bounds are set in draw_pilotdatasync_plugin
+    if (x >= button_left && x <= button_right && y >= button_bottom &&
+        y <= button_top) {
+      // Gather data as in draw_pilotdatasync_plugin
+      float msToFeetRate = 3.28084;
+      float msToKnotsRate = 1.94384;
+      float currentPilotElevation =
+          XPLMGetDataf(elevationPilotRef) * msToFeetRate;
+      float currentPilotAirspeed =
+          XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+      float currentPilotHeading = XPLMGetDataf(headingPilotRef);
+      float currentPilotVerticalVelocity =
+          XPLMGetDataf(verticalVelocityPilotRef);
+
+      std::vector<float> send_to_baton = {
+          currentPilotElevation,
+          currentPilotAirspeed,
+          currentPilotHeading,
+          currentPilotVerticalVelocity,
+      };
+      baton->send(send_to_baton);
+
+      last_send_timestamp = get_current_timestamp();
+    }
+  }
+  return 0;
+}
+
+//
+
 PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   strcpy(outName, "PilotDataSyncPlugin");
   strcpy(outSig, "oss.pilotdatasyncplugin");
@@ -94,7 +140,7 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   params.structSize = sizeof(params);
   params.visible = 1;
   params.drawWindowFunc = draw_pilotdatasync_plugin;
-  params.handleMouseClickFunc = dummy_mouse_handler;
+  params.handleMouseClickFunc = mouse_handler;
   params.handleRightClickFunc = dummy_mouse_handler;
   params.handleMouseWheelFunc = dummy_wheel_handler;
   params.handleKeyFunc = dummy_key_handler;
@@ -240,6 +286,40 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
     XPLMDrawString(col_white, l + 10, get_next_y_offset(), (char *)line.c_str(),
                    NULL, xplmFont_Proportional);
   }
+
+  // Button dimensions
+  int button_width = 120;
+  int button_height = 30;
+  int button_x = l + 10;
+  int button_y = b + 40;
+
+  button_left = button_x;
+  button_right = button_x + button_width;
+  button_bottom = button_y;
+  button_top = button_y + button_height;
+
+  // Draw button rectangle (simple filled rectangle)
+  float col_button[] = {0.2f, 0.5f, 0.8f, 1.0f};
+  glColor4fv(col_button);
+  glBegin(GL_QUADS);
+  glVertex2i(button_left, button_bottom);
+  glVertex2i(button_right, button_bottom);
+  glVertex2i(button_right, button_top);
+  glVertex2i(button_left, button_top);
+  glEnd();
+
+  // Draw button label
+  float col_text[] = {1.0f, 1.0f, 1.0f};
+  std::string button_label = "Send Packet";
+  XPLMDrawString(col_text, button_left + 10, button_bottom + 8,
+                 (char *)button_label.c_str(), NULL, xplmFont_Proportional);
+
+  // Draw timestamp next to button
+  std::string ts_label =
+      "Last sent: " +
+      (last_send_timestamp.empty() ? "Never" : last_send_timestamp);
+  XPLMDrawString(col_text, button_right + 10, button_bottom + 8,
+                 (char *)ts_label.c_str(), NULL, xplmFont_Proportional);
 
   // Send flight data to Relay via Baton. Order may be incorrect, and iMotions'
   // .xml file must be modified to reflect any changes here

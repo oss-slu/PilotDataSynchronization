@@ -46,6 +46,8 @@ pub(crate) struct State {
 
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
+
+    pub last_send_timestamp: Option<String>,
 }
 
 impl Default for State {
@@ -71,6 +73,8 @@ impl Default for State {
 
             ipc_bichannel: None,
             tcp_bichannel: None,
+
+            last_send_timestamp: None,
         }
     }
 }

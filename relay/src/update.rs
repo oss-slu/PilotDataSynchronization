@@ -142,6 +142,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        M::SendPacket => {
+            let now = std::time::SystemTime::now();
+            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+            state.last_send_timestamp = Some(format!("{}", duration.as_secs()));
+            Task::none()
+        }
         _ => Task::none(),
     }
 }
@@ -231,4 +237,27 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
         .expect("Writing to XML file");
 
     Task::none() // Return type that we need for the Update logic
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::State;
+    use crate::Message;
+
+    #[test]
+    fn send_packet_updates_timestamp() {
+        let mut state = State::default();
+    
+        assert!(state.last_send_timestamp.is_none());
+
+        // Should simulate sending a packet
+        let _ = super::update(&mut state, Message::SendPacket);
+
+        // After update, timestamp should be set
+        assert!(state.last_send_timestamp.is_some());
+        let ts = state.last_send_timestamp.as_ref().unwrap();
+       
+        assert!(ts.chars().all(|c| c.is_ascii_digit()));
+    }
 }
