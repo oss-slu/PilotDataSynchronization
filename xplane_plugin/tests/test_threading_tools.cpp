@@ -1,33 +1,32 @@
 #include "threading-tools.h"
+#include <chrono>
 #include <gtest/gtest.h>
+#include <iomanip>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <chrono>
-#include <iomanip>
-#include <sstream>
-
 
 std::string generate_packet(std::vector<std::string> vec) {
-    // Get current time
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
+  // Get current time
+  auto now = std::chrono::system_clock::now();
+  std::time_t t = std::chrono::system_clock::to_time_t(now);
+  std::tm tm;
 #ifdef _WIN32
-    localtime_s(&tm, &t);
+  localtime_s(&tm, &t);
 #else
-    localtime_r(&t, &tm);
+  localtime_r(&t, &tm);
 #endif
-    std::ostringstream oss;
-    // Add data values
-    for (size_t i = 0; i < vec.size(); ++i) {
-        oss << vec[i] << ";";
-    }
-    // Add timestamp in YYYYMMDD HH:MM:SS format
-    oss << std::put_time(&tm, "%Y%m%d %H:%M:%S") << ";";
-    // Add source string
-    oss << "X-Plane 11.55 PilotDataSync Plugin\r\n";
-    return oss.str();
+  std::ostringstream oss;
+  // Add data values
+  for (size_t i = 0; i < vec.size(); ++i) {
+    oss << vec[i] << ";";
+  }
+  // Add timestamp in YYYYMMDD HH:MM:SS format
+  oss << std::put_time(&tm, "%Y%m%d %H:%M:%S") << ";";
+  // Add source string
+  oss << "X-Plane 11.55 PilotDataSync Plugin\r\n";
+  return oss.str();
 }
 
 TEST(GeneratePacketTest, IncludesDataTimestampAndSource) {
