@@ -18,11 +18,11 @@ compiler_args = [
 # TODO review if this is still necessary
 add_project_arguments('-Llib/SDK/Libraries/Win', language: 'cpp')
 
+
 # includes
 inc_dir = include_directories('include')
 
 compiler = meson.get_compiler('cpp')
-
 # dependencies
 winsock = compiler.find_library(
   'ws2_32',
@@ -82,9 +82,12 @@ lib = shared_library(
   include_directories: [inc_dir],
   cpp_args: compiler_args,
   link_args: ['-lntdll', '-static-libstdc++', '-static-libgcc', '-static'],
+ 
   name_prefix: 'Pilot',
   name_suffix: 'xpl'
+  
 )
+
 
 if host_machine.system() == 'windows'
     test_args = ['-DGTEST_ENABLE_CATCH_EXCEPTIONS_=0', '-std=c++20']
@@ -103,15 +106,16 @@ endif
 # )
 # test('gtest test', test_exec)
 
-#test
+#gtest
 gtest_proj = subproject('gtest')
 gtest_dep = gtest_proj.get_variable('gtest_dep')
+gtest_main_dep = gtest_proj.get_variable('gtest_main_dep')
 
-test_threading_tools_exec = executable(
-    'test_threading_tools',
-    'tests/test_threading_tools.cpp',
-    dependencies: [gtest_dep],
-    cpp_args: test_args,
-    native: true
+inc = include_directories('include')
+test_exe = executable(
+  'test_threading_tools',
+  'tests/test_threading_tools.cpp',
+  include_directories: inc,
+  dependencies: [gtest_dep, gtest_main_dep]
 )
-test('test_threading_tools', test_threading_tools_exec)
+test('test_threading_tools', test_exe)
