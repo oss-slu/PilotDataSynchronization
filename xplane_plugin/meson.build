@@ -102,3 +102,16 @@ endif
 #     native: true 
 # )
 # test('gtest test', test_exec)
+
+#test
+gtest_proj = subproject('gtest')
+gtest_dep = gtest_proj.get_variable('gtest_dep')
+
+test_threading_tools_exec = executable(
+    'test_threading_tools',
+    'tests/test_threading_tools.cpp',
+    dependencies: [gtest_dep],
+    cpp_args: test_args,
+    native: true
+)
+test('test_threading_tools', test_threading_tools_exec)
