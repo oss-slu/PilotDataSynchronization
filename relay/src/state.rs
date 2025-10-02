@@ -54,6 +54,8 @@ pub(crate) struct State {
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
 
+    pub last_send_timestamp: Option<String>,
+
     // Added this for the tcp packet counter -Nyla Hughes
     pub sent_packet_times: VecDeque<Instant>,     
     pub sent_samples: VecDeque<(Instant, usize)>, 
@@ -87,6 +89,8 @@ impl Default for State {
 
             ipc_bichannel: None,
             tcp_bichannel: None,
+
+            last_send_timestamp: None,
 
              // Added this for the tcp packet counter -Nyla Hughes
             sent_packet_times: VecDeque::new(),
