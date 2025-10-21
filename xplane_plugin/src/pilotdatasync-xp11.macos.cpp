@@ -1,4 +1,4 @@
-//This is the mac version of the same .cpp file for xplane 11 
+// This is the mac version of the same .cpp file for xplane 11
 
 #include <cmath>
 #include <ctime>
@@ -7,7 +7,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-
 
 using std::string;
 using std::vector;
@@ -31,11 +30,11 @@ extern "C" {
 }
 #endif
 // These were added for UDP functionality -Nyla Hughes
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unistd.h>
 #include <cstring>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #ifndef XPLM300
 #error This is made to be compiled against the XPLM300 SDK
@@ -51,7 +50,6 @@ static XPLMDataRef verticalVelocityFlightmodelRef;
 static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
 static XPLMDataRef headingPilotRef;
-
 
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
 
@@ -77,11 +75,12 @@ volatile bool stop_exec = false;
 
 static int button_left = 0, button_top = 0, button_right = 0, button_bottom = 0;
 static std::string last_send_timestamp = "";
-static std::time_t g_last_udp_sent = 0;  // added to track last UDP sent time - Nyla Hughes
+static std::time_t g_last_udp_sent =
+    0; // added to track last UDP sent time - Nyla Hughes
 
-//these were added to store and manage the UDP socket - Nyla Hughes
-static int g_udp_socket = -1;                
-static struct sockaddr_in g_udp_addr;      
+// these were added to store and manage the UDP socket - Nyla Hughes
+static int g_udp_socket = -1;
+static struct sockaddr_in g_udp_addr;
 
 std::string get_current_timestamp() {
   std::time_t now = std::time(nullptr);
@@ -90,10 +89,10 @@ std::string get_current_timestamp() {
   return buf;
 }
 
-//this was added to create and initialize the UDP socket - Nyla Hughes
-static void udp_init(const char* ip, int port) {                       
-  g_udp_socket = socket(AF_INET, SOCK_DGRAM, 0);                       
-  if (g_udp_socket < 0) {                                              
+// this was added to create and initialize the UDP socket - Nyla Hughes
+static void udp_init(const char *ip, int port) {
+  g_udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+  if (g_udp_socket < 0) {
     XPLMDebugString("[PilotDataSync] UDP socket create FAILED\n");
     return;
   }
@@ -101,14 +100,15 @@ static void udp_init(const char* ip, int port) {
   g_udp_addr.sin_family = AF_INET;
   g_udp_addr.sin_port = htons(port);
   inet_pton(AF_INET, ip, &g_udp_addr.sin_addr);
-}                                                                      
+}
 
-//added to send UDP packets - Nyla Hughes
-static void udp_send(const std::string& payload) {                     
-  if (g_udp_socket < 0) return;                                        
-  sendto(g_udp_socket, payload.c_str(), (int)payload.size(), 0,        
-         (struct sockaddr*)&g_udp_addr, sizeof(g_udp_addr));           
-}                                                                     
+// added to send UDP packets - Nyla Hughes
+static void udp_send(const std::string &payload) {
+  if (g_udp_socket < 0)
+    return;
+  sendto(g_udp_socket, payload.c_str(), (int)payload.size(), 0,
+         (struct sockaddr *)&g_udp_addr, sizeof(g_udp_addr));
+}
 
 int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
                   void *in_refcon) {
@@ -118,10 +118,10 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
       float msToFeetRate = 3.28084;
       float msToKnotsRate = 1.94384;
 
-      float currentPilotElevation =
-          XPLMGetDataf(elevationPilotRef); // added to get pilot elevation - Nyla Hughes
-      float currentPilotAirspeed =
-          XPLMGetDataf(airspeedPilotRef);  // added to get pilot airspeed - Nyla Hughes
+      float currentPilotElevation = XPLMGetDataf(
+          elevationPilotRef); // added to get pilot elevation - Nyla Hughes
+      float currentPilotAirspeed = XPLMGetDataf(
+          airspeedPilotRef); // added to get pilot airspeed - Nyla Hughes
       float currentPilotHeading = XPLMGetDataf(headingPilotRef);
       float currentPilotVerticalVelocity =
           XPLMGetDataf(verticalVelocityPilotRef);
@@ -137,12 +137,15 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
 
       // added to send packets with the send packet button - Nyla Hughes
       char clickPkt[256];
-      std::snprintf(clickPkt, sizeof(clickPkt),                                     
-                    "Packet button clicked Altitude: %.5f ft | Airspeed: %.5f knots | Vertical Speed: %.5f ft/min | Heading: %.5f deg M | \n", 
-                    currentPilotElevation, currentPilotAirspeed,                   
-                    currentPilotVerticalVelocity, currentPilotHeading);
-      udp_send(std::string(clickPkt));                                                   
-      XPLMDebugString((std::string("[PilotDataSync] ") + clickPkt + "\n").c_str());
+      std::snprintf(
+          clickPkt, sizeof(clickPkt),
+          "Packet button clicked Altitude: %.5f ft | Airspeed: %.5f knots | "
+          "Vertical Speed: %.5f ft/min | Heading: %.5f deg M | \n",
+          currentPilotElevation, currentPilotAirspeed,
+          currentPilotVerticalVelocity, currentPilotHeading);
+      udp_send(std::string(clickPkt));
+      XPLMDebugString(
+          (std::string("[PilotDataSync] ") + clickPkt + "\n").c_str());
     }
   }
   return 0;
@@ -193,27 +196,26 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
   XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
-  udp_init("127.0.0.1", 49005);  //this is the ip for my local machine but idk if this will work for everyone
-  //I want to try and make this a configurable option later - Nyla Hughes
+  udp_init("127.0.0.1", 49005); // this is the ip for my local machine but idk
+                                // if this will work for everyone
+  // I want to try and make this a configurable option later - Nyla Hughes
 
   return g_window != NULL;
 }
 
 PLUGIN_API void XPluginStop() {
-    //added this to check if the udp socket is open before closing it - Nyla Hughes 
+  // added this to check if the udp socket is open before closing it - Nyla
+  // Hughes
   if (g_udp_socket >= 0) {
     close(g_udp_socket);
     g_udp_socket = -1;
   }
-  
+
   XPLMDestroyWindow(g_window);
   g_window = NULL;
 }
 
-
-PLUGIN_API int XPluginEnable(void) {
-  return 1;
-}
+PLUGIN_API int XPluginEnable(void) { return 1; }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg,
                                       void *inParam) {}
@@ -239,7 +241,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string elevationFlightmodelStr = build_str("Elevation, Flightmodel (MSL)",
                                              "ft", currentFlightmodelElevation);
 
-  float currentPilotElevation = XPLMGetDataf(elevationPilotRef);  
+  float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
   string elevationPilotStr =
       build_str("Elevation, Pilot (MSL)", "ft", currentPilotElevation);
 
@@ -248,7 +250,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string airspeedFlightmodelStr =
       build_str("Airspeed, Flightmodel", "knots", currentFlightmodelAirspeed);
 
-  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);    
+  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
   string airspeedPilotStr =
       build_str("Airspeed, Pilot", "knots", currentPilotAirspeed);
 
@@ -270,20 +272,18 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string headingPilotStr =
       build_str("Heading, Pilot", "°M", currentPilotHeading);
 
-    
   // added to send UDP packets every second - Nyla Hughes
   std::time_t now_sec = std::time(nullptr);
   if (now_sec != g_last_udp_sent) {
     char pkt[256];
-    std::snprintf(
-  pkt, sizeof(pkt),
-  "Altitude: %.5f ft | Airspeed: %.5f knots | Vertical Speed: %.5f ft/min | Heading: %.5f deg M | \n",
-  currentPilotElevation, currentPilotAirspeed,
-  currentPilotVerticalVelocity, currentPilotHeading);
+    std::snprintf(pkt, sizeof(pkt),
+                  "Altitude: %.5f ft | Airspeed: %.5f knots | Vertical Speed: "
+                  "%.5f ft/min | Heading: %.5f deg M | \n",
+                  currentPilotElevation, currentPilotAirspeed,
+                  currentPilotVerticalVelocity, currentPilotHeading);
 
-
-udp_send(std::string(pkt));
-    XPLMDebugString((std::string("[PilotDataSync] ") + pkt + "\n").c_str()); 
+    udp_send(std::string(pkt));
+    XPLMDebugString((std::string("[PilotDataSync] ") + pkt + "\n").c_str());
     g_last_udp_sent = now_sec;
   }
 
