@@ -18,6 +18,8 @@ use crate::message::ToTcpThreadMessage;
 // use crate::ChannelMessage;
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
+use std::collections::VecDeque;
+use std::time::Duration as StdDuration;
 
 #[allow(unused)]
 pub(crate) struct State {
@@ -241,38 +243,95 @@ impl State {
             bail!("TCP thread already exists.")
         }
 
-        // TODO
+        // create bichannel for TCP thread
         let (tcp_bichannel, mut child_bichannel) = bichannel::create_bichannels();
         self.tcp_bichannel = Some(tcp_bichannel);
 
+        // The TCP thread will keep trying to connect until the killswitch is engaged.
+        // It will buffer outgoing messages when disconnected and will attempt to flush them on reconnect.
         let tcp_thread_handle = std::thread::spawn(move || {
-            let mut stream = match TcpStream::connect(address) {
-                Ok(stream) => {
-                    println!("Successfully connected.");
-                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                    stream
+            let mut backoff_ms = 500u64;
+            let mut send_buffer: VecDeque<String> = VecDeque::new();
+
+            loop {
+                if child_bichannel.is_killswitch_engaged() {
+                    // shutdown requested
+                    return Ok(());
                 }
 
-                Err(e) => {
-                    println!("Connection failed: {}", e);
-                    bail!("Failed to connect to TCP");
-                }
-            };
+                match TcpStream::connect(address.clone()) {
+                    Ok(mut stream) => {
+                        // connected
+                        let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                        let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Connected);
+                        // clear backoff
+                        backoff_ms = 500;
 
-            while !child_bichannel.is_killswitch_engaged() {
-                // check messages from main thread
-                for message in child_bichannel.received_messages() {
-                    match message {
-                        ToTcpThreadMessage::Send(data) => {
-                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n")
-                                .to_string();
-                            let _ = stream.write_all(packet.as_bytes());
+                        // Make stream blocking with a write timeout to avoid permanent block on network issues
+                        let _ = stream
+                            .set_write_timeout(Some(StdDuration::from_secs(5)));
+
+                        // main loop while connected
+                        while !child_bichannel.is_killswitch_engaged() {
+                            // collect any new parent messages to send
+                            for message in child_bichannel.received_messages() {
+                                match message {
+                                    ToTcpThreadMessage::Send(data) => {
+                                        send_buffer.push_back(data);
+                                    }
+                                }
+                            }
+
+                            // try to flush buffer
+                            if let Some(data) = send_buffer.pop_front() {
+                                // format packet - keep existing format but use data as payload
+                                let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n");
+                                match stream.write_all(packet.as_bytes()) {
+                                    Ok(_) => {
+                                        let _ = child_bichannel
+                                            .send_to_parent(FromTcpThreadMessage::Sent(packet.len()));
+                                    }
+                                    Err(e) => {
+                                        let reason = format!("Write error: {}", e);
+                                        let _ = child_bichannel
+                                            .send_to_parent(FromTcpThreadMessage::SendError(reason.clone()));
+                                        let _ = child_bichannel
+                                            .set_is_conn_to_endpoint(false);
+                                        let _ = child_bichannel
+                                            .send_to_parent(FromTcpThreadMessage::Disconnected(reason));
+                                        // break to reconnect loop
+                                        break;
+                                    }
+                                }
+                            } else {
+                                // no pending sends, sleep a short moment to avoid busy-loop
+                                std::thread::sleep(StdDuration::from_millis(5));
+                            }
                         }
+
+                        // if killswitch engaged, break outer loop and exit
+                        if child_bichannel.is_killswitch_engaged() {
+                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                            return Ok(());
+                        }
+
+                        // otherwise we fell out of connected loop due to error - try reconnect
+                        let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                    }
+                    Err(e) => {
+                        // failed to connect - report and backoff, unless killswitch engaged
+                        let reason = format!("Connect failed: {}", e);
+                        let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Disconnected(reason));
+                        if child_bichannel.is_killswitch_engaged() {
+                            return Ok(());
+                        }
+                        std::thread::sleep(StdDuration::from_millis(backoff_ms));
+                        // exponential backoff up to 30s
+                        backoff_ms = std::cmp::min(backoff_ms.saturating_mul(2), 30_000);
+                        continue;
                     }
                 }
             }
-
-            Ok(())
         });
 
         self.tcp_thread_handle = Some(tcp_thread_handle);

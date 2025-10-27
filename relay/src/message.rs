@@ -48,4 +48,13 @@ pub(crate) enum ToTcpThreadMessage {
     Send(String),
 }
 
-pub(crate) enum FromTcpThreadMessage {}
+pub(crate) enum FromTcpThreadMessage {
+    /// TCP thread successfully connected to remote
+    Connected,
+    /// TCP thread disconnected (may include reason)
+    Disconnected(String),
+    /// A packet was sent to remote (In bytes)
+    Sent(usize),
+    /// Error reported 
+    SendError(String),
+}

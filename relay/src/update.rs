@@ -2,7 +2,7 @@ use iced::{time::Duration, Task};
 use std::fs::File;
 use std::io::prelude::*;
 
-use crate::{message::ToTcpThreadMessage, FromIpcThreadMessage, Message, State};
+use crate::{message::ToTcpThreadMessage, message::FromTcpThreadMessage, FromIpcThreadMessage, Message, State};
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -36,7 +36,20 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             if let Some(tcp_bichannel) = &state.tcp_bichannel {
                 for message in tcp_bichannel.received_messages() {
                     match message {
-                        _ => (),
+                        FromTcpThreadMessage::Connected => {
+                            state.log_event("TCP connected to iMotions".into());
+                            state.tcp_connected = true;
+                        }
+                        FromTcpThreadMessage::Disconnected(reason) => {
+                            state.log_event(format!("TCP disconnected: {reason}"));
+                            state.tcp_connected = false;
+                        }
+                        FromTcpThreadMessage::Sent(bytes) => {
+                            state.log_event(format!("Sent packet ({} bytes)", bytes));
+                        }
+                        FromTcpThreadMessage::SendError(err) => {
+                            state.log_event(format!("TCP send error: {err}"));
+                        }
                     }
                 }
             }
