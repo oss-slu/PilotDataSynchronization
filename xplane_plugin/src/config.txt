@@ -1,6 +1,4 @@
-//I want to make a config file so that the user can use their own ip later or maybe find a better way of doing it 
-//my main idea is that when the user pulls up xplane on the plugin I think there should be something that shows where the 
-data is being sent like how I to join a port in the terminal to see the data. I think there should be a port labled on it 
-so that incase we need it we can connect to that port on a different computer. 
-IP=192.168.0.42
-PORT=49005
+127.0.0.1
+49005
+
+
