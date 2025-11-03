@@ -134,12 +134,18 @@ impl State {
                 };
 
                 let mut conn = BufReader::new(conn);
-                child_bichannel.set_is_conn_to_endpoint(true)?;
+                // mark connected
+                let _ = child_bichannel.set_is_conn_to_endpoint(true);
 
+                // read initial greeting/handshake if any
                 match conn.read_line(&mut buffer) {
                     Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // non-blocking, continue to main loop
+                    }
+                    Err(e) => {
+                        eprintln!("Initial read error: {e}");
+                    }
                 }
 
                 let write_res = conn
@@ -148,8 +154,10 @@ impl State {
 
                 match write_res {
                     Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+                    Err(e) => {
+                        eprintln!("Initial write error: {e}");
+                    }
                 }
 
                 print!("Client answered: {buffer}");
@@ -165,24 +173,24 @@ impl State {
                     // read from connection input
                     match conn.read_line(&mut buffer) {
                         Ok(s) if s == 0 || buffer.len() == 0 => {
+                            // EOF / remote closed the connection:
+                            // notify parent and mark disconnected, then break to accept next connection.
+                            let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
                             buffer.clear();
-                            continue;
+                            break;
                         }
-                        Ok(s) => {
-                            let _ = buffer.pop(); // remove trailing newline
-                            println!("Got: {buffer} ({s} bytes read)");
-
-                            // txx is the sender half of channel from ipc_connection_handle -> main_gui_thread
-
-                            // TODO: change baton to send strings not floats,
-                            // ^ UNABLE TO TEST THIS LOGIC UNTIL THAT HAPPENS
+                        Ok(_s) => {
+                            let _ = buffer.pop(); // remove trailing newline (if present)
+                            println!("Got: {buffer}");
 
                             // baton shutdown message received. Send shutdown message and break to next connection
-                            // if the first 8 letters or so contains "SHUTDOWN",
                             if buffer.starts_with("SHUTDOWN") {
                                 let _ = child_bichannel
                                     .send_to_parent(FromIpcThreadMessage::BatonShutdown);
-                                return Ok(());
+                                let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                buffer.clear();
+                                break; // break inner loop, go back to accept()
                             } else {
                                 // actual baton data received
                                 let _ = child_bichannel.send_to_parent(
@@ -192,9 +200,27 @@ impl State {
 
                             buffer.clear();
                         }
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                        Err(e) => panic!("Got err {e}"),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            // nothing to read, avoid busy-loop
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("Got err {e}");
+                            // on unexpected read error, mark disconnected and break
+                            let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                            break;
+                        }
                     }
+                }
+
+                // ensure connected flag cleared when client loop exits
+                let _ = child_bichannel.set_is_conn_to_endpoint(false);
+
+                // continue listening for new connections unless killswitch engaged
+                if child_bichannel.is_killswitch_engaged() {
+                    return Ok(());
                 }
             }
 
