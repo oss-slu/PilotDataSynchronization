@@ -21,13 +21,9 @@ extern "C" {
 #include "XPLMDataAccess.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
+#include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
-#include "XPLMPlugin.h"
-#include "XPLMPlugin.h"
-#include "XPLMPlugin.h"
-#include "XPLMPlugin.h"
-#include "XPLMPlugin.h"
 #ifdef APL
 #include <OpenGL/gl.h>
 #else
@@ -70,7 +66,8 @@ static void load_udp_config() {
   char name[256] = {0}, sig[256] = {0}, desc[256] = {0}, xpl_path[1024] = {0};
   XPLMGetPluginInfo(XPLMGetMyID(), name, sig, desc, xpl_path);
 
-  std::filesystem::path cfg = std::filesystem::path(xpl_path).parent_path() / "config.txt";
+  std::filesystem::path cfg =
+      std::filesystem::path(xpl_path).parent_path() / "config.txt";
 
   std::ifstream file(cfg.string());
   if (!file.is_open()) {
@@ -84,8 +81,10 @@ static void load_udp_config() {
   file >> port;
   file.close();
 
-  if (!ip.empty()) g_udp_ip = ip;
-  if (port > 0)    g_udp_port = port;
+  if (!ip.empty())
+    g_udp_ip = ip;
+  if (port > 0)
+    g_udp_port = port;
 }
 
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
@@ -159,7 +158,8 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
       float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
       float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
       float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-      float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
+      float currentPilotVerticalVelocity =
+          XPLMGetDataf(verticalVelocityPilotRef);
 
       std::vector<float> send_to_baton = {
           currentPilotElevation,
