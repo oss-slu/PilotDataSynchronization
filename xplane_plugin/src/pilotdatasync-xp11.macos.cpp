@@ -7,6 +7,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+// added for miliseconds
+#include <chrono>
+#include <filesystem>
 
 using std::string;
 using std::vector;
@@ -20,6 +23,11 @@ extern "C" {
 #include "XPLMGraphics.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
+#include "XPLMPlugin.h"
+#include "XPLMPlugin.h"
+#include "XPLMPlugin.h"
+#include "XPLMPlugin.h"
+#include "XPLMPlugin.h"
 #ifdef APL
 #include <OpenGL/gl.h>
 #else
@@ -58,16 +66,26 @@ static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
 static XPLMDataRef headingPilotRef;
 
-// This is to load the port and ip for config -Nyla Hughes
 static void load_udp_config() {
-  std::ifstream file("config.txt");
+  char name[256] = {0}, sig[256] = {0}, desc[256] = {0}, xpl_path[1024] = {0};
+  XPLMGetPluginInfo(XPLMGetMyID(), name, sig, desc, xpl_path);
+
+  std::filesystem::path cfg = std::filesystem::path(xpl_path).parent_path() / "config.txt";
+
+  std::ifstream file(cfg.string());
   if (!file.is_open()) {
-    XPLMDebugString("Could not load port and ip info in config.txt \n");
+    XPLMDebugString("Could not load port and ip info in config.txt\n");
     return;
   }
-  std::getline(file, g_udp_ip);
-  file >> g_udp_port;
+
+  std::string ip;
+  int port;
+  std::getline(file, ip);
+  file >> port;
   file.close();
+
+  if (!ip.empty()) g_udp_ip = ip;
+  if (port > 0)    g_udp_port = port;
 }
 
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
@@ -94,8 +112,9 @@ volatile bool stop_exec = false;
 
 static int button_left = 0, button_top = 0, button_right = 0, button_bottom = 0;
 static std::string last_send_timestamp = "";
-static std::time_t g_last_udp_sent =
-    0; // added to track last UDP sent time - Nyla Hughes
+
+static std::chrono::steady_clock::time_point g_last_udp_sent =
+    std::chrono::steady_clock::now();
 
 // these were added to store and manage the UDP socket - Nyla Hughes
 static int g_udp_socket = -1;
@@ -137,13 +156,10 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
       float msToFeetRate = 3.28084;
       float msToKnotsRate = 1.94384;
 
-      float currentPilotElevation = XPLMGetDataf(
-          elevationPilotRef); // added to get pilot elevation - Nyla Hughes
-      float currentPilotAirspeed = XPLMGetDataf(
-          airspeedPilotRef); // added to get pilot airspeed - Nyla Hughes
+      float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
+      float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
       float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-      float currentPilotVerticalVelocity =
-          XPLMGetDataf(verticalVelocityPilotRef);
+      float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
 
       std::vector<float> send_to_baton = {
           currentPilotElevation,
@@ -154,7 +170,6 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
 
       last_send_timestamp = get_current_timestamp();
 
-      // added to send packets with the send packet button - Nyla Hughes
       char clickPkt[256];
       std::snprintf(
           clickPkt, sizeof(clickPkt),
@@ -216,16 +231,12 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
   load_udp_config();
-  udp_init(g_udp_ip.c_str(),
-           g_udp_port); // This should make it to read the config file and use
-                        // the info in that
+  udp_init(g_udp_ip.c_str(), g_udp_port);
 
   return g_window != NULL;
 }
 
 PLUGIN_API void XPluginStop() {
-  // added this to check if the udp socket is open before closing it - Nyla
-  // Hughes
   if (g_udp_socket >= 0) {
     close(g_udp_socket);
     g_udp_socket = -1;
@@ -292,9 +303,8 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string headingPilotStr =
       build_str("Heading, Pilot", "°M", currentPilotHeading);
 
-  // added to send UDP packets every second - Nyla Hughes
-  std::time_t now_sec = std::time(nullptr);
-  if (now_sec != g_last_udp_sent) {
+  auto now_tp = std::chrono::steady_clock::now();
+  if (now_tp - g_last_udp_sent >= std::chrono::milliseconds(1)) {
     char pkt[256];
     std::snprintf(pkt, sizeof(pkt),
                   "Altitude: %.5f ft | Airspeed: %.5f knots | Vertical Speed: "
@@ -304,7 +314,8 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
     udp_send(std::string(pkt));
     XPLMDebugString((std::string("[PilotDataSync] ") + pkt + "\n").c_str());
-    g_last_udp_sent = now_sec;
+    g_last_udp_sent = now_tp;
+    last_send_timestamp = get_current_timestamp();
   }
 
   int last_offset = 10;
