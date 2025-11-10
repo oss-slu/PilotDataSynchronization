@@ -25,6 +25,8 @@ use std::time::Instant;
 // use crate::ChannelMessage;
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
+use std::collections::VecDeque;
+use std::time::Duration as StdDuration;
 
 #[allow(unused)]
 pub(crate) struct State {
@@ -155,12 +157,18 @@ impl State {
                 };
 
                 let mut conn = BufReader::new(conn);
-                child_bichannel.set_is_conn_to_endpoint(true)?;
+                // mark connected
+                let _ = child_bichannel.set_is_conn_to_endpoint(true);
 
+                // read initial greeting/handshake if any
                 match conn.read_line(&mut buffer) {
                     Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // non-blocking, continue to main loop
+                    }
+                    Err(e) => {
+                        eprintln!("Initial read error: {e}");
+                    }
                 }
 
                 let write_res = conn
@@ -169,8 +177,10 @@ impl State {
 
                 match write_res {
                     Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+                    Err(e) => {
+                        eprintln!("Initial write error: {e}");
+                    }
                 }
 
                 print!("Client answered: {buffer}");
@@ -186,24 +196,24 @@ impl State {
                     // read from connection input
                     match conn.read_line(&mut buffer) {
                         Ok(s) if s == 0 || buffer.len() == 0 => {
+                            // EOF / remote closed the connection:
+                            // notify parent and mark disconnected, then break to accept next connection.
+                            let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
                             buffer.clear();
-                            continue;
+                            break;
                         }
-                        Ok(s) => {
-                            let _ = buffer.pop(); // remove trailing newline
-                            println!("Got: {buffer} ({s} bytes read)");
-
-                            // txx is the sender half of channel from ipc_connection_handle -> main_gui_thread
-
-                            // TODO: change baton to send strings not floats,
-                            // ^ UNABLE TO TEST THIS LOGIC UNTIL THAT HAPPENS
+                        Ok(_s) => {
+                            let _ = buffer.pop(); // remove trailing newline (if present)
+                            println!("Got: {buffer}");
 
                             // baton shutdown message received. Send shutdown message and break to next connection
-                            // if the first 8 letters or so contains "SHUTDOWN",
                             if buffer.starts_with("SHUTDOWN") {
                                 let _ = child_bichannel
                                     .send_to_parent(FromIpcThreadMessage::BatonShutdown);
-                                return Ok(());
+                                let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                buffer.clear();
+                                break; // break inner loop, go back to accept()
                             } else {
                                 // actual baton data received
                                 let _ = child_bichannel.send_to_parent(
@@ -213,9 +223,27 @@ impl State {
 
                             buffer.clear();
                         }
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                        Err(e) => panic!("Got err {e}"),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            // nothing to read, avoid busy-loop
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("Got err {e}");
+                            // on unexpected read error, mark disconnected and break
+                            let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                            break;
+                        }
                     }
+                }
+
+                // ensure connected flag cleared when client loop exits
+                let _ = child_bichannel.set_is_conn_to_endpoint(false);
+
+                // continue listening for new connections unless killswitch engaged
+                if child_bichannel.is_killswitch_engaged() {
+                    return Ok(());
                 }
             }
 
@@ -264,23 +292,21 @@ impl State {
             bail!("TCP thread already exists.")
         }
 
-        // TODO
+        // create bichannel for TCP thread
         let (tcp_bichannel, mut child_bichannel) = bichannel::create_bichannels();
         self.tcp_bichannel = Some(tcp_bichannel);
 
+        // The TCP thread will keep trying to connect until the killswitch is engaged.
+        // It will buffer outgoing messages when disconnected and will attempt to flush them on reconnect.
         let tcp_thread_handle = std::thread::spawn(move || {
-            let mut stream = match TcpStream::connect(address) {
-                Ok(stream) => {
-                    println!("Successfully connected.");
-                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                    stream
-                }
+            let mut backoff_ms = 500u64;
+            let mut send_buffer: VecDeque<String> = VecDeque::new();
 
-                Err(e) => {
-                    println!("Connection failed: {}", e);
-                    bail!("Failed to connect to TCP");
+            loop {
+                if child_bichannel.is_killswitch_engaged() {
+                    // shutdown requested
+                    return Ok(());
                 }
-            };
 
             while !child_bichannel.is_killswitch_engaged() {
                 // check messages from main thread
@@ -303,11 +329,30 @@ impl State {
                                 }
                             }
                         }
+
+                        // if killswitch engaged, break outer loop and exit
+                        if child_bichannel.is_killswitch_engaged() {
+                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                            return Ok(());
+                        }
+
+                        // otherwise we fell out of connected loop due to error - try reconnect
+                        let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                    }
+                    Err(e) => {
+                        // failed to connect - report and backoff, unless killswitch engaged
+                        let reason = format!("Connect failed: {}", e);
+                        let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Disconnected(reason));
+                        if child_bichannel.is_killswitch_engaged() {
+                            return Ok(());
+                        }
+                        std::thread::sleep(StdDuration::from_millis(backoff_ms));
+                        // exponential backoff up to 30s
+                        backoff_ms = std::cmp::min(backoff_ms.saturating_mul(2), 30_000);
+                        continue;
                     }
                 }
             }
-
-            Ok(())
         });
 
         self.tcp_thread_handle = Some(tcp_thread_handle);
