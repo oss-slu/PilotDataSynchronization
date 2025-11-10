@@ -2,7 +2,9 @@ use iced::{time::Duration, Task};
 use std::fs::File;
 use std::io::prelude::*;
 
-use crate::{message::ToTcpThreadMessage, message::FromTcpThreadMessage, FromIpcThreadMessage, Message, State};
+//added this for tcp counter - Nyla Hughes
+use crate::message::{Message, ToTcpThreadMessage, FromIpcThreadMessage, FromTcpThreadMessage}; 
+use crate::State;
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
@@ -12,7 +14,9 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         M::Update => {
             state.elapsed_time += Duration::from_millis(10);
 
-            // check for messages from IPC thread
+            // added this for tcp counter - Nyla Hughes
+            state.refresh_metrics_now(); 
+
             if let Some(ipc_bichannel) = &state.ipc_bichannel {
                 for message in ipc_bichannel.received_messages() {
                     match message {
@@ -31,25 +35,14 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                     }
                 }
             }
-
-            // check for messages from TCP thread
             if let Some(tcp_bichannel) = &state.tcp_bichannel {
                 for message in tcp_bichannel.received_messages() {
                     match message {
-                        FromTcpThreadMessage::Connected => {
-                            state.log_event("TCP connected to iMotions".into());
-                            state.tcp_connected = true;
+                        //added this for tcp counter - Nyla Hughes
+                        FromTcpThreadMessage::Sent { bytes, .. } => {
+                            state.on_tcp_packet_sent(bytes); 
                         }
-                        FromTcpThreadMessage::Disconnected(reason) => {
-                            state.log_event(format!("TCP disconnected: {reason}"));
-                            state.tcp_connected = false;
-                        }
-                        FromTcpThreadMessage::Sent(bytes) => {
-                            state.log_event(format!("Sent packet ({} bytes)", bytes));
-                        }
-                        FromTcpThreadMessage::SendError(err) => {
-                            state.log_event(format!("TCP send error: {err}"));
-                        }
+                        _ => (),
                     }
                 }
             }
@@ -91,6 +84,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             } else {
                 state.tcp_connected = false
             }
+
             Task::none()
         }
         M::ConnectIpc => {
