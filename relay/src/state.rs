@@ -25,7 +25,6 @@ use std::time::Instant;
 // use crate::ChannelMessage;
 
 use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
-use std::collections::VecDeque;
 use std::time::Duration as StdDuration;
 
 #[allow(unused)]
@@ -298,7 +297,7 @@ impl State {
 
         // The TCP thread will keep trying to connect until the killswitch is engaged.
         // It will buffer outgoing messages when disconnected and will attempt to flush them on reconnect.
-        let tcp_thread_handle = std::thread::spawn(move || {
+        let tcp_thread_handle = std::thread::spawn(move || -> Result<()> {
             let mut backoff_ms = 500u64;
             let mut send_buffer: VecDeque<String> = VecDeque::new();
 
@@ -308,37 +307,77 @@ impl State {
                     return Ok(());
                 }
 
-            while !child_bichannel.is_killswitch_engaged() {
-                // check messages from main thread
-                for message in child_bichannel.received_messages() {
-                    match message {
-                        ToTcpThreadMessage::Send(data) => {
-                            // added this for tcp packet count -Nyla Hughes
-                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n");
-                            match stream.write_all(packet.as_bytes()) {
-                                Ok(()) => {
-                                    let _ = child_bichannel.send_to_parent(
-                                        FromTcpThreadMessage::Sent {
-                                            bytes: packet.len(),
-                                            at: Instant::now(),
-                                        },
-                                    );
-                                }
-                                Err(e) => {
-                                    eprintln!("TCP send failed: {e}");
+                // Try to connect
+                match TcpStream::connect(&address) {
+                    Ok(mut stream) => {
+                        // mark connected
+                        let _ = stream.set_nonblocking(true);
+                        let _ = child_bichannel.set_is_conn_to_endpoint(true);
+
+                        // Reset backoff after successful connect
+                        backoff_ms = 500;
+
+                        // Connected loop: process messages and flush buffer
+                        while !child_bichannel.is_killswitch_engaged() {
+                            // check messages from main thread
+                            for message in child_bichannel.received_messages() {
+                                match message {
+                                    ToTcpThreadMessage::Send(data) => {
+                                        // added this for tcp packet count -Nyla Hughes
+                                        let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n");
+                                        match stream.write_all(packet.as_bytes()) {
+                                            Ok(()) => {
+                                                let _ = child_bichannel.send_to_parent(
+                                                    FromTcpThreadMessage::Sent {
+                                                        bytes: packet.len(),
+                                                        at: Instant::now(),
+                                                    },
+                                                );
+                                            }
+                                            Err(e) => {
+                                                eprintln!("TCP send failed: {e}");
+                                                // Buffer the packet for retry and break to reconnect
+                                                send_buffer.push_back(packet);
+                                                let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    // handle other ToTcpThreadMessage variants if needed
+                                    _ => {}
                                 }
                             }
+
+                            // if killswitch engaged, break out and exit
+                            if child_bichannel.is_killswitch_engaged() {
+                                let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                return Ok(());
+                            }
+
+                            // attempt to flush buffered messages
+                            while let Some(pkt) = send_buffer.pop_front() {
+                                if let Err(e) = stream.write_all(pkt.as_bytes()) {
+                                    eprintln!("TCP send failed while flushing: {e}");
+                                    // put it back and force reconnect
+                                    send_buffer.push_front(pkt);
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    break;
+                                } else {
+                                    let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Sent {
+                                        bytes: pkt.len(),
+                                        at: Instant::now(),
+                                    });
+                                }
+                            }
+
+                            // avoid busy loop
+                            std::thread::sleep(StdDuration::from_millis(10));
                         }
 
-                        // if killswitch engaged, break outer loop and exit
-                        if child_bichannel.is_killswitch_engaged() {
-                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                            return Ok(());
-                        }
-
-                        // otherwise we fell out of connected loop due to error - try reconnect
+                        // ensure connected flag cleared when leaving connected loop
                         let _ = child_bichannel.set_is_conn_to_endpoint(false);
                     }
+
                     Err(e) => {
                         // failed to connect - report and backoff, unless killswitch engaged
                         let reason = format!("Connect failed: {}", e);

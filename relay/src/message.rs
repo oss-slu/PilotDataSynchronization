@@ -51,4 +51,7 @@ pub(crate) enum ToTcpThreadMessage {
 //added this for tcp counter - Nyla Hughes
 pub(crate) enum FromTcpThreadMessage {
     Sent { bytes: usize, at: Instant },
+
+    // Report that the TCP thread is disconnected and include a reason string
+    Disconnected(String),
 }
