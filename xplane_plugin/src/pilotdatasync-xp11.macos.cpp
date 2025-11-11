@@ -1,15 +1,15 @@
 // This is the mac version of the same .cpp file for xplane 11
 
+#include <chrono>
 #include <cmath>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
 
 using std::string;
 using std::vector;
@@ -135,13 +135,15 @@ static void udp_init(const char *ip, int port) {
 }
 
 static void udp_send(const std::string &payload) {
-  if (g_udp_socket < 0) return;
+  if (g_udp_socket < 0)
+    return;
   sendto(g_udp_socket, payload.c_str(), (int)payload.size(), 0,
          (struct sockaddr *)&g_udp_addr, sizeof(g_udp_addr));
 }
 
-// This is the format that I motions wants the data to be sent in. 
-static std::string make_imotions_packet(float alt_ft, float kts, float vs_fpm, float hdg_deg) {
+// This is the format that I motions wants the data to be sent in.
+static std::string make_imotions_packet(float alt_ft, float kts, float vs_fpm,
+                                        float hdg_deg) {
   char pkt[256];
   std::snprintf(pkt, sizeof(pkt),
                 "E;1;PilotDataSync;1;;;;FlightData;%.5f;%.5f;%.5f;%.5f\r\n",
@@ -304,12 +306,9 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
   auto now_tp = std::chrono::steady_clock::now();
   if (now_tp - g_last_udp_sent >= std::chrono::milliseconds(1)) {
-    auto payload = make_imotions_packet(
-        currentPilotElevation,
-        currentPilotAirspeed,
-        currentPilotVerticalVelocity,
-        currentPilotHeading
-    );
+    auto payload =
+        make_imotions_packet(currentPilotElevation, currentPilotAirspeed,
+                             currentPilotVerticalVelocity, currentPilotHeading);
     udp_send(payload);
     g_last_udp_sent = now_tp;
     last_send_timestamp = get_current_timestamp();
@@ -322,10 +321,10 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   };
 
   vector<string> draw_order = {
-      elevationFlightmodelStr,  elevationPilotStr,
-      airspeedFlightmodelStr,   airspeedPilotStr,
+      elevationFlightmodelStr,        elevationPilotStr,
+      airspeedFlightmodelStr,         airspeedPilotStr,
       verticalVelocityFlightmodelStr, verticalVelocityPilotStr,
-      headingFlightmodelStr,    headingPilotStr,
+      headingFlightmodelStr,          headingPilotStr,
   };
 
   for (const string &line : draw_order) {
