@@ -7,9 +7,9 @@
 #include <string>
 #include <thread>
 #include <vector>
-// added for miliseconds
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 
 using std::string;
 using std::vector;
@@ -24,6 +24,7 @@ extern "C" {
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
+
 #ifdef APL
 #include <OpenGL/gl.h>
 #else
@@ -34,20 +35,16 @@ extern "C" {
 }
 #endif
 
-// These were added for UDP functionality -Nyla Hughes
 #include <arpa/inet.h>
 #include <cstring>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-// added to read the config file
-#include <fstream>
 
 #ifndef XPLM300
 #error This is made to be compiled against the XPLM300 SDK
 #endif
 
-// This is added incase there is nothing in the config file - Nyla Hughes
 static std::string g_udp_ip = "127.0.0.1";
 static int g_udp_port = 49005;
 
@@ -115,7 +112,6 @@ static std::string last_send_timestamp = "";
 static std::chrono::steady_clock::time_point g_last_udp_sent =
     std::chrono::steady_clock::now();
 
-// these were added to store and manage the UDP socket - Nyla Hughes
 static int g_udp_socket = -1;
 static struct sockaddr_in g_udp_addr;
 
@@ -126,7 +122,6 @@ std::string get_current_timestamp() {
   return buf;
 }
 
-// this was added to create and initialize the UDP socket - Nyla Hughes
 static void udp_init(const char *ip, int port) {
   g_udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
   if (g_udp_socket < 0) {
@@ -139,12 +134,19 @@ static void udp_init(const char *ip, int port) {
   inet_pton(AF_INET, ip, &g_udp_addr.sin_addr);
 }
 
-// added to send UDP packets - Nyla Hughes
 static void udp_send(const std::string &payload) {
-  if (g_udp_socket < 0)
-    return;
+  if (g_udp_socket < 0) return;
   sendto(g_udp_socket, payload.c_str(), (int)payload.size(), 0,
          (struct sockaddr *)&g_udp_addr, sizeof(g_udp_addr));
+}
+
+// This is the format that I motions wants the data to be sent in. 
+static std::string make_imotions_packet(float alt_ft, float kts, float vs_fpm, float hdg_deg) {
+  char pkt[256];
+  std::snprintf(pkt, sizeof(pkt),
+                "E;1;PilotDataSync;1;;;;FlightData;%.5f;%.5f;%.5f;%.5f\r\n",
+                alt_ft, kts, vs_fpm, hdg_deg);
+  return std::string(pkt);
 }
 
 int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
@@ -152,8 +154,6 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
   if (is_down) {
     if (x >= button_left && x <= button_right && y >= button_bottom &&
         y <= button_top) {
-      float msToFeetRate = 3.28084;
-      float msToKnotsRate = 1.94384;
 
       float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
       float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
@@ -164,7 +164,6 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
       std::vector<float> send_to_baton = {
           currentPilotElevation,
           currentPilotAirspeed,
-          currentPilotHeading,
           currentPilotVerticalVelocity,
       };
 
@@ -305,15 +304,13 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
   auto now_tp = std::chrono::steady_clock::now();
   if (now_tp - g_last_udp_sent >= std::chrono::milliseconds(1)) {
-    char pkt[256];
-    std::snprintf(pkt, sizeof(pkt),
-                  "Altitude: %.5f ft | Airspeed: %.5f knots | Vertical Speed: "
-                  "%.5f ft/min | Heading: %.5f deg M | \n",
-                  currentPilotElevation, currentPilotAirspeed,
-                  currentPilotVerticalVelocity, currentPilotHeading);
-
-    udp_send(std::string(pkt));
-    XPLMDebugString((std::string("[PilotDataSync] ") + pkt + "\n").c_str());
+    auto payload = make_imotions_packet(
+        currentPilotElevation,
+        currentPilotAirspeed,
+        currentPilotVerticalVelocity,
+        currentPilotHeading
+    );
+    udp_send(payload);
     g_last_udp_sent = now_tp;
     last_send_timestamp = get_current_timestamp();
   }
@@ -326,12 +323,12 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
   vector<string> draw_order = {
       elevationFlightmodelStr,  elevationPilotStr,
-      airspeedFlightmodelStr,   verticalVelocityFlightmodelStr,
-      verticalVelocityPilotStr, headingFlightmodelStr,
-      headingPilotStr,
+      airspeedFlightmodelStr,   airspeedPilotStr,
+      verticalVelocityFlightmodelStr, verticalVelocityPilotStr,
+      headingFlightmodelStr,    headingPilotStr,
   };
 
-  for (string line : draw_order) {
+  for (const string &line : draw_order) {
     XPLMDrawString(col_white, l + 10, get_next_y_offset(), (char *)line.c_str(),
                    NULL, xplmFont_Proportional);
   }
