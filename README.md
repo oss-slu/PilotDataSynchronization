@@ -22,6 +22,15 @@ However, this limitation only extends to what language the communication is comp
 
 A secondary benefit to using Rust over C++ for `baton` is that we can leverage Rust's superior concurrency and safety guarantees. By managing the threading and communication in the Rust library and providing the plugin only a very limited interface by which it can pass in values to be sent to `relay`, we make a worthwhile exchange. We trade up-front complexity for vastly reduced need for debugging further down the line, as our code is more likely to be sound. This is an important consideration, as the project will be passed on to new students for next iteration. It is a much better use of developer time to work on developing features instead of being mired in deeply complex concurrency concerns similar to the ones that appeared during the first iteration of this project when we began.
 
+## Visual Overview 
+### Sample Metric Graphs
+Here is a link to the same metric graphs, the reason for this is so that youre able to see how the data is supposed to look, just in case you want to add to this project but you dont have access to Imotions. 
+https://docs.google.com/document/d/1KRa0qkovk8kHhXT9Z3p66wXcQFLISTJb8F0M-sINLZ8/edit?usp=sharing 
+### System Data Flow Diagram
+For total understanding of how the data is actually being sent and where it works here is a flow diagram that shows how the data is being sent. 
+https://docs.google.com/document/d/1KRa0qkovk8kHhXT9Z3p66wXcQFLISTJb8F0M-sINLZ8/edit?usp=sharing 
+
+
 ## Low-Level View
 Work in progress.
 
