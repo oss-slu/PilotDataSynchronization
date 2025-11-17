@@ -38,3 +38,29 @@ Work in progress.
 ### `baton`
 
 #### `iceoryx2`
+
+## Supported versions (CI + Local)
+
+- Rust: stable (toolchain is pinned by `.rust-toolchain.toml`; CI uses the Rust stable channel)
+- Python: 3.x (latest 3 series)
+- Meson: >= 1.x
+- Ninja: latest
+- mingw-w64: required for cross-compilation to Windows (target `x86_64-pc-windows-gnu`)
+- GoogleTest: for C++ tests
+
+## Local check (recommended)
+1. Install rustup and ensure stable is active:
+   - `rustup update`
+   - `rustup default stable`
+2. Install the Windows target:
+   - `rustup target add x86_64-pc-windows-gnu`
+3. Install meson & ninja:
+   - `python -m pip install --user meson ninja`
+4. Setup and build:
+   - `meson setup --cross-file xplane_plugin/lin-to-win.ini build`
+   - `meson compile -C build`
+5. Run tests:
+   - `meson test -C build`
+   - `cd relay && cargo test`
+   - `cd xplane_plugin/subprojects/baton && cargo test`
+Note: `.rust-toolchain.toml` will cause `rustup` (and CI) to prefer the stable toolchain and auto-install the components/targets listed, keeping local and CI toolchains aligned
