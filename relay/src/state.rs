@@ -264,9 +264,31 @@ impl State {
                 for message in child_bichannel.received_messages() {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
-                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n")
-                                .to_string();
-                            let _ = stream.write_all(packet.as_bytes());
+                            // Sanitize data to meet iMotions requirements:
+                            // - fields are separated by semicolons; the message body must NOT contain semicolons
+                            // - the message body must NOT contain CR or LF sequences
+                            // - packet MUST be terminated with "\r\n"
+                            //
+                            // Replace any semicolons inside the data with commas, remove CR/LF characters.
+                            let mut sanitized = data.replace(';', ",",);
+                            sanitized = sanitized.replace('\r', "");
+                            sanitized = sanitized.replace('\n', "");
+
+                            let packet =
+                                format!("E;1;PilotDataSync;;;;;AltitudeSync;{sanitized}\r\n");
+
+                            // write and handle errors explicitly so we know connection state
+                            match stream.write_all(packet.as_bytes()) {
+                                Ok(_) => {
+                                    // successful send, ensure connected flag set (best-effort)
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to write to TCP stream: {e}");
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    return Err(anyhow!("Failed to write to TCP stream: {e}"));
+                                }
+                            }
                         }
                     }
                 }
