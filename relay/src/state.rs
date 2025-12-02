@@ -181,10 +181,10 @@ impl State {
 
             let listener = match opts.create_sync() {
                 Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    eprintln!(
+                    eprintln![
                         "Error: could not start server because the socket file is occupied. Please check if
                         {printname} is in use by another process and try again."
-                    );
+                    ];
                     return Ok(());
                 }
                 x => x.unwrap(),
@@ -340,32 +340,95 @@ impl State {
                             // Normalize baton payload
                             let fields = normalize_baton_payload(&data);
 
-                            // --- STRICT MAPPING FOR iMOTIONS EVENT ---
-                            // Example: AltitudeSync expects exactly 2 fields (adjust if needed).
-                            const EXPECTED_FIELDS: usize = 2;
-                            if fields.len() < EXPECTED_FIELDS {
+                            // --- STRICT MAPPING FOR iMOTIONS EVENTS ---
+                            // The relay will attempt to send as many iMotions events
+                            // as the incoming baton payload supports. Expected ordering:
+                            // [Alt_FM, Alt_Pilot, Airspeed_FM, Airspeed_Pilot,
+                            //  Vertical_FM, Vertical_Pilot, Heading_FM, Heading_Pilot]
+                            //
+                            // For each pair present, send the corresponding iMotions packet.
+                            if fields.len() < 2 {
                                 eprintln!(
-                                    "Dropping packet: AltitudeSync expects {} fields but baton sent {}: {:?}",
-                                    EXPECTED_FIELDS, fields.len(), fields
+                                    "Dropping packet: not enough fields (need >=2) but baton sent {}: {:?}",
+                                    fields.len(), fields
                                 );
                                 continue;
                             }
 
-                            // Pick exactly the fields iMotions expects (guarding indexes)
-                            let payload = vec![
-                                fields.get(0).unwrap().clone(), // primary altitude
-                                fields.get(1).unwrap().clone(), // secondary altitude (or other)
+                            // Send AltitudeSync if we have at least 2 fields
+                            let altitude_payload = vec![
+                                fields.get(0).unwrap().clone(),
+                                fields.get(1).unwrap().clone(),
                             ];
+                            let altitude_packet = build_imotions_packet("AltitudeSync", &altitude_payload);
+                            eprintln!("Sending to iMotions: {:?}", altitude_packet);
 
-                            let packet = build_imotions_packet("AltitudeSync", &payload);
-                            eprintln!("Sending to iMotions: {:?}", packet);
-
-                            if let Err(e) = send_packet_and_debug(&mut stream, &packet) {
-                                eprintln!("Failed to send packet: {}", e);
+                            if let Err(e) = send_packet_and_debug(&mut stream, &altitude_packet) {
+                                eprintln!("Failed to send Altitude packet: {}", e);
                                 let _ = child_bichannel.set_is_conn_to_endpoint(false);
                                 return Err(e);
                             } else {
                                 let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                            }
+
+                            // Send AirspeedSync if we have at least 4 fields
+                            if fields.len() >= 4 {
+                                let airspeed_payload = vec![
+                                    fields.get(2).unwrap().clone(),
+                                    fields.get(3).unwrap().clone(),
+                                ];
+                                let airspeed_packet = build_imotions_packet("AirspeedSync", &airspeed_payload);
+                                eprintln!("Sending to iMotions: {:?}", airspeed_packet);
+
+                                if let Err(e) = send_packet_and_debug(&mut stream, &airspeed_packet) {
+                                    eprintln!("Failed to send Airspeed packet: {}", e);
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    return Err(e);
+                                } else {
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                }
+                            } else {
+                                eprintln!("Airspeed packet skipped: need >=4 fields, have {}", fields.len());
+                            }
+
+                            // Send VerticalVelocitySync if we have at least 4 fields
+                            if fields.len() >= 6 {
+                                let vv_payload = vec![
+                                    fields.get(4).unwrap().clone(),
+                                    fields.get(5).unwrap().clone(),
+                                ];
+                                let vv_packet = build_imotions_packet("VerticalAirspeedSync", &vv_payload);
+                                eprintln!("Sending to iMotions: {:?}", vv_packet);
+
+                                if let Err(e) = send_packet_and_debug(&mut stream, &vv_packet) {
+                                    eprintln!("Failed to send Vertical Velocity packet: {}", e);
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    return Err(e);
+                                } else {
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                }
+                            } else {
+                                eprintln!("VerticalVelocity packet skipped: need >=6 fields, have {}", fields.len());
+                            }
+
+                            // Send HeadingSync if we have at least 8 fields
+                            if fields.len() >= 8 {
+                                let heading_payload = vec![
+                                    fields.get(6).unwrap().clone(),
+                                    fields.get(7).unwrap().clone(),
+                                ];
+                                let heading_packet = build_imotions_packet("HeadingSync", &heading_payload);
+                                eprintln!("Sending to iMotions: {:?}", heading_packet);
+
+                                if let Err(e) = send_packet_and_debug(&mut stream, &heading_packet) {
+                                    eprintln!("Failed to send Heading packet: {}", e);
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    return Err(e);
+                                } else {
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                }
+                            } else {
+                                eprintln!("Heading packet skipped: need >=8 fields, have {}", fields.len());
                             }
                         }
                     }
