@@ -47,9 +47,6 @@ pub(crate) fn view(state: &State) -> UIElement {
         elements.push(send_btn);
     }
 
-    // Added this for tcp counter - Nyla Hughes
-    elements.push(metrics_block(state));
-
     // TCP Connection Status elements
     elements.push(tcp_connect_status_element(state));
     elements.push(check_tcp_status_button(state));
@@ -100,44 +97,10 @@ fn baton_connect_status_element(state: &State) -> UIElement {
 fn baton_data_element(state: &State) -> UIElement {
     // need to update view function with float parsing? perhaps? idk
     let baton_data = match &state.latest_baton_send {
-        //added this for tcp counter - Nyla Hughes
-        Some(data) => format!("[BATON]: {data}"), 
-        //
+        Some(data) => format!("[BATON]: {}", data),
         None => "No data from baton.".into(),
     };
     text(baton_data).into()
-}
-
-// Added this for tcp counter - Nyla Hughes
-fn metrics_block(state: &State) -> UIElement {
-    if !state.show_metrics {
-        return text("").into();
-    }
-
-    let packets_60 = state.packets_last_60s;
-    let bps_str = human_bps(state.bps);
-
-    column![
-        text(format!("Packets sent in the last 60's: {packets_60}")),
-        text(format!("Throughput: {bps_str}")),
-    ]
-    .into()
-}
-fn human_bps(bps: f64) -> String {
-    const K: f64 = 1_000.0;
-    if bps < K {
-        return format!("{:.0} bps", bps);
-    }
-    let kbps = bps / K;
-    if kbps < K {
-        return format!("{:.1} Kbps", kbps);
-    }
-    let mbps = kbps / K;
-    if mbps < K {
-        return format!("{:.2} Mbps", mbps);
-    }
-    let gbps = mbps / K;
-    format!("{:.2} Gbps", gbps)
 }
 
 fn tcp_connect_status_element(state: &State) -> UIElement {
@@ -235,4 +198,20 @@ fn send_packet_button(state: &State) -> Option<UIElement> {
                 .into(),
         )
     }
+}
+
+// small helper to format bps
+fn human_bps(bps: f64) -> String {
+    if bps <= 0.0 {
+        return "0 B/s".into();
+    }
+    if bps < 1024.0 {
+        return format!("{:.0} B/s", bps);
+    }
+    let kb = bps / 1024.0;
+    if kb < 1024.0 {
+        return format!("{:.1} KB/s", kb);
+    }
+    let mb = kb / 1024.0;
+    format!("{:.2} MB/s", mb)
 }

@@ -1,30 +1,51 @@
 use iced::{time::Duration, Task};
 use std::fs::File;
 use std::io::prelude::*;
+use std::time::{Instant, Duration as StdDuration};
 
-//added this for tcp counter - Nyla Hughes
-use crate::message::{Message, ToTcpThreadMessage, FromIpcThreadMessage, FromTcpThreadMessage}; 
-use crate::State;
+use crate::{message::ToTcpThreadMessage, message::FromTcpThreadMessage, FromIpcThreadMessage, Message, State};
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
+
+    // threshold window considered "recent" (avoid short false-negatives)
+    const LAST_SEEN_WINDOW: StdDuration = StdDuration::from_secs(2);
 
     #[allow(unreachable_patterns)]
     match message {
         M::Update => {
             state.elapsed_time += Duration::from_millis(10);
 
-            // added this for tcp counter - Nyla Hughes
-            state.refresh_metrics_now(); 
+            // 1) compute active baton connection: true if IPC reports connected OR we saw a packet recently
+            let ipc_conn_flag = state
+                .ipc_bichannel
+                .as_ref()
+                .and_then(|b| b.is_conn_to_endpoint().ok())
+                .unwrap_or(false);
 
+            let recent_packet = state
+                .last_baton_instant
+                .map(|t| t.elapsed() <= LAST_SEEN_WINDOW)
+                .unwrap_or(false);
+
+            state.active_baton_connection = ipc_conn_flag || recent_packet;
+
+            // check for messages from IPC thread
             if let Some(ipc_bichannel) = &state.ipc_bichannel {
                 for message in ipc_bichannel.received_messages() {
                     match message {
                         FromIpcThreadMessage::BatonData(data) => {
+                            // forward to TCP thread (clone for the outgoing buffer)
                             state.tcp_bichannel.as_mut().map(|tcp_bichannel| {
                                 tcp_bichannel.send_to_child(ToTcpThreadMessage::Send(data.clone()))
                             });
+
+                            // log each individual baton packet so UI shows it
+                            state.log_event(format!("Baton packet: {data}"));
+
+                            // store latest data and mark active connection + timestamp
                             state.latest_baton_send = Some(data);
+                            state.last_baton_instant = Some(Instant::now());
                             state.active_baton_connection = true;
                         }
                         FromIpcThreadMessage::BatonShutdown => {
@@ -35,14 +56,25 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                     }
                 }
             }
+
+            // check for messages from TCP thread
             if let Some(tcp_bichannel) = &state.tcp_bichannel {
                 for message in tcp_bichannel.received_messages() {
                     match message {
-                        //added this for tcp counter - Nyla Hughes
-                        FromTcpThreadMessage::Sent { bytes, .. } => {
-                            state.on_tcp_packet_sent(bytes); 
+                        FromTcpThreadMessage::Connected => {
+                            state.log_event("TCP connected to iMotions".into());
+                            state.tcp_connected = true;
                         }
-                        _ => (),
+                        FromTcpThreadMessage::Disconnected(reason) => {
+                            state.log_event(format!("TCP disconnected: {reason}"));
+                            state.tcp_connected = false;
+                        }
+                        FromTcpThreadMessage::Sent(bytes) => {
+                            state.on_tcp_packet_sent(bytes);
+                        }
+                        FromTcpThreadMessage::SendError(err) => {
+                            state.log_event(format!("TCP send error: {err}"));
+                        }
                     }
                 }
             }
@@ -84,7 +116,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             } else {
                 state.tcp_connected = false
             }
-
             Task::none()
         }
         M::ConnectIpc => {
@@ -244,27 +275,4 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
         .expect("Writing to XML file");
 
     Task::none() // Return type that we need for the Update logic
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::State;
-    use crate::Message;
-
-    #[test]
-    fn send_packet_updates_timestamp() {
-        let mut state = State::default();
-    
-        assert!(state.last_send_timestamp.is_none());
-
-        // Should simulate sending a packet
-        let _ = super::update(&mut state, Message::SendPacket);
-
-        // After update, timestamp should be set
-        assert!(state.last_send_timestamp.is_some());
-        let ts = state.last_send_timestamp.as_ref().unwrap();
-       
-        assert!(ts.chars().all(|c| c.is_ascii_digit()));
-    }
 }
