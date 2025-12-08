@@ -5,7 +5,7 @@
 **Audience:** Future student teams, Tech Leads, Product Managers, and Research Software Teams  
 **Purpose:** To provide a structured and reusable roadmap framework for planning, executing, and scaling student-led software products.
 
----
+
 
 ## 1. Purpose of This Framework
 
@@ -23,13 +23,13 @@ This framework is especially suited for:
 - Multi-sprint engineering workflows  
 - Industry–academic collaboration tools  
 
----
+
 
 ## 2. Product Lifecycle Phases
 
 Each product should be structured into the following five roadmap phases:
 
----
+
 
 ### Phase 1: Problem Discovery & Research Planning
 
@@ -47,7 +47,7 @@ Each product should be structured into the following five roadmap phases:
 - Initial Feature List  
 - Research Objectives  
 
----
+
 
 ### Phase 2: Architecture & Design Planning
 
@@ -64,7 +64,7 @@ Each product should be structured into the following five roadmap phases:
 - Tech Stack Justification  
 - Integration Plan  
 
----
+
 
 ### Phase 3: Incremental Development & Sprint Execution
 
@@ -83,7 +83,7 @@ Each product should be structured into the following five roadmap phases:
 - GitHub Issues & Pull Requests  
 - Sprint Review Notes  
 
----
+
 
 ### Phase 4: Validation & Client Readiness
 
@@ -100,7 +100,7 @@ Each product should be structured into the following five roadmap phases:
 - Deployment Checklist  
 - Client Approval Signoff  
 
----
+
 
 ### Phase 5: Sustainability & Handoff Planning
 
@@ -119,7 +119,7 @@ Each product should be structured into the following five roadmap phases:
 - Open Issues for Next Team  
 - Contributor Guide  
 
----
+
 
 ## 3. Roadmap Planning Template (Reusable)
 
@@ -131,7 +131,7 @@ Each product should be structured into the following five roadmap phases:
 | Validate   | Sprint 6       | Testing + Client validation| Client-ready system         |
 | Sustain    | Sprint 7       | Handoff + Scaling          | Project readiness           |
 
----
+
 
 ## 4. Product Success Metrics Framework
 
@@ -150,7 +150,7 @@ These metrics should inform:
 - Stakeholder confidence  
 - Release readiness  
 
----
+
 
 ## 5. Risk & Decision Tracking Model
 
@@ -168,7 +168,7 @@ With tracking fields:
 - Mitigation Plan  
 - Status  
 
----
+
 
 ## 6. Long-Term Product Vision Planning
 
@@ -178,7 +178,7 @@ Every project should define:
 - Long-term sustainment strategy  
 - Funding and infrastructure dependencies  
 
----
+
 
 ## 7. Leadership & Team Enablement Role in Roadmap Execution
 
@@ -195,7 +195,7 @@ Every project should define:
 - Technical validation  
 - Code quality  
 
----
+
 
 ## 8. Why This Framework Matters
 
@@ -206,7 +206,7 @@ This roadmap framework:
 - Increases client confidence  
 - Supports scalable open source development  
 
----
+
 
 ## 9. Reuse Instructions for Future Teams
 
