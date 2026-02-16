@@ -1,20 +1,20 @@
-﻿use anyhow::Result;
-use anyhow::{anyhow, bail};
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Write;
-use std::net::TcpStream;
-use std::thread::{JoinHandle, spawn};
+﻿use anyhow::{anyhow, bail, Result};
 use iced::time::Duration;
+use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
+use std::thread::{spawn, JoinHandle};
+use std::time::{Duration as StdDuration, Instant};
+
 use crate::bichannel;
 use crate::bichannel::ParentBiChannel;
-use crate::message::FromIpcThreadMessage;
-use crate::message::FromTcpThreadMessage;
-use crate::message::ToIpcThreadMessage;
-use crate::message::ToTcpThreadMessage;
-use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
-use std::time::{Duration as StdDuration, Instant};
-// --- State definition and Default impl (replace existing block) ---
+use crate::message::{FromIpcThreadMessage, FromTcpThreadMessage, ToIpcThreadMessage, ToTcpThreadMessage};
+
+/// Simple, consistent log helper used inside this module and spawned threads.
+fn relay_log(msg: &str) {
+    eprintln!("[relay] {}", msg);
+}
+
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
@@ -25,17 +25,17 @@ pub(crate) struct State {
     pub tcp_addr_field: String,
     pub latest_baton_send: Option<String>,
     pub active_baton_connection: bool,
-    // timestamp of last received baton packet (used by update logic)
+    /// timestamp of last received baton packet (used by update logic)
     pub last_baton_instant: Option<Instant>,
-    // simple metrics/UI helpers
+    /// simple metrics/UI helpers
     pub show_metrics: bool,
     pub packets_last_60s: usize,
     pub bps: f64,
-    // Optional GUI error message
+    /// Optional GUI error message
     pub error_message: Option<String>,
-    // Is GUI pop-up card open
+    /// Is GUI pop-up card open
     pub card_open: bool,
-    // GUI Toggle state elements
+    /// GUI Toggle state elements
     pub altitude_toggle: bool,
     pub airspeed_toggle: bool,
     pub vertical_airspeed_toggle: bool,
@@ -44,6 +44,7 @@ pub(crate) struct State {
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
     pub last_send_timestamp: Option<String>,
 }
+
 impl Default for State {
     fn default() -> State {
         State {
@@ -71,35 +72,32 @@ impl Default for State {
         }
     }
 }
-// --- helper functions -------------------------------------------------------
+
+// --- helpers ----------------------------------------------------------------
+
 fn sanitize_field(s: &str) -> String {
-    // remove CR/LF and replace any internal semicolons with commas,
-    // trim whitespace
     s.replace('\r', "")
         .replace('\n', "")
         .replace(';', ",")
         .trim()
         .to_string()
 }
+
 fn normalize_baton_payload(raw: &str) -> Vec<String> {
-    // trim whitespace, remove surrounding CR/LF
     let mut s = raw.trim().replace('\r', "").replace('\n', "");
-    // remove leading semicolons that create empty first fields
     while s.starts_with(';') {
         s.remove(0);
     }
-    // also remove trailing semicolons (avoid empty trailing field)
     while s.ends_with(';') {
         s.pop();
     }
-    // split on semicolon and sanitize each field
     s.split(';')
         .map(|f| sanitize_field(f))
         .filter(|f| !f.is_empty())
         .collect()
 }
+
 fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
-    // Header used in previous code: "E;1;PilotDataSync;;;;;{Event};{fields...}\r\n"
     let mut packet = String::from("E;1;PilotDataSync;;;;;");
     packet.push_str(event_name);
     if !fields.is_empty() {
@@ -109,131 +107,133 @@ fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
     packet.push_str("\r\n");
     packet
 }
-// Add this helper near your other helpers
-fn send_packet_and_debug(stream: &mut std::net::TcpStream, packet: &str) -> Result<()> {
-    // Print readable and hex views for debugging
-    eprintln!("TX packet (len={}): {:?}", packet.len(), packet);
-    let hex: String = packet.as_bytes().iter().map(|b| format!("{:02X} ", b)).collect();
-    eprintln!("TX hex: {}", hex.trim_end());
-    // Write then flush -- report any error
-    stream.write_all(packet.as_bytes())
-        .map_err(|e| anyhow::anyhow!("write_all failed: {}", e))?;
-    stream.flush()
-        .map_err(|e| anyhow::anyhow!("flush failed: {}", e))?;
+
+fn send_packet(stream: &mut TcpStream, packet: &str) -> Result<()> {
+    stream
+        .write_all(packet.as_bytes())
+        .map_err(|e| anyhow!("write_all failed: {}", e))?;
+    stream
+        .flush()
+        .map_err(|e| anyhow!("flush failed: {}", e))?;
     Ok(())
 }
+
 // --- State impl -------------------------------------------------------------
+
 impl State {
-    // Simple metric helpers used by update/view code that expect them.
     pub fn refresh_metrics_now(&mut self) {
-        // placeholder: in future compute accurate rates from history
-        // Here we keep current values; could implement sliding window later.
         if self.packets_last_60s > 0 {
-            // naive decay to avoid stale large counts (noop for now)
             self.packets_last_60s = self.packets_last_60s.saturating_sub(0);
         }
     }
+
     pub fn on_tcp_packet_sent(&mut self, bytes: usize) {
-        // Update simple counters and log
         self.packets_last_60s = self.packets_last_60s.saturating_add(1);
         self.bps = bytes as f64;
         self.log_event(format!("Sent packet ({} bytes)", bytes));
     }
+
+    pub fn is_ipc_connected(&self) -> bool {
+        self.ipc_bichannel
+            .as_ref()
+            .and_then(|b| b.is_conn_to_endpoint().ok())
+            .unwrap_or(false)
+    }
+
+    pub fn is_tcp_connected(&self) -> bool {
+        self.tcp_bichannel
+            .as_ref()
+            .and_then(|b| b.is_conn_to_endpoint().ok())
+            .unwrap_or(false)
+    }
+
     pub fn ipc_connect(&mut self) -> Result<()> {
         if self.ipc_thread_handle.is_some() {
-            bail!("IPC thread already exists.")
+            bail!("IPC thread already exists.");
         }
+
         let (ipc_bichannel, mut child_bichannel) =
             bichannel::create_bichannels::<ToIpcThreadMessage, FromIpcThreadMessage>();
-        let ipc_thread_handle = spawn(move || {
+
+        let handle = spawn(move || {
             let printname = "baton.sock";
-            let name = printname.to_ns_name::<GenericNamespaced>().unwrap();
+            let name = printname.to_ns_name::<GenericNamespaced>().map_err(|e| {
+                relay_log(&format!("Failed to convert name to NsName: {}", e));
+                anyhow!("Name conversion failed")
+            })?;
             let opts = ListenerOptions::new().name(name);
-            let listener = match opts.create_sync() {
-                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    eprintln![
-                        "Error: could not start server because the socket file is occupied. Please check if
-                        {printname} is in use by another process and try again."
-                    ];
-                    return Ok(());
-                }
-                x => x.unwrap(),
-            };
+            let listener = opts.create_sync().map_err(|e| {
+                relay_log(&format!("Failed to create IPC listener: {}", e));
+                anyhow!("Listener create failed")
+            })?;
             listener
                 .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
-                .expect("Error setting non-blocking mode on listener");
-            println!("Server running at {printname}");
+                .map_err(|e| anyhow!("set_nonblocking failed: {}", e))?;
+            relay_log("IPC server running");
+
             let mut buffer = String::with_capacity(128);
             while !child_bichannel.is_killswitch_engaged() {
-                let conn = listener.accept();
-                let conn = match (child_bichannel.is_killswitch_engaged(), conn) {
-                    (true, _) => return Ok(()),
-                    (_, Ok(c)) => {
-                        println!("success");
-                        c
-                    }
-                    (_, Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    (_, Err(e)) => {
-                        eprintln!("Incoming connection failed: {e}");
-                        continue;
-                    }
-                };
-                let mut conn = BufReader::new(conn);
-                child_bichannel.set_is_conn_to_endpoint(true)?;
-                match conn.read_line(&mut buffer) {
-                    Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
-                }
-                let write_res = conn
-                    .get_mut()
-                    .write_all(b"Hello, from the relay prototype (Rust)!\n");
-                match write_res {
-                    Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    _ => panic!(),
-                }
-                print!("Client answered: {buffer}");
-                buffer.clear();
-                // Continuously receive data from plugin
-                while !child_bichannel.is_killswitch_engaged() {
-                    // check for any new messages from parent and act accordingly
-                    for message in child_bichannel.received_messages() {
-                        match message {}
-                    }
-                    // read from connection input
-                    match conn.read_line(&mut buffer) {
-                        Ok(s) if s == 0 || buffer.len() == 0 => {
-                            buffer.clear();
-                            continue;
-                        }
-                        Ok(_s) => {
-                            let _ = buffer.pop(); // remove trailing newline
-                            println!("Got: {buffer} ({_s} bytes read)");
-                            if buffer.starts_with("SHUTDOWN") {
-                                let _ = child_bichannel
-                                    .send_to_parent(FromIpcThreadMessage::BatonShutdown);
-                                return Ok(());
-                            } else {
-                                let _ = child_bichannel.send_to_parent(
-                                    FromIpcThreadMessage::BatonData(buffer.clone()),
-                                );
+                match listener.accept() {
+                    Ok(conn) => {
+                        relay_log("IPC incoming connection accepted");
+                        let mut conn = BufReader::new(conn);
+                        let _ = child_bichannel.set_is_conn_to_endpoint(true);
+
+                        loop {
+                            if child_bichannel.is_killswitch_engaged() {
+                                break;
                             }
-                            buffer.clear();
+
+                            // Check parent messages (none expected for now)
+                            for _msg in child_bichannel.received_messages() {
+                                // intentionally no-op; reserved for future commands
+                            }
+
+                            match conn.read_line(&mut buffer) {
+                                Ok(0) => {
+                                    buffer.clear();
+                                    break;
+                                }
+                                Ok(_) => {
+                                    let _ = buffer.pop(); // remove trailing newline if present
+                                    if buffer.starts_with("SHUTDOWN") {
+                                        let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                                        break;
+                                    } else {
+                                        let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
+                                    }
+                                    buffer.clear();
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                                Err(e) => {
+                                    relay_log(&format!("IPC connection read error: {}", e));
+                                    break;
+                                }
+                            }
                         }
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                        Err(e) => panic!("Got err {e}"),
+
+                        let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // no incoming connection right now
+                        std::thread::sleep(StdDuration::from_millis(5));
+                        continue;
+                    }
+                    Err(e) => {
+                        relay_log(&format!("IPC accept failed: {}", e));
+                        std::thread::sleep(StdDuration::from_millis(50));
+                        continue;
                     }
                 }
             }
             Ok(())
         });
+
         self.ipc_bichannel = Some(ipc_bichannel);
-        self.ipc_thread_handle = Some(ipc_thread_handle);
+        self.ipc_thread_handle = Some(handle);
         Ok(())
     }
+
     pub fn ipc_disconnect(&mut self) -> Result<()> {
         if self.ipc_thread_handle.is_none() {
             bail!("IPC thread does not exist.")
@@ -249,188 +249,119 @@ impl State {
             .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
         Ok(res?)
     }
-    pub fn _is_ipc_connected(&self) -> bool {
-        if let Some(status) = self
-            .ipc_bichannel
-            .as_ref()
-            .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
-        {
-            status
-        } else {
-            false
-        }
-    }
+
     pub fn tcp_connect(&mut self, address: String) -> Result<()> {
         if self.tcp_thread_handle.is_some() {
             bail!("TCP thread already exists.")
         }
         let (tcp_bichannel, mut child_bichannel) = bichannel::create_bichannels();
         self.tcp_bichannel = Some(tcp_bichannel);
-        let tcp_thread_handle = spawn(move || {
-            let mut stream = match TcpStream::connect(address) {
-                Ok(stream) => {
-                    println!("Successfully connected.");
-                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                    stream
-                }
-                Err(e) => {
-                    println!("Connection failed: {}", e);
-                    bail!("Failed to connect to TCP");
-                }
-            };
+
+        let handle = spawn(move || {
+            let mut stream = TcpStream::connect(address).map_err(|e| {
+                relay_log(&format!("TCP connect failed: {}", e));
+                anyhow!("Failed to connect to TCP")
+            })?;
+            relay_log("TCP connected");
+            let _ = child_bichannel.set_is_conn_to_endpoint(true);
+
             while !child_bichannel.is_killswitch_engaged() {
                 for message in child_bichannel.received_messages() {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
-                            // Normalize baton payload
                             let fields = normalize_baton_payload(&data);
-                            // --- Flexible mapping for iMOTIONS events ---
-                            // The relay accepts two common payload shapes:
-                            // 1) Paired fields for each sample (FM,Pilot) in sequence:
-                            //    [Alt_FM, Alt_Pilot, Air_FM, Air_Pilot, Vert_FM, Vert_Pilot, Head_FM, Head_Pilot]
-                            // 2) Single pilot-only values in order:
-                            //    [Altitude, Airspeed, Heading, VerticalVelocity]
-                            //
-                            // Emit whatever events we can from the incoming payload.
+
                             if fields.len() < 2 {
-                                eprintln!(
-                                    "Dropping packet: not enough fields (need >=2) but baton sent {}: {:?}",
-                                    fields.len(), fields
-                                );
+                                relay_log(&format!("Dropping packet: not enough fields (need >=2) but baton sent {}: {:?}", fields.len(), fields));
                                 continue;
                             }
-                            // If payload is exactly 4 fields, assume pilot-only order
+
+                            // Pilot-only 4-field payload handling
                             if fields.len() == 4 {
-                                // plugin order: Altitude, Airspeed, Heading, VerticalVelocity
-                                // For iMotions we need (FlightModel, Pilot) pairs. Use the pilot value for both slots.
-                                let alt = fields.get(0).unwrap().clone();
-                                let air = fields.get(1).unwrap().clone();
-                                let head = fields.get(2).unwrap().clone();
-                                let vv = fields.get(3).unwrap().clone();
-                                // Altitude
-                                let altitude_packet = build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]);
-                                eprintln!("Sending to iMotions: {:?}", altitude_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &altitude_packet) {
-                                    eprintln!("Failed to send Altitude packet: {}", e);
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                    return Err(e);
-                                } else {
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                let alt = fields[0].clone();
+                                let air = fields[1].clone();
+                                let head = fields[2].clone();
+                                let vv = fields[3].clone();
+
+                                let packets = [
+                                    build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]),
+                                    build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]),
+                                    build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]),
+                                    build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]),
+                                ];
+
+                                for pkt in &packets {
+                                    if let Err(e) = send_packet(&mut stream, pkt) {
+                                        relay_log(&format!("TCP send failed: {}", e));
+                                        let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                        return Err(e);
+                                    } else {
+                                        let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                    }
                                 }
-                                // Airspeed
-                                let airspeed_packet = build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]);
-                                eprintln!("Sending to iMotions: {:?}", airspeed_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &airspeed_packet) {
-                                    eprintln!("Failed to send Airspeed packet: {}", e);
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                    return Err(e);
-                                } else {
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                                }
-                                // Vertical velocity
-                                let vv_packet = build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]);
-                                eprintln!("Sending to iMotions: {:?}", vv_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &vv_packet) {
-                                    eprintln!("Failed to send Vertical Velocity packet: {}", e);
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                    return Err(e);
-                                } else {
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                                }
-                                // Heading
-                                let heading_packet = build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]);
-                                eprintln!("Sending to iMotions: {:?}", heading_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &heading_packet) {
-                                    eprintln!("Failed to send Heading packet: {}", e);
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                    return Err(e);
-                                } else {
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                                }
-                                // done with this message
                                 continue;
                             }
-                            // Otherwise attempt the paired-fields mapping (previous behavior)
-                            // Send AltitudeSync if we have at least 2 fields
+
+                            // Paired-fields mapping (legacy behavior)
                             if fields.len() >= 2 {
-                                let altitude_payload = vec![
-                                    fields.get(0).unwrap().clone(),
-                                    fields.get(1).unwrap().clone(),
-                                ];
+                                let altitude_payload = vec![fields[0].clone(), fields[1].clone()];
                                 let altitude_packet = build_imotions_packet("AltitudeSync", &altitude_payload);
-                                eprintln!("Sending to iMotions: {:?}", altitude_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &altitude_packet) {
-                                    eprintln!("Failed to send Altitude packet: {}", e);
+                                if let Err(e) = send_packet(&mut stream, &altitude_packet) {
+                                    relay_log(&format!("Failed to send Altitude packet: {}", e));
                                     let _ = child_bichannel.set_is_conn_to_endpoint(false);
                                     return Err(e);
                                 } else {
                                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
                                 }
                             }
-                            // Send AirspeedSync if we have at least 4 fields
+
                             if fields.len() >= 4 {
-                                let airspeed_payload = vec![
-                                    fields.get(2).unwrap().clone(),
-                                    fields.get(3).unwrap().clone(),
-                                ];
+                                let airspeed_payload = vec![fields[2].clone(), fields[3].clone()];
                                 let airspeed_packet = build_imotions_packet("AirspeedSync", &airspeed_payload);
-                                eprintln!("Sending to iMotions: {:?}", airspeed_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &airspeed_packet) {
-                                    eprintln!("Failed to send Airspeed packet: {}", e);
+                                if let Err(e) = send_packet(&mut stream, &airspeed_packet) {
+                                    relay_log(&format!("Failed to send Airspeed packet: {}", e));
                                     let _ = child_bichannel.set_is_conn_to_endpoint(false);
                                     return Err(e);
                                 } else {
                                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
                                 }
-                            } else {
-                                eprintln!("Airspeed packet skipped: need >=4 fields, have {}", fields.len());
                             }
-                            // Send VerticalVelocitySync if we have at least 6 fields
+
                             if fields.len() >= 6 {
-                                let vv_payload = vec![
-                                    fields.get(4).unwrap().clone(),
-                                    fields.get(5).unwrap().clone(),
-                                ];
+                                let vv_payload = vec![fields[4].clone(), fields[5].clone()];
                                 let vv_packet = build_imotions_packet("VerticalVelocitySync", &vv_payload);
-                                eprintln!("Sending to iMotions: {:?}", vv_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &vv_packet) {
-                                    eprintln!("Failed to send Vertical Velocity packet: {}", e);
+                                if let Err(e) = send_packet(&mut stream, &vv_packet) {
+                                    relay_log(&format!("Failed to send Vertical Velocity packet: {}", e));
                                     let _ = child_bichannel.set_is_conn_to_endpoint(false);
                                     return Err(e);
                                 } else {
                                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
                                 }
-                            } else {
-                                eprintln!("VerticalVelocity packet skipped: need >=6 fields, have {}", fields.len());
                             }
-                            // Send HeadingSync if we have at least 8 fields
+
                             if fields.len() >= 8 {
-                                let heading_payload = vec![
-                                    fields.get(6).unwrap().clone(),
-                                    fields.get(7).unwrap().clone(),
-                                ];
+                                let heading_payload = vec![fields[6].clone(), fields[7].clone()];
                                 let heading_packet = build_imotions_packet("HeadingSync", &heading_payload);
-                                eprintln!("Sending to iMotions: {:?}", heading_packet);
-                                if let Err(e) = send_packet_and_debug(&mut stream, &heading_packet) {
-                                    eprintln!("Failed to send Heading packet: {}", e);
+                                if let Err(e) = send_packet(&mut stream, &heading_packet) {
+                                    relay_log(&format!("Failed to send Heading packet: {}", e));
                                     let _ = child_bichannel.set_is_conn_to_endpoint(false);
                                     return Err(e);
                                 } else {
                                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
                                 }
-                            } else {
-                                eprintln!("Heading packet skipped: need >=8 fields, have {}", fields.len());
                             }
                         }
                     }
                 }
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                std::thread::sleep(StdDuration::from_millis(1));
             }
             Ok(())
         });
-        self.tcp_thread_handle = Some(tcp_thread_handle);
+
+        self.tcp_thread_handle = Some(handle);
         Ok(())
     }
+
     pub fn tcp_disconnect(&mut self) -> Result<()> {
         if self.tcp_thread_handle.is_none() {
             bail!("TCP thread does not exist.")
@@ -446,17 +377,7 @@ impl State {
             .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
         Ok(res?)
     }
-    pub fn _is_tcp_connected(&self) -> bool {
-        if let Some(status) = self
-            .tcp_bichannel
-            .as_ref()
-            .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
-        {
-            status
-        } else {
-            false
-        }
-    }
+
     pub fn log_event(&mut self, event: String) {
         self.event_log.push(event);
     }

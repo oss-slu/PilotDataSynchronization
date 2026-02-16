@@ -1,7 +1,7 @@
-//! UI view layout using iced.
+//! UI view definitions using iced.
 //!
-//! Each UI element is produced by a focused function. The `view` function composes those
-//! elements to keep the module modular and easy to maintain.
+//! Each UI element is produced by a small focused function to improve readability,
+//! testability and maintainability. The `view` function composes those elements.
 
 use std::net::ToSocketAddrs;
 
@@ -15,59 +15,74 @@ type UIElement<'a> = Element<'a, Message>;
 
 const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:9999";
 
+/// Compose the UI by collecting small, single-responsibility elements.
 pub(crate) fn view(state: &State) -> UIElement {
     let mut elements: Vec<UIElement> = Vec::new();
 
+    // Optional error banner
     if let Some(err) = spawn_error_message(state) {
         elements.push(err);
     }
 
+    // Informational text
     elements.push(elapsed_time_element(state));
     elements.push(baton_data_element(state));
     elements.push(baton_connect_status_element(state));
 
-    // Send Packet button (enabled/disabled variant)
-    elements.push(send_packet_button(state));
+    // Action buttons
+    if let Some(btn) = send_packet_button(state) {
+        elements.push(btn);
+    }
 
+    // TCP controls and status
     elements.push(tcp_connect_status_element(state));
     elements.push(check_tcp_status_button());
 
+    // IPC controls
     elements.push(ipc_connect_button());
     elements.push(ipc_disconnect_button());
 
+    // TCP connect/disconnect row
     elements.push(tcp_connect_button(state));
     elements.push(tcp_disconnect_button());
 
+    // XML download / card
     elements.push(xml_download_popup(state));
 
     column(elements).into()
 }
 
-/// Show an inline error banner when the application state carries an error message.
+/// Error banner shown only when `state.error_message` is Some(...)
 fn spawn_error_message(state: &State) -> Option<UIElement> {
-    state.error_message.as_ref().map(|err| {
-        container(text(format!("⚠️ {}", err)))
-            .padding(10)
-            .width(Length::Fill)
-            .style(container::rounded_box)
-            .center_x(Length::Fill)
-            .into()
-    })
+    state
+        .error_message
+        .as_ref()
+        .map(|err| {
+            container(text(format!("⚠️ {}", err)))
+                .padding(10)
+                .width(Length::Fill)
+                .style(container::rounded_box)
+                .center_x(Length::Fill)
+                .into()
+        })
 }
 
+/// Elapsed time display
 fn elapsed_time_element(state: &State) -> UIElement {
     text(format!("Elapsed time: {:?}", state.elapsed_time)).into()
 }
 
+/// Baton connection status display
 fn baton_connect_status_element(state: &State) -> UIElement {
-    let status = if state.active_baton_connection {
-        "Baton: connected"
+    let connection_status = if state.active_baton_connection {
+        ":) Baton Connected!".to_string()
     } else {
-        "Baton: disconnected"
+        ":( No Baton Connection".to_string()
     };
-    text(status).into()
+    text(connection_status).into()
 }
 
+/// Last baton payload (or placeholder)
 fn baton_data_element(state: &State) -> UIElement {
     let content = match &state.latest_baton_send {
         Some(data) => format!("[BATON]: {}", data),
@@ -76,16 +91,19 @@ fn baton_data_element(state: &State) -> UIElement {
     text(content).into()
 }
 
+/// TCP connection boolean status
 fn tcp_connect_status_element(state: &State) -> UIElement {
-    text(format!("TCP Connection: {}", state.tcp_connected)).into()
+    text(format!("TCP Connection Status: {}", state.tcp_connected)).into()
 }
 
+/// Simple helper: a button which triggers the app to verify the TCP connection state.
 fn check_tcp_status_button() -> UIElement {
     button("Check TCP Connection Status")
         .on_press(Message::ConnectionMessage)
         .into()
 }
 
+/// IPC connect / disconnect buttons
 fn ipc_connect_button() -> UIElement {
     button("Connect IPC").on_press(Message::ConnectIpc).into()
 }
@@ -96,38 +114,38 @@ fn ipc_disconnect_button() -> UIElement {
         .into()
 }
 
-/// TCP address input wired to state updates.
+/// Build the TCP address input widget wired to `Message::TcpAddrFieldUpdate`.
 fn tcp_addr_input(state: &State) -> UIElement {
     text_input(DEFAULT_TCP_PLACEHOLDER, &state.tcp_addr_field)
         .on_input(|addr| Message::TcpAddrFieldUpdate(addr))
         .into()
 }
 
-/// Validate current TCP address input by attempting to resolve socket addresses.
+/// Return true when the current TCP address input parses to socket addresses.
 fn tcp_addr_valid(state: &State) -> bool {
     state.tcp_addr_field.to_socket_addrs().is_ok()
 }
 
-/// TCP connect row: Connect button, address input, and validation hint.
+/// TCP connect row: button, address input, and validation hint.
 fn tcp_connect_button(state: &State) -> UIElement {
     let valid = tcp_addr_valid(state);
-    let connect_btn = if valid {
-        button("Connect TCP").on_press(Message::ConnectTcp)
-    } else {
-        // Keep the button visible but inert when the address is invalid.
-        button("Connect TCP")
-    };
-
-    let hint_text = if valid {
+    let hint = if valid {
         "Address input is valid"
     } else {
         "Address input is invalid"
     };
 
+    let connect_btn = if valid {
+        button("Connect TCP").on_press(Message::ConnectTcp)
+    } else {
+        // keep the button, but disable the event when invalid by not wiring on_press
+        button("Connect TCP")
+    };
+
     row![
         connect_btn,
         tcp_addr_input(state),
-        text(hint_text)
+        text(hint)
     ]
     .spacing(5)
     .into()
@@ -139,7 +157,7 @@ fn tcp_disconnect_button() -> UIElement {
         .into()
 }
 
-/// XML download card or opener button depending on state.card_open.
+/// XML download card or opener button depending on `state.card_open`
 fn xml_download_popup(state: &State) -> UIElement {
     if state.card_open {
         container(
@@ -172,12 +190,12 @@ fn xml_download_popup(state: &State) -> UIElement {
     }
 }
 
-/// Send packet button — enabled when Baton connection active, otherwise inert but visible.
-fn send_packet_button(state: &State) -> UIElement {
+/// Send packet button: enabled variant wires the message, disabled variant is inert.
+fn send_packet_button(state: &State) -> Option<UIElement> {
     if state.active_baton_connection {
-        button("Send Packet").on_press(Message::SendPacket).into()
+        Some(button("Send Packet").on_press(Message::SendPacket).into())
     } else {
-        button("Send Packet (No Baton Connection)").into()
+        Some(button("Send Packet (No Baton Connection)").into())
     }
 }
 

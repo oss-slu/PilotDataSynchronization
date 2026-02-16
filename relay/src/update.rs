@@ -1,49 +1,38 @@
 use iced::{time::Duration, Task};
 use std::fs::File;
-use std::io::prelude::*;
-use std::time::{Instant, Duration as StdDuration};
+use std::io::Write;
+use std::time::{Duration as StdDuration, Instant};
 
-use crate::{message::ToTcpThreadMessage, message::FromTcpThreadMessage, FromIpcThreadMessage, Message, State};
+use crate::{
+    message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage, Message, State,
+};
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
 
-    // threshold window considered "recent" (avoid short false-negatives)
     const LAST_SEEN_WINDOW: StdDuration = StdDuration::from_secs(2);
 
-    #[allow(unreachable_patterns)]
     match message {
         M::Update => {
             state.elapsed_time += Duration::from_millis(10);
 
-            // 1) compute active baton connection: true if IPC reports connected OR we saw a packet recently
-            let ipc_conn_flag = state
-                .ipc_bichannel
-                .as_ref()
-                .and_then(|b| b.is_conn_to_endpoint().ok())
-                .unwrap_or(false);
-
+            // compute active baton connection using centralized helpers
+            let ipc_conn_flag = state.is_ipc_connected();
             let recent_packet = state
                 .last_baton_instant
                 .map(|t| t.elapsed() <= LAST_SEEN_WINDOW)
                 .unwrap_or(false);
-
             state.active_baton_connection = ipc_conn_flag || recent_packet;
 
-            // check for messages from IPC thread
+            // process IPC messages
             if let Some(ipc_bichannel) = &state.ipc_bichannel {
-                for message in ipc_bichannel.received_messages() {
-                    match message {
+                for msg in ipc_bichannel.received_messages() {
+                    match msg {
                         FromIpcThreadMessage::BatonData(data) => {
-                            // forward to TCP thread (clone for the outgoing buffer)
-                            state.tcp_bichannel.as_mut().map(|tcp_bichannel| {
-                                tcp_bichannel.send_to_child(ToTcpThreadMessage::Send(data.clone()))
-                            });
-
-                            // log each individual baton packet so UI shows it
-                            state.log_event(format!("Baton packet: {data}"));
-
-                            // store latest data and mark active connection + timestamp
+                            if let Some(tcp_bi) = state.tcp_bichannel.as_mut() {
+                                let _ = tcp_bi.send_to_child(ToTcpThreadMessage::Send(data.clone()));
+                            }
+                            state.log_event(format!("Baton packet: {}", data));
                             state.latest_baton_send = Some(data);
                             state.last_baton_instant = Some(Instant::now());
                             state.active_baton_connection = true;
@@ -52,28 +41,28 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                             let _ = state.tcp_disconnect();
                             state.active_baton_connection = false;
                         }
-                        _ => (),
+                        _ => {}
                     }
                 }
             }
 
-            // check for messages from TCP thread
+            // process TCP messages
             if let Some(tcp_bichannel) = &state.tcp_bichannel {
-                for message in tcp_bichannel.received_messages() {
-                    match message {
+                for msg in tcp_bichannel.received_messages() {
+                    match msg {
                         FromTcpThreadMessage::Connected => {
                             state.log_event("TCP connected to iMotions".into());
                             state.tcp_connected = true;
                         }
                         FromTcpThreadMessage::Disconnected(reason) => {
-                            state.log_event(format!("TCP disconnected: {reason}"));
+                            state.log_event(format!("TCP disconnected: {}", reason));
                             state.tcp_connected = false;
                         }
                         FromTcpThreadMessage::Sent(bytes) => {
                             state.on_tcp_packet_sent(bytes);
                         }
                         FromTcpThreadMessage::SendError(err) => {
-                            state.log_event(format!("TCP send error: {err}"));
+                            state.log_event(format!("TCP send error: {}", err));
                         }
                     }
                 }
@@ -82,68 +71,49 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::WindowCloseRequest(id) => {
-            // pre-shutdown operations go here
             if let Some(ref bichannel) = state.ipc_bichannel {
                 let _ = bichannel.killswitch_engage();
             }
-
             if let Some(ref bichannel) = state.tcp_bichannel {
                 let _ = bichannel.killswitch_engage();
             }
 
-            // delete socket file
-            let socket_file_path = if cfg!(target_os = "macos") {
-                "/tmp/baton.sock"
-            } else {
-                // TODO: add branch for Windows; mac branch is just for testing/building
-                panic!(
-                    "No implementation available for given operating system: {}",
-                    std::env::consts::OS
-                )
-            };
-            std::fs::remove_file(socket_file_path).unwrap();
+            // remove unix socket file on macos test/dev path only
+            if cfg!(target_os = "macos") {
+                let _ = std::fs::remove_file("/tmp/baton.sock");
+            }
 
-            // necessary to actually shut down the window, otherwise the close button will appear to not work
             iced::window::close(id)
         }
         M::ConnectionMessage => {
-            if let Some(status) = state
-                .tcp_bichannel
-                .as_ref()
-                .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
-            {
-                state.tcp_connected = status
-            } else {
-                state.tcp_connected = false
-            }
+            state.tcp_connected = state.is_tcp_connected();
             Task::none()
         }
         M::ConnectIpc => {
             if let Err(e) = state.ipc_connect() {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("IPC connect failed: {}", e));
+            }
             Task::none()
         }
         M::DisconnectIpc => {
             if let Err(e) = state.ipc_disconnect() {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("IPC disconnect failed: {}", e));
+            }
             Task::none()
         }
         M::ConnectTcp => {
             let address = state.tcp_addr_field.clone();
             if let Err(e) = state.tcp_connect(address) {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("TCP connect failed: {}", e));
+            }
             Task::none()
         }
         M::DisconnectTcp => {
             if let Err(e) = state.tcp_disconnect() {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("TCP disconnect failed: {}", e));
+            }
             Task::none()
         }
-        // Toggle messages for GUI XML generator
         M::AltitudeToggle(value) => {
             state.altitude_toggle = value;
             Task::none()
@@ -161,7 +131,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::CreateXMLFile => create_xml_file(state),
-        // Card Open/Close messages for GUI pop-up-card window
         M::CardOpen => {
             state.card_open = true;
             Task::none()
@@ -171,7 +140,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::TcpAddrFieldUpdate(addr) => {
-            // Update the TCP address text input in the GUI
             let is_chars_valid = addr.chars().all(|c| c.is_numeric() || c == '.' || c == ':');
             let dot_count = addr.chars().filter(|&c| c == '.').count();
             let colon_count = addr.chars().filter(|&c| c == ':').count();
@@ -190,89 +158,68 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     }
 }
 
-// Creates a default XML file when a button is clicked in the GUI
 fn create_xml_file(state: &mut State) -> Task<Message> {
-    // Get the user's downloads directory
-    let mut downloads_path =
-        dirs::download_dir().expect("Retrieving the user's Downloads file directory.");
+    let mut downloads_path = match dirs::download_dir() {
+        Some(p) => p,
+        None => {
+            let msg = "Could not determine Downloads directory".to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+            return Task::none();
+        }
+    };
     downloads_path.push("iMotions.xml");
 
-    // Create file in downloads directory. If alr there, will overwrite the existing file.
-    let mut file = File::create(&downloads_path).expect("Creating XML File.");
-
-    // Check if all dataref toggles are false. If so, return error message
-    if !state.altitude_toggle
-        && !state.airspeed_toggle
-        && !state.vertical_airspeed_toggle
-        && !state.heading_toggle
-    {
+    // Validate toggles
+    if !state.altitude_toggle && !state.airspeed_toggle && !state.vertical_airspeed_toggle && !state.heading_toggle {
         state.error_message = Some("Please select at least one dataref toggle".into());
         return Task::none();
     }
-    state.error_message = None; // Clear previous error
+    state.error_message = None;
 
-    // NOTE: This XML formatting was found in the PilotDataSync Slack. Double check this is the correct formatting.
-    let mut contents = String::from(
-        "<EventSource Version=\"1\" Id=\"PilotDataSync\" Name=\"Positional Flight Data\">\n",
-    );
+    let mut contents = String::from("<EventSource Version=\"1\" Id=\"PilotDataSync\" Name=\"Positional Flight Data\">\n");
     if state.altitude_toggle {
-        let mut altitude_str =
-            String::from("\t<Sample Id=\"AltitudeSync\" Name=\"Altitude Synchronization\">\n");
-
-        altitude_str.push_str(
-            "\t\t<Field Id=\"FlightModelAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n",
-        );
-        altitude_str.push_str(
-            "\t\t<Field Id=\"PilotAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n",
-        );
-        altitude_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&altitude_str);
+        contents.push_str("\t<Sample Id=\"AltitudeSync\" Name=\"Altitude Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     if state.airspeed_toggle {
-        let mut airspeed_str =
-            String::from("\t<Sample Id=\"AirspeedSync\" Name=\"Airspeed Synchronization\">\n");
-
-        airspeed_str.push_str(
-            "\t\t<Field Id=\"FlightModelAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n",
-        );
-        airspeed_str.push_str(
-            "\t\t<Field Id=\"PilotAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n",
-        );
-        airspeed_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&airspeed_str);
+        contents.push_str("\t<Sample Id=\"AirspeedSync\" Name=\"Airspeed Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     if state.vertical_airspeed_toggle {
-        let mut vertical_airspeed_str = String::from(
-            "\t<Sample Id=\"VerticalVelocitySync\" Name=\"Vertical Velocity Synchronization\">\n",
-        );
-
-        vertical_airspeed_str.push_str("\t\t<Field Id=\"FlightModelVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
-        vertical_airspeed_str.push_str("\t\t<Field Id=\"PilotVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
-        vertical_airspeed_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&vertical_airspeed_str);
+        contents.push_str("\t<Sample Id=\"VerticalVelocitySync\" Name=\"Vertical Velocity Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     if state.heading_toggle {
-        let mut heading_str =
-            String::from("\t<Sample Id=\"HeadingSync\" Name=\"Heading Synchronization\">\n");
-
-        heading_str.push_str(
-            "\t\t<Field Id=\"FlightModelHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n",
-        );
-        heading_str.push_str(
-            "\t\t<Field Id=\"PilotHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n",
-        );
-        heading_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&heading_str);
+        contents.push_str("\t<Sample Id=\"HeadingSync\" Name=\"Heading Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     contents.push_str("</EventSource>");
 
-    // Write XML file
-    file.write_all(contents.as_bytes())
-        .expect("Writing to XML file");
+    match File::create(&downloads_path) {
+        Ok(mut file) => {
+            if let Err(e) = file.write_all(contents.as_bytes()) {
+                let msg = format!("Writing XML file failed: {}", e);
+                state.error_message = Some(msg.clone());
+                state.log_event(msg);
+            } else {
+                state.log_event(format!("XML file written to {}", downloads_path.display()));
+            }
+        }
+        Err(e) => {
+            let msg = format!("Creating XML file failed: {}", e);
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+        }
+    }
 
-    Task::none() // Return type that we need for the Update logic
+    Task::none()
 }
