@@ -41,7 +41,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                             let _ = state.tcp_disconnect();
                             state.active_baton_connection = false;
                         }
-                        _ => {}
                     }
                 }
             }
@@ -154,7 +153,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.last_send_timestamp = Some(format!("{}", duration.as_secs()));
             Task::none()
         }
-        _ => Task::none(),
     }
 }
 

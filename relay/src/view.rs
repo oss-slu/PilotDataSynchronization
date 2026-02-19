@@ -52,7 +52,6 @@ pub(crate) fn view(state: &State) -> UIElement {
     column(elements).into()
 }
 
-/// Error banner shown only when `state.error_message` is Some(...)
 fn spawn_error_message(state: &State) -> Option<UIElement> {
     state
         .error_message
@@ -67,12 +66,10 @@ fn spawn_error_message(state: &State) -> Option<UIElement> {
         })
 }
 
-/// Elapsed time display
 fn elapsed_time_element(state: &State) -> UIElement {
     text(format!("Elapsed time: {:?}", state.elapsed_time)).into()
 }
 
-/// Baton connection status display
 fn baton_connect_status_element(state: &State) -> UIElement {
     let connection_status = if state.active_baton_connection {
         ":) Baton Connected!".to_string()
@@ -82,7 +79,6 @@ fn baton_connect_status_element(state: &State) -> UIElement {
     text(connection_status).into()
 }
 
-/// Last baton payload (or placeholder)
 fn baton_data_element(state: &State) -> UIElement {
     let content = match &state.latest_baton_send {
         Some(data) => format!("[BATON]: {}", data),
@@ -91,24 +87,23 @@ fn baton_data_element(state: &State) -> UIElement {
     text(content).into()
 }
 
-/// TCP connection boolean status
 fn tcp_connect_status_element(state: &State) -> UIElement {
     text(format!("TCP Connection Status: {}", state.tcp_connected)).into()
 }
 
 /// Simple helper: a button which triggers the app to verify the TCP connection state.
-fn check_tcp_status_button() -> UIElement {
+fn check_tcp_status_button() -> UIElement<'static> {
     button("Check TCP Connection Status")
         .on_press(Message::ConnectionMessage)
         .into()
 }
 
 /// IPC connect / disconnect buttons
-fn ipc_connect_button() -> UIElement {
+fn ipc_connect_button() -> UIElement<'static> {
     button("Connect IPC").on_press(Message::ConnectIpc).into()
 }
 
-fn ipc_disconnect_button() -> UIElement {
+fn ipc_disconnect_button() -> UIElement<'static> {
     button("Disconnect IPC")
         .on_press(Message::DisconnectIpc)
         .into()
@@ -151,7 +146,7 @@ fn tcp_connect_button(state: &State) -> UIElement {
     .into()
 }
 
-fn tcp_disconnect_button() -> UIElement {
+fn tcp_disconnect_button() -> UIElement<'static> {
     button("Disconnect TCP")
         .on_press(Message::DisconnectTcp)
         .into()
