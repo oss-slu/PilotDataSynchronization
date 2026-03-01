@@ -1,6 +1,6 @@
 ﻿use anyhow::{anyhow, bail, Result};
 use iced::time::Duration;
-use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
+use interprocess::local_socket::{traits::{Listener, Stream}, GenericNamespaced, GenericFilePath, ListenerOptions, NameType, ToFsName, ToNsName};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::thread::{spawn, JoinHandle};
@@ -157,11 +157,33 @@ impl State {
 
         let handle = spawn(move || {
             let printname = "baton.sock";
-            let name = printname.to_ns_name::<GenericNamespaced>().map_err(|e| {
-                relay_log(&format!("Failed to convert name to NsName: {}", e));
-                anyhow!("Name conversion failed")
-            })?;
-            let opts = ListenerOptions::new().name(name);
+
+            // Pre-build an owned filesystem path string so any FsName conversion borrows an owned value
+            // that lives for the duration of this closure (avoids temporary-borrow lifetime issues).
+            let mut tmp_path_buf = std::env::temp_dir();
+            tmp_path_buf.push(printname);
+            let temp_path_string = tmp_path_buf.to_string_lossy().into_owned();
+
+            // Prefer namespaced sockets when supported; otherwise fall back to filesystem-backed socket
+            // in the system temp dir. Log which path form is selected and any conversion errors.
+            let opts = if GenericNamespaced::is_supported() {
+                // namespaced socket
+                relay_log(&format!("IPC server using namespaced socket: {}", printname));
+                let ns_name = printname.to_ns_name::<GenericNamespaced>().map_err(|e| {
+                    relay_log(&format!("Failed to convert name to NsName: {}", e));
+                    anyhow!("Name conversion failed")
+                })?;
+                ListenerOptions::new().name(ns_name)
+            } else {
+                // filesystem-backed socket in temp dir
+                relay_log(&format!("IPC server using filesystem socket path: {}", temp_path_string));
+                let fs_name = temp_path_string.as_str().to_fs_name::<GenericFilePath>().map_err(|e| {
+                    relay_log(&format!("Failed to convert name to FsName: {}", e));
+                    anyhow!("Name conversion failed")
+                })?;
+                ListenerOptions::new().name(fs_name)
+            };
+
             let listener = opts.create_sync().map_err(|e| {
                 relay_log(&format!("Failed to create IPC listener: {}", e));
                 anyhow!("Listener create failed")
@@ -177,10 +199,71 @@ impl State {
                     Ok(conn) => {
                         relay_log("IPC incoming connection accepted");
                         let mut conn = BufReader::new(conn);
-                        let _ = child_bichannel.set_is_conn_to_endpoint(true);
+
+                        // Perform a blocking handshake with the client (baton).
+                        // The baton writes a Hello line immediately after connecting and
+                        // expects a reply before switching to non-blocking mode. Read
+                        // that initial line, reply, then switch the underlying stream
+                        // to non-blocking for normal operation.
+                        match conn.read_line(&mut buffer) {
+                            Ok(0) => {
+                                relay_log("Handshake read returned 0 bytes; closing connection");
+                                buffer.clear();
+                                if let Err(e) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                    relay_log(&format!("Failed to send BatonShutdown during handshake: {}", e));
+                                }
+                                continue;
+                            }
+                            Ok(_) => {
+                                let h = buffer.trim_end().to_string();
+                                relay_log(&format!("IPC handshake received: {}", h));
+                                buffer.clear();
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                // Unlikely for blocking socket, but be tolerant: treat as no handshake
+                                relay_log("Handshake read would block; treating as failed handshake");
+                                if let Err(e) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                    relay_log(&format!("Failed to send BatonShutdown after WouldBlock handshake: {}", e));
+                                }
+                                continue;
+                            }
+                            Err(e) => {
+                                relay_log(&format!("Handshake read error: {}", e));
+                                if let Err(e2) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                    relay_log(&format!("Failed to send BatonShutdown after handshake error: {}", e2));
+                                }
+                                continue;
+                            }
+                        }
+
+                        // Send handshake reply
+                        if let Err(e) = conn.get_mut().write_all(b"Hello, from the relay prototype (Rust)!\n") {
+                            relay_log(&format!("Handshake reply failed: {}", e));
+                            if let Err(e2) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                relay_log(&format!("Failed to send BatonShutdown after reply fail: {}", e2));
+                            }
+                            continue;
+                        } else {
+                            relay_log("Handshake reply sent");
+                        }
+
+                        // Switch connection to non-blocking mode for the main receive loop
+                        if let Err(e) = conn.get_mut().set_nonblocking(true) {
+                            relay_log(&format!("Failed to set connection non-blocking: {}", e));
+                            // continue anyway; subsequent reads will attempt and handle WouldBlock
+                        } else {
+                            relay_log("Set accepted connection to non-blocking");
+                        }
+
+                        // mark connected and log result
+                        match child_bichannel.set_is_conn_to_endpoint(true) {
+                            Ok(_) => relay_log("Marked child_bichannel connected -> true"),
+                            Err(e) => relay_log(&format!("Failed to mark child_bichannel connected: {}", e)),
+                        }
 
                         loop {
                             if child_bichannel.is_killswitch_engaged() {
+                                relay_log("Child killswitch engaged; breaking connection loop");
                                 break;
                             }
 
@@ -191,28 +274,55 @@ impl State {
 
                             match conn.read_line(&mut buffer) {
                                 Ok(0) => {
+                                    // Connection closed by client — notify parent that baton disconnected
+                                    relay_log("IPC read returned Ok(0) — connection closed by peer (EOF)");
                                     buffer.clear();
+                                    if let Err(e) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                        relay_log(&format!("Failed to send BatonShutdown on EOF: {}", e));
+                                    }
                                     break;
                                 }
                                 Ok(_) => {
                                     let _ = buffer.pop(); // remove trailing newline if present
                                     if buffer.starts_with("SHUTDOWN") {
-                                        let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
+                                        relay_log("IPC received SHUTDOWN message from client");
+                                        if let Err(e) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                            relay_log(&format!("Failed to send BatonShutdown on SHUTDOWN: {}", e));
+                                        }
                                         break;
                                     } else {
-                                        let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
+                                        // forward to parent and log on error
+                                        if let Err(e) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone())) {
+                                            relay_log(&format!("Failed to forward BatonData to parent: {}", e));
+                                        } else {
+                                            // update last seen timestamp for diagnostics
+                                            // (we cannot access State here, but logging helps)
+                                            relay_log(&format!("Forwarded BatonData ({} bytes)", buffer.len()));
+                                        }
                                     }
                                     buffer.clear();
                                 }
-                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                    // normal when no data available
+                                    std::thread::sleep(StdDuration::from_millis(1));
+                                    continue;
+                                }
                                 Err(e) => {
                                     relay_log(&format!("IPC connection read error: {}", e));
+                                    // Treat read error as a disconnect and notify parent
+                                    if let Err(e2) = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown) {
+                                        relay_log(&format!("Failed to send BatonShutdown after read error: {}", e2));
+                                    }
                                     break;
                                 }
                             }
                         }
 
-                        let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                        // mark disconnected and log
+                        match child_bichannel.set_is_conn_to_endpoint(false) {
+                            Ok(_) => relay_log("Marked child_bichannel connected -> false"),
+                            Err(e) => relay_log(&format!("Failed to mark child_bichannel disconnected: {}", e)),
+                        };
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         // no incoming connection right now
@@ -255,6 +365,7 @@ impl State {
             bail!("TCP thread already exists.")
         }
         let (tcp_bichannel, mut child_bichannel) = bichannel::create_bichannels();
+        // store parent side so UI/State can query/send to the TCP thread
         self.tcp_bichannel = Some(tcp_bichannel);
 
         let handle = spawn(move || {
@@ -366,12 +477,12 @@ impl State {
         if self.tcp_thread_handle.is_none() {
             bail!("TCP thread does not exist.")
         }
-        let Some((bichannel, handle)) =
+        let Some((biconductor, handle)) =
             self.tcp_bichannel.take().zip(self.tcp_thread_handle.take())
         else {
             bail!("TCP thread does not exist.")
         };
-        bichannel.killswitch_engage()?;
+        biconductor.killswitch_engage()?;
         let res = handle
             .join()
             .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
