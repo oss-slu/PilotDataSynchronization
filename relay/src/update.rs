@@ -7,6 +7,24 @@ use crate::{
     message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage, Message, State,
 };
 
+fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
+    let trimmed = address.trim().to_string();
+    match State::validate_tcp_addr(&trimmed) {
+        Ok(()) => {
+            state.tcp_addr_validation_error = None;
+            state.tcp_addr_field = trimmed.clone();
+            if let Err(e) = state.tcp_connect(trimmed.clone()) {
+                state.log_event(format!("TCP connect failed: {}", e));
+            } else if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
+                state.log_event(format!("Saving TCP address failed: {}", e));
+            }
+        }
+        Err(e) => {
+            state.tcp_addr_validation_error = Some(e.to_string());
+        }
+    }
+}
+
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
 
@@ -102,9 +120,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         M::ConnectTcp => {
             let address = state.tcp_addr_field.clone();
-            if let Err(e) = state.tcp_connect(address) {
-                state.log_event(format!("TCP connect failed: {}", e));
-            }
+            connect_tcp_with_validation_and_save(state, address);
+            Task::none()
+        }
+        M::SavedTcpAddrSelected(address) => {
+            state.selected_tcp_addr = Some(address.clone());
+            connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }
         M::DisconnectTcp => {
@@ -139,12 +160,8 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::TcpAddrFieldUpdate(addr) => {
-            let is_chars_valid = addr.chars().all(|c| c.is_numeric() || c == '.' || c == ':');
-            let dot_count = addr.chars().filter(|&c| c == '.').count();
-            let colon_count = addr.chars().filter(|&c| c == ':').count();
-            if is_chars_valid && dot_count <= 3 && colon_count <= 1 {
-                state.tcp_addr_field = addr;
-            }
+            state.tcp_addr_field = addr;
+            state.tcp_addr_validation_error = None;
             Task::none()
         }
         M::SendPacket => {
