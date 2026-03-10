@@ -3,9 +3,7 @@
 //! Each UI element is produced by a small focused function to improve readability,
 //! testability and maintainability. The `view` function composes those elements.
 
-use std::net::ToSocketAddrs;
-
-use iced::widget::{button, column, container, row, text, text_input, toggler};
+use iced::widget::{button, column, container, pick_list, row, text, text_input, toggler};
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
@@ -116,31 +114,32 @@ fn tcp_addr_input(state: &State) -> UIElement {
         .into()
 }
 
-/// Return true when the current TCP address input parses to socket addresses.
-fn tcp_addr_valid(state: &State) -> bool {
-    state.tcp_addr_field.to_socket_addrs().is_ok()
+fn tcp_addr_dropdown(state: &State) -> UIElement {
+    pick_list(
+        state.saved_tcp_addrs.clone(),
+        state.selected_tcp_addr.clone(),
+        Message::SavedTcpAddrSelected,
+    )
+    .placeholder("Saved IPs")
+    .into()
 }
 
-/// TCP connect row: button, address input, and validation hint.
+fn tcp_validation_text(state: &State) -> UIElement {
+    if let Some(err) = &state.tcp_addr_validation_error {
+        text(err).into()
+    } else {
+        text(" ").into()
+    }
+}
 fn tcp_connect_button(state: &State) -> UIElement {
-    let valid = tcp_addr_valid(state);
-    let hint = if valid {
-        "Address input is valid"
-    } else {
-        "Address input is invalid"
-    };
-
-    let connect_btn = if valid {
-        button("Connect TCP").on_press(Message::ConnectTcp)
-    } else {
-        // keep the button, but disable the event when invalid by not wiring on_press
-        button("Connect TCP")
-    };
-
-    row![
-        connect_btn,
-        tcp_addr_input(state),
-        text(hint)
+    column![
+        row![
+            button("Connect TCP").on_press(Message::ConnectTcp),
+            tcp_addr_input(state),
+            tcp_addr_dropdown(state),
+        ]
+        .spacing(5),
+        tcp_validation_text(state),
     ]
     .spacing(5)
     .into()
