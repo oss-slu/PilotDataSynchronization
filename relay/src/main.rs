@@ -1,5 +1,5 @@
-// mod ipc;
 mod bichannel;
+// mod ipc;
 mod message;
 mod state;
 mod update;
