@@ -4,68 +4,108 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
 use std::net::TcpStream;
-use std::thread::JoinHandle;
-
+use std::thread::{JoinHandle, spawn};
 use iced::time::Duration;
-
 use crate::bichannel;
 use crate::bichannel::ParentBiChannel;
-
 use crate::message::FromIpcThreadMessage;
 use crate::message::FromTcpThreadMessage;
 use crate::message::ToIpcThreadMessage;
 use crate::message::ToTcpThreadMessage;
+use interprocess::local_socket::{
+    traits::Listener,
+    GenericNamespaced,
+    GenericFilePath,
+    ListenerOptions,
+    ToFsName,
+    ToNsName,
+};
+use interprocess::local_socket::NameType;
+use std::time::{Duration as StdDuration, Instant};
 
-//Code added for tcp packet count -Nyla Hughes
-use std::collections::VecDeque; 
-use std::time::Instant; 
-//
+// --- Helpers for parsing/serialization and logging --------------------------
+fn sanitize_field(s: &str) -> String {
+    s.replace('\r', "")
+        .replace('\n', "")
+        .replace(';', ",")
+        .trim()
+        .to_string()
+}
 
+fn normalize_baton_payload(raw: &str) -> Vec<String> {
+    let mut s = raw.trim().replace('\r', "").replace('\n', "");
+    while s.starts_with(';') {
+        s.remove(0);
+    }
+    while s.ends_with(';') {
+        s.pop();
+    }
+    s.split(';')
+        .map(|f| sanitize_field(f))
+        .filter(|f| !f.is_empty())
+        .collect()
+}
 
-// use crate::ChannelMessage;
+fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
+    let mut packet = String::from("E;1;PilotDataSync;;;;;");
+    packet.push_str(event_name);
+    if !fields.is_empty() {
+        packet.push(';');
+        packet.push_str(&fields.join(";"));
+    }
+    packet.push_str("\r\n");
+    packet
+}
 
-use interprocess::local_socket::{traits::Listener, GenericNamespaced, ListenerOptions, ToNsName};
-use std::collections::VecDeque;
-use std::time::Duration as StdDuration;
+fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
+    // minimal debug output; actual logging elsewhere
+    eprintln!("TX: {}", packet.trim_end());
+    stream.write_all(packet.as_bytes())
+        .map_err(|e| anyhow!("write_all failed: {}", e))?;
+    stream.flush()
+        .map_err(|e| anyhow!("flush failed: {}", e))?;
+    Ok(())
+}
 
+// --- State definition -------------------------------------------------------
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
-
     pub event_log: Vec<String>,
-
     pub ipc_thread_handle: Option<JoinHandle<Result<()>>>,
     pub tcp_thread_handle: Option<JoinHandle<Result<()>>>,
-
     pub tcp_connected: bool,
     pub tcp_addr_field: String,
     pub latest_baton_send: Option<String>,
     pub active_baton_connection: bool,
-    // pub recv: Option<std::sync::mpsc::Receiver<ChannelMessage>>,
+    pub last_baton_instant: Option<Instant>,
 
-    // Optional GUI error message
-    pub error_message: Option<String>,
-    // Is GUI pop-up card open
-    pub card_open: bool,
-    // GUI Toggle state elements
+    // toggles (added roll/pitch/yaw/g_force)
     pub altitude_toggle: bool,
     pub airspeed_toggle: bool,
     pub vertical_airspeed_toggle: bool,
     pub heading_toggle: bool,
+    pub roll_toggle: bool,
+    pub pitch_toggle: bool,
+    pub yaw_toggle: bool,
+    pub gforce_toggle: bool,
 
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
-
     pub last_send_timestamp: Option<String>,
 
-    // Added this for the tcp packet counter -Nyla Hughes
-    pub sent_packet_times: VecDeque<Instant>,     
-    pub sent_samples: VecDeque<(Instant, usize)>, 
-    pub packets_last_60s: usize,                  
-    pub bps: f64,                                 
-    pub show_metrics: bool,   
-    //
+    // Optional GUI error message and card state (required by update/view)
+    pub error_message: Option<String>,
+    pub card_open: bool,
 
+    // metrics/UI helpers
+    pub packets_last_60s: usize,
+    pub bps: f64,
+    pub show_metrics: bool,
+
+    // tcp packet counters
+    pub sent_packet_times: std::collections::VecDeque<Instant>,
+    pub sent_samples: std::collections::VecDeque<(Instant, usize)>,
 }
 
 impl Default for State {
@@ -73,60 +113,75 @@ impl Default for State {
         State {
             elapsed_time: Duration::ZERO,
             event_log: Vec::new(),
-
             ipc_thread_handle: None,
             tcp_thread_handle: None,
-
             tcp_connected: false,
             tcp_addr_field: String::new(),
             latest_baton_send: None,
             active_baton_connection: false,
+            last_baton_instant: None,
 
-            error_message: None,
-            card_open: false,
             altitude_toggle: true,
             airspeed_toggle: true,
             vertical_airspeed_toggle: true,
             heading_toggle: true,
+            roll_toggle: true,
+            pitch_toggle: true,
+            yaw_toggle: true,
+            gforce_toggle: true,
 
             ipc_bichannel: None,
             tcp_bichannel: None,
-
             last_send_timestamp: None,
 
-             // Added this for the tcp packet counter -Nyla Hughes
-            sent_packet_times: VecDeque::new(),
-            sent_samples: VecDeque::new(),
+            // new UI fields
+            error_message: None,
+            card_open: false,
+
             packets_last_60s: 0,
             bps: 0.0,
             show_metrics: false,
+
+            sent_packet_times: std::collections::VecDeque::new(),
+            sent_samples: std::collections::VecDeque::new(),
         }
     }
 }
 
+// --- State impl -------------------------------------------------------------
 impl State {
+    // Timestamped event logger used by the UI/event history
+    pub fn log_event(&mut self, event: String) {
+        let entry = format!("[{}] {}", chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true), event);
+        self.event_log.push(entry);
+    }
+
     pub fn ipc_connect(&mut self) -> Result<()> {
         if self.ipc_thread_handle.is_some() {
             bail!("IPC thread already exists.")
         }
-
-        // TODO
         let (ipc_bichannel, mut child_bichannel) =
             bichannel::create_bichannels::<ToIpcThreadMessage, FromIpcThreadMessage>();
-        let ipc_thread_handle = std::thread::spawn(move || {
-            // sample pulled directly from `interprocess` documentation
-
+        let ipc_thread_handle = spawn(move || {
             let printname = "baton.sock";
-            let name = printname.to_ns_name::<GenericNamespaced>().unwrap();
+            // Choose namespace consistently with the Baton client:
+            // - If GenericNamespaced is supported on this OS, use it.
+            // - Otherwise fall back to a filesystem-backed name in the temp dir.
+            let name = if GenericNamespaced::is_supported() {
+                printname.to_ns_name::<GenericNamespaced>().unwrap()
+            } else {
+                let mut path = std::env::temp_dir();
+                path.push(printname);
+                path.to_fs_name::<GenericFilePath>().unwrap()
+            };
 
-            let opts = ListenerOptions::new().name(name);
-
+            // Debug: show the concrete socket name/identifier the relay will listen on
+            println!("[RELAY] listening on socket: {:?}", name.borrow());
+            
+             let opts = ListenerOptions::new().name(name);
             let listener = match opts.create_sync() {
                 Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    eprintln!(
-                        "Error: could not start server because the socket file is occupied. Please check if 
-                        {printname} is in use by another process and try again."
-                    );
+                    eprintln!("Error: socket file occupied: {}", printname);
                     return Ok(());
                 }
                 x => x.unwrap(),
@@ -134,125 +189,70 @@ impl State {
             listener
                 .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
                 .expect("Error setting non-blocking mode on listener");
-
             println!("Server running at {printname}");
-
-            let mut buffer = String::with_capacity(128);
-
+            let mut buffer = String::with_capacity(256);
             while !child_bichannel.is_killswitch_engaged() {
                 let conn = listener.accept();
                 let conn = match (child_bichannel.is_killswitch_engaged(), conn) {
                     (true, _) => return Ok(()),
                     (_, Ok(c)) => {
-                        println!("success");
+                        println!("[RELAY] Accepted incoming IPC connection");
                         c
                     }
-                    (_, Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
+                    (_, Err(e)) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                     (_, Err(e)) => {
                         eprintln!("Incoming connection failed: {e}");
                         continue;
                     }
                 };
-
                 let mut conn = BufReader::new(conn);
-                // mark connected
-                let _ = child_bichannel.set_is_conn_to_endpoint(true);
-
-                // read initial greeting/handshake if any
+                child_bichannel.set_is_conn_to_endpoint(true)?;
+                // read initial/greeting line if present
                 match conn.read_line(&mut buffer) {
                     Ok(_) => (),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        // non-blocking, continue to main loop
-                    }
-                    Err(e) => {
-                        eprintln!("Initial read error: {e}");
-                    }
-                }
-
-                let write_res = conn
-                    .get_mut()
-                    .write_all(b"Hello, from the relay prototype (Rust)!\n");
-
-                match write_res {
-                    Ok(_) => (),
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
-                    Err(e) => {
-                        eprintln!("Initial write error: {e}");
-                    }
+                    Err(e) => eprintln!("Initial read error: {e}"),
                 }
-
-                print!("Client answered: {buffer}");
+                let _ = conn.get_mut().write_all(b"Hello, from the relay (Rust)!\n");
                 buffer.clear();
 
-                // Continuously receive data from plugin
                 while !child_bichannel.is_killswitch_engaged() {
-                    // check for any new messages from parent and act accordingly
                     for message in child_bichannel.received_messages() {
                         match message {}
                     }
-
-                    // read from connection input
                     match conn.read_line(&mut buffer) {
-                        Ok(s) if s == 0 || buffer.len() == 0 => {
-                            // EOF / remote closed the connection:
-                            // notify parent and mark disconnected, then break to accept next connection.
+                        Ok(0) => {
+                            // remote closed
                             let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
                             let _ = child_bichannel.set_is_conn_to_endpoint(false);
                             buffer.clear();
                             break;
                         }
                         Ok(_s) => {
-                            let _ = buffer.pop(); // remove trailing newline (if present)
-                            println!("Got: {buffer}");
-
-                            // baton shutdown message received. Send shutdown message and break to next connection
-                            if buffer.starts_with("SHUTDOWN") {
-                                let _ = child_bichannel
-                                    .send_to_parent(FromIpcThreadMessage::BatonShutdown);
-                                let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                buffer.clear();
-                                break; // break inner loop, go back to accept()
-                            } else {
-                                // actual baton data received
-                                let _ = child_bichannel.send_to_parent(
-                                    FromIpcThreadMessage::BatonData(buffer.clone()),
-                                );
-                            }
-
+                            // debug: show exactly what we got from IPC before forwarding
+                            println!("[RELAY] IPC raw line: {:?}", buffer);
+                            let _ = buffer.pop();
+                            let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
                             buffer.clear();
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            // nothing to read, avoid busy-loop
-                            std::thread::sleep(std::time::Duration::from_millis(1));
+                            std::thread::sleep(StdDuration::from_millis(1));
                             continue;
                         }
                         Err(e) => {
-                            eprintln!("Got err {e}");
-                            // on unexpected read error, mark disconnected and break
+                            eprintln!("IPC read error: {e}");
                             let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonShutdown);
                             let _ = child_bichannel.set_is_conn_to_endpoint(false);
                             break;
                         }
                     }
                 }
-
-                // ensure connected flag cleared when client loop exits
                 let _ = child_bichannel.set_is_conn_to_endpoint(false);
-
-                // continue listening for new connections unless killswitch engaged
-                if child_bichannel.is_killswitch_engaged() {
-                    return Ok(());
-                }
             }
-
             Ok(())
         });
-
         self.ipc_bichannel = Some(ipc_bichannel);
         self.ipc_thread_handle = Some(ipc_thread_handle);
-
         Ok(())
     }
 
@@ -260,26 +260,21 @@ impl State {
         if self.ipc_thread_handle.is_none() {
             bail!("IPC thread does not exist.")
         }
-
         let Some((bichannel, handle)) =
             self.ipc_bichannel.take().zip(self.ipc_thread_handle.take())
         else {
             bail!("IPC thread does not exist.")
         };
-
         bichannel.killswitch_engage()?;
-        let res = handle
-            .join()
-            .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
-
+        let res = handle.join().map_err(|e| anyhow!("Join handle err: {e:?}"))?;
         Ok(res?)
     }
 
-    pub fn _is_ipc_connected(&self) -> bool {
+    pub fn is_ipc_connected(&self) -> bool {
         if let Some(status) = self
             .ipc_bichannel
             .as_ref()
-            .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
+            .and_then(|b| b.is_conn_to_endpoint().ok())
         {
             status
         } else {
@@ -291,72 +286,124 @@ impl State {
         if self.tcp_thread_handle.is_some() {
             bail!("TCP thread already exists.")
         }
-
-        // create bichannel for TCP thread
         let (tcp_bichannel, mut child_bichannel) = bichannel::create_bichannels();
         self.tcp_bichannel = Some(tcp_bichannel);
+        let tcp_thread_handle = spawn(move || {
+            // try to connect once, then loop handling messages while connected
+            match TcpStream::connect(address) {
+                Ok(mut stream) => {
+                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                    // main connected loop
+                    while !child_bichannel.is_killswitch_engaged() {
+                        for message in child_bichannel.received_messages() {
+                            match message {
+                                ToTcpThreadMessage::Send(data) => {
+                                    // parse normalized baton payload into fields
+                                    let fields = normalize_baton_payload(&data);
+                                    // Keep the original behavior: plugin sends pilot-only values
+                                    // New behavior: support up to 8 pilot values:
+                                    // [Altitude, Airspeed, Heading, VerticalVelocity, Roll, Pitch, Yaw, GForce]
+                                    // Also support paired FM/Pilot sequences (FM,Pilot,FM,Pilot,...)
+                                    // Strategy:
+                                    //  - If fields.len() == 4: treat as original pilot-only (duplicate into FM,Pilot)
+                                    //  - If fields.len() == 8: treat as pilot-only extended (generate 8 events duplicating FM)
+                                    //  - Otherwise, attempt paired mapping: consume pairs sequentially and emit packets for known samples
+                                    if fields.len() < 2 {
+                                        eprintln!("Dropping packet: not enough fields: {:?}", fields);
+                                        continue;
+                                    }
 
-        // The TCP thread will keep trying to connect until the killswitch is engaged.
-        // It will buffer outgoing messages when disconnected and will attempt to flush them on reconnect.
-        let tcp_thread_handle = std::thread::spawn(move || {
-            let mut backoff_ms = 500u64;
-            let mut send_buffer: VecDeque<String> = VecDeque::new();
+                                    // helper to try send and handle error by marking endpoint disconnected
+                                    let mut try_send = |pkt: String| -> Result<()> {
+                                        let res = send_packet_and_debug(&mut stream, &pkt);
+                                        if res.is_err() {
+                                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                        } else {
+                                            let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                        }
+                                        res
+                                    };
 
-            loop {
-                if child_bichannel.is_killswitch_engaged() {
-                    // shutdown requested
-                    return Ok(());
-                }
+                                    // If exactly 4 fields -> legacy pilot-only
+                                    if fields.len() == 4 {
+                                        let alt = fields[0].clone();
+                                        let air = fields[1].clone();
+                                        let head = fields[2].clone();
+                                        let vv = fields[3].clone();
 
-            while !child_bichannel.is_killswitch_engaged() {
-                // check messages from main thread
-                for message in child_bichannel.received_messages() {
-                    match message {
-                        ToTcpThreadMessage::Send(data) => {
-                            // added this for tcp packet count -Nyla Hughes
-                            let packet = format!("E;1;PilotDataSync;;;;;AltitudeSync;{data}\r\n");
-                            match stream.write_all(packet.as_bytes()) {
-                                Ok(()) => {
-                                    let _ = child_bichannel.send_to_parent(
-                                        FromTcpThreadMessage::Sent {
-                                            bytes: packet.len(),
-                                            at: Instant::now(),
-                                        },
-                                    );
-                                }
-                                Err(e) => {
-                                    eprintln!("TCP send failed: {e}");
+                                        let altitude_packet = build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]);
+                                        try_send(altitude_packet)?;
+
+                                        let airspeed_packet = build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]);
+                                        try_send(airspeed_packet)?;
+
+                                        let vv_packet = build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]);
+                                        try_send(vv_packet)?;
+
+                                        let heading_packet = build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]);
+                                        try_send(heading_packet)?;
+                                        continue;
+                                    }
+
+                                    // If exactly 8 fields -> extended pilot-only order
+                                    if fields.len() == 8 {
+                                        let alt = fields[0].clone();
+                                        let air = fields[1].clone();
+                                        let head = fields[2].clone();
+                                        let vv = fields[3].clone();
+                                        let roll = fields[4].clone();
+                                        let pitch = fields[5].clone();
+                                        let yaw = fields[6].clone();
+                                        let gforce = fields[7].clone();
+
+                                        try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]))?;
+                                        try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]))?;
+                                        try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]))?;
+                                        try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]))?;
+                                        try_send(build_imotions_packet("RollSync", &[roll.clone(), roll.clone()]))?;
+                                        try_send(build_imotions_packet("PitchSync", &[pitch.clone(), pitch.clone()]))?;
+                                        try_send(build_imotions_packet("YawSync", &[yaw.clone(), yaw.clone()]))?;
+                                        try_send(build_imotions_packet("GForceSync", &[gforce.clone(), gforce.clone()]))?;
+                                        continue;
+                                    }
+
+                                    // Otherwise attempt paired mapping: assume sequence of pairs FM,Pilot
+                                    // Map in the known order if present: Altitude, Airspeed, VerticalVelocity, Heading, Roll, Pitch, Yaw, GForce
+                                    let mut idx = 0usize;
+                                    let mut send_pair_if_present = |name: &str, idx: &mut usize| -> Result<()> {
+                                        if *idx + 1 < fields.len() {
+                                            let payload = vec![fields[*idx].clone(), fields[*idx + 1].clone()];
+                                            let pkt = build_imotions_packet(name, &payload);
+                                            *idx += 2;
+                                            try_send(pkt)?;
+                                        }
+                                        Ok(())
+                                    };
+
+                                    let _ = send_pair_if_present("AltitudeSync", &mut idx);
+                                    let _ = send_pair_if_present("AirspeedSync", &mut idx);
+                                    let _ = send_pair_if_present("VerticalVelocitySync", &mut idx);
+                                    let _ = send_pair_if_present("HeadingSync", &mut idx);
+                                    let _ = send_pair_if_present("RollSync", &mut idx);
+                                    let _ = send_pair_if_present("PitchSync", &mut idx);
+                                    let _ = send_pair_if_present("YawSync", &mut idx);
+                                    let _ = send_pair_if_present("GForceSync", &mut idx);
                                 }
                             }
                         }
-
-                        // if killswitch engaged, break outer loop and exit
-                        if child_bichannel.is_killswitch_engaged() {
-                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                            return Ok(());
-                        }
-
-                        // otherwise we fell out of connected loop due to error - try reconnect
-                        let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                        // small sleep to avoid busy loop
+                        std::thread::sleep(StdDuration::from_millis(1));
                     }
-                    Err(e) => {
-                        // failed to connect - report and backoff, unless killswitch engaged
-                        let reason = format!("Connect failed: {}", e);
-                        let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Disconnected(reason));
-                        if child_bichannel.is_killswitch_engaged() {
-                            return Ok(());
-                        }
-                        std::thread::sleep(StdDuration::from_millis(backoff_ms));
-                        // exponential backoff up to 30s
-                        backoff_ms = std::cmp::min(backoff_ms.saturating_mul(2), 30_000);
-                        continue;
-                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("TCP connect failed: {}", e);
+                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                    return Err(anyhow!("Failed to connect to TCP: {}", e));
                 }
             }
         });
-
         self.tcp_thread_handle = Some(tcp_thread_handle);
-
         Ok(())
     }
 
@@ -364,22 +411,17 @@ impl State {
         if self.tcp_thread_handle.is_none() {
             bail!("TCP thread does not exist.")
         }
-
         let Some((bichannel, handle)) =
             self.tcp_bichannel.take().zip(self.tcp_thread_handle.take())
         else {
             bail!("TCP thread does not exist.")
         };
-
         bichannel.killswitch_engage()?;
-        let res = handle
-            .join()
-            .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
-
+        let res = handle.join().map_err(|e| anyhow!("Join handle err: {e:?}"))?;
         Ok(res?)
     }
 
-    pub fn _is_tcp_connected(&self) -> bool {
+    pub fn is_tcp_connected(&self) -> bool {
         if let Some(status) = self
             .tcp_bichannel
             .as_ref()
@@ -389,10 +431,6 @@ impl State {
         } else {
             false
         }
-    }
-
-    pub fn log_event(&mut self, event: String) {
-        self.event_log.push(event);
     }
 
     // Added this for tcp packet count -Nyla Hughes
