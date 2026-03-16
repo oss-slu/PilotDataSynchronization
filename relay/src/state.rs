@@ -1,4 +1,4 @@
-use anyhow::Result;
+﻿use anyhow::Result;
 use anyhow::{anyhow, bail};
 use std::io::BufRead;
 use std::io::BufReader;
@@ -36,7 +36,7 @@ fn normalize_baton_payload(raw: &str) -> Vec<String> {
     let mut s = raw.trim().replace('\r', "").replace('\n', "");
     while s.starts_with(';') {
         s.remove(0);
-    }
+}
     while s.ends_with(';') {
         s.pop();
     }
@@ -178,13 +178,20 @@ impl State {
             // Debug: show the concrete socket name/identifier the relay will listen on
             println!("[RELAY] listening on socket: {:?}", name.borrow());
             
-             let opts = ListenerOptions::new().name(name);
+            let opts = ListenerOptions::new().name(name.clone());
             let listener = match opts.create_sync() {
                 Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
                     eprintln!("Error: socket file occupied: {}", printname);
                     return Ok(());
                 }
-                x => x.unwrap(),
+                Ok(l) => {
+                    println!("✓ Successfully created named pipe listener");
+                    l
+                }
+                Err(e) => {
+                    eprintln!("✗ Failed to create listener: {} (kind: {:?})", e, e.kind());
+                    return Err(anyhow!("Failed to create listener: {}", e));
+                }
             };
             listener
                 .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
@@ -288,6 +295,17 @@ impl State {
         }
         let (tcp_bichannel, mut child_bichannel) = bichannel::create_bichannels();
         self.tcp_bichannel = Some(tcp_bichannel);
+        
+        // Clone toggle states to pass to the thread
+        let altitude_enabled = self.altitude_toggle;
+        let airspeed_enabled = self.airspeed_toggle;
+        let vertical_velocity_enabled = self.vertical_airspeed_toggle;
+        let heading_enabled = self.heading_toggle;
+        let roll_enabled = self.roll_toggle;
+        let pitch_enabled = self.pitch_toggle;
+        let yaw_enabled = self.yaw_toggle;
+        let gforce_enabled = self.gforce_toggle;
+        
         let tcp_thread_handle = spawn(move || {
             // try to connect once, then loop handling messages while connected
             match TcpStream::connect(address) {
@@ -300,14 +318,7 @@ impl State {
                                 ToTcpThreadMessage::Send(data) => {
                                     // parse normalized baton payload into fields
                                     let fields = normalize_baton_payload(&data);
-                                    // Keep the original behavior: plugin sends pilot-only values
-                                    // New behavior: support up to 8 pilot values:
-                                    // [Altitude, Airspeed, Heading, VerticalVelocity, Roll, Pitch, Yaw, GForce]
-                                    // Also support paired FM/Pilot sequences (FM,Pilot,FM,Pilot,...)
-                                    // Strategy:
-                                    //  - If fields.len() == 4: treat as original pilot-only (duplicate into FM,Pilot)
-                                    //  - If fields.len() == 8: treat as pilot-only extended (generate 8 events duplicating FM)
-                                    //  - Otherwise, attempt paired mapping: consume pairs sequentially and emit packets for known samples
+                                    
                                     if fields.len() < 2 {
                                         eprintln!("Dropping packet: not enough fields: {:?}", fields);
                                         continue;
@@ -324,6 +335,15 @@ impl State {
                                         res
                                     };
 
+                                    // Helper to send only if toggle is enabled
+                                    let mut try_send_if_enabled = |enabled: bool, name: &str, data: &[String]| -> Result<()> {
+                                        if enabled {
+                                            let pkt = build_imotions_packet(name, data);
+                                            try_send(pkt)?;
+                                        }
+                                        Ok(())
+                                    };
+
                                     // If exactly 4 fields -> legacy pilot-only
                                     if fields.len() == 4 {
                                         let alt = fields[0].clone();
@@ -331,17 +351,10 @@ impl State {
                                         let head = fields[2].clone();
                                         let vv = fields[3].clone();
 
-                                        let altitude_packet = build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]);
-                                        try_send(altitude_packet)?;
-
-                                        let airspeed_packet = build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]);
-                                        try_send(airspeed_packet)?;
-
-                                        let vv_packet = build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]);
-                                        try_send(vv_packet)?;
-
-                                        let heading_packet = build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]);
-                                        try_send(heading_packet)?;
+                                        let _ = try_send_if_enabled(altitude_enabled, "AltitudeSync", &[alt.clone(), alt.clone()]);
+                                        let _ = try_send_if_enabled(airspeed_enabled, "AirspeedSync", &[air.clone(), air.clone()]);
+                                        let _ = try_send_if_enabled(vertical_velocity_enabled, "VerticalVelocitySync", &[vv.clone(), vv.clone()]);
+                                        let _ = try_send_if_enabled(heading_enabled, "HeadingSync", &[head.clone(), head.clone()]);
                                         continue;
                                     }
 
@@ -356,38 +369,40 @@ impl State {
                                         let yaw = fields[6].clone();
                                         let gforce = fields[7].clone();
 
-                                        try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]))?;
-                                        try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]))?;
-                                        try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]))?;
-                                        try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]))?;
-                                        try_send(build_imotions_packet("RollSync", &[roll.clone(), roll.clone()]))?;
-                                        try_send(build_imotions_packet("PitchSync", &[pitch.clone(), pitch.clone()]))?;
-                                        try_send(build_imotions_packet("YawSync", &[yaw.clone(), yaw.clone()]))?;
-                                        try_send(build_imotions_packet("GForceSync", &[gforce.clone(), gforce.clone()]))?;
+                                        let _ = try_send_if_enabled(altitude_enabled, "AltitudeSync", &[alt.clone(), alt.clone()]);
+                                        let _ = try_send_if_enabled(airspeed_enabled, "AirspeedSync", &[air.clone(), air.clone()]);
+                                        let _ = try_send_if_enabled(vertical_velocity_enabled, "VerticalVelocitySync", &[vv.clone(), vv.clone()]);
+                                        let _ = try_send_if_enabled(heading_enabled, "HeadingSync", &[head.clone(), head.clone()]);
+                                        let _ = try_send_if_enabled(roll_enabled, "RollSync", &[roll.clone(), roll.clone()]);
+                                        let _ = try_send_if_enabled(pitch_enabled, "PitchSync", &[pitch.clone(), pitch.clone()]);
+                                        let _ = try_send_if_enabled(yaw_enabled, "YawSync", &[yaw.clone(), yaw.clone()]);
+                                        let _ = try_send_if_enabled(gforce_enabled, "GForceSync", &[gforce.clone(), gforce.clone()]);
                                         continue;
                                     }
 
                                     // Otherwise attempt paired mapping: assume sequence of pairs FM,Pilot
-                                    // Map in the known order if present: Altitude, Airspeed, VerticalVelocity, Heading, Roll, Pitch, Yaw, GForce
                                     let mut idx = 0usize;
-                                    let mut send_pair_if_present = |name: &str, idx: &mut usize| -> Result<()> {
-                                        if *idx + 1 < fields.len() {
+                                    let mut send_pair_if_enabled = |enabled: bool, name: &str, idx: &mut usize| -> Result<()> {
+                                        if *idx + 1 < fields.len() && enabled {
                                             let payload = vec![fields[*idx].clone(), fields[*idx + 1].clone()];
                                             let pkt = build_imotions_packet(name, &payload);
                                             *idx += 2;
                                             try_send(pkt)?;
+                                        } else if *idx + 1 < fields.len() {
+                                            // Skip the pair even if disabled
+                                            *idx += 2;
                                         }
                                         Ok(())
                                     };
 
-                                    let _ = send_pair_if_present("AltitudeSync", &mut idx);
-                                    let _ = send_pair_if_present("AirspeedSync", &mut idx);
-                                    let _ = send_pair_if_present("VerticalVelocitySync", &mut idx);
-                                    let _ = send_pair_if_present("HeadingSync", &mut idx);
-                                    let _ = send_pair_if_present("RollSync", &mut idx);
-                                    let _ = send_pair_if_present("PitchSync", &mut idx);
-                                    let _ = send_pair_if_present("YawSync", &mut idx);
-                                    let _ = send_pair_if_present("GForceSync", &mut idx);
+                                    let _ = send_pair_if_enabled(altitude_enabled, "AltitudeSync", &mut idx);
+                                    let _ = send_pair_if_enabled(airspeed_enabled, "AirspeedSync", &mut idx);
+                                    let _ = send_pair_if_enabled(vertical_velocity_enabled, "VerticalVelocitySync", &mut idx);
+                                    let _ = send_pair_if_enabled(heading_enabled, "HeadingSync", &mut idx);
+                                    let _ = send_pair_if_enabled(roll_enabled, "RollSync", &mut idx);
+                                    let _ = send_pair_if_enabled(pitch_enabled, "PitchSync", &mut idx);
+                                    let _ = send_pair_if_enabled(yaw_enabled, "YawSync", &mut idx);
+                                    let _ = send_pair_if_enabled(gforce_enabled, "GForceSync", &mut idx);
                                 }
                             }
                         }

@@ -18,7 +18,7 @@ use std::net::ToSocketAddrs;
 
 use iced::{
     widget::{button, column, container, row, text, text_input, toggler},
-    Element, Length,
+    Element, Length, Color,
 };
 use iced_aw::{helpers::card, style};
 
@@ -38,9 +38,14 @@ pub(crate) fn view(state: &State) -> UIElement {
     // Elapsed Time Text
     elements.push(elapsed_time_element(state));
 
+    // IPC Listener Status (shows if relay is listening)
+    elements.push(ipc_listener_status_element(state));
+
+    // Baton Connection Status (shows if baton is connected)
+    elements.push(baton_connect_status_element(state));
+
     // Baton Latest Send Text
     elements.push(baton_data_element(state));
-    elements.push(baton_connect_status_element(state));
 
     // Send Packet button (Only if baton is running) - Jacob
     if let Some(send_btn) = send_packet_button(state) {
@@ -88,13 +93,57 @@ fn elapsed_time_element(state: &State) -> UIElement {
     text(format!("Elapsed time: {:?}", state.elapsed_time)).into()
 }
 
-fn baton_connect_status_element(state: &State) -> UIElement {
-    let connection_status = if state.active_baton_connection {
-        ":) Baton Connected!".to_string()
+fn ipc_listener_status_element(state: &State) -> UIElement {
+    let is_listening = state.ipc_thread_handle.is_some();
+    
+    let (status_text, status_icon) = if is_listening {
+        ("IPC Listener Active (waiting for baton...)", "👂")
     } else {
-        ":( No Baton Connection".to_string()
+        ("IPC Listener Inactive", "⏸")
     };
-    text(connection_status).into()
+    
+    let status_color = if is_listening {
+        Color::from_rgb(0.0, 0.6, 0.8) // Blue
+    } else {
+        Color::from_rgb(0.5, 0.5, 0.5) // Gray
+    };
+
+    container(
+        row![
+            text(status_icon).size(20),
+            text(format!(" {}", status_text)).size(14).color(status_color),
+        ]
+        .spacing(5)
+    )
+    .padding(5)
+    .width(Length::Fill)
+    .into()
+}
+
+fn baton_connect_status_element(state: &State) -> UIElement {
+    let (status_text, status_icon) = if state.active_baton_connection {
+        ("Baton Connected", "✓")
+    } else {
+        ("Baton Disconnected", "✗")
+    };
+    
+    let status_color = if state.active_baton_connection {
+        Color::from_rgb(0.0, 0.8, 0.0) // Green
+    } else {
+        Color::from_rgb(0.8, 0.0, 0.0) // Red
+    };
+
+    container(
+        row![
+            text(status_icon).size(24).color(status_color),
+            text(format!(" {}", status_text)).size(16).color(status_color),
+        ]
+        .spacing(5)
+    )
+    .padding(10)
+    .width(Length::Fill)
+    .style(container::rounded_box)
+    .into()
 }
 
 fn baton_data_element(state: &State) -> UIElement {
@@ -105,7 +154,7 @@ fn baton_data_element(state: &State) -> UIElement {
         //
         None => "No data from baton.".into(),
     };
-    text(baton_data).into()
+    text(baton_data).size(12).into()
 }
 
 // Added this for tcp counter - Nyla Hughes

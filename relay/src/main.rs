@@ -1,5 +1,5 @@
-mod bichannel;
 // mod ipc;
+mod bichannel;
 mod message;
 mod state;
 mod update;
@@ -9,8 +9,7 @@ mod view;
 // use channel::ChannelMessage;
 
 use self::{
-    // ipc::ipc_connection_loop,
-    message::{FromIpcThreadMessage, Message},
+    message::Message,
     state::State,
     update::update,
     view::view,
