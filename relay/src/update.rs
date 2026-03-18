@@ -13,10 +13,11 @@ fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
         Ok(()) => {
             state.tcp_addr_validation_error = None;
             state.tcp_addr_field = trimmed.clone();
+            if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
+                state.log_event(format!("Saving TCP address failed: {}", e));
+            }
             if let Err(e) = state.tcp_connect(trimmed.clone()) {
                 state.log_event(format!("TCP connect failed: {}", e));
-            } else if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
-                state.log_event(format!("Saving TCP address failed: {}", e));
             }
         }
         Err(e) => {
@@ -124,7 +125,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::SavedTcpAddrSelected(address) => {
-            state.selected_tcp_addr = Some(address.clone());
             connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }

@@ -243,7 +243,7 @@ impl State {
             .ok_or_else(|| anyhow!("Could not find config directory"))?;
         path.push("PilotDataSynchronization");
         fs::create_dir_all(&path)?;
-        path.push("relay_ips.txt");
+        path.push("relay_ips.json");
         Ok(path)
     }
 
@@ -254,8 +254,20 @@ impl State {
         };
 
         let mut uniq = BTreeSet::new();
-        for line in contents.lines() {
-            let candidate = line.trim();
+        let trimmed = contents.trim();
+        let body = trimmed
+            .strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
+            .ok_or_else(|| anyhow!("InvalidTCP"))?;
+        let addresses = if body.trim().is_empty() {
+            Vec::new()
+        } else {
+            body.split(',')
+                .map(|entry| entry.trim().trim_matches('"').to_string())
+                .collect::<Vec<_>>()
+        };
+        for address in addresses {
+            let candidate = address.trim();
             if Self::validate_tcp_addr(candidate).is_ok() {
                 uniq.insert(candidate.to_string());
             }
@@ -268,9 +280,16 @@ impl State {
     fn persist_saved_tcp_addrs(&self) -> Result<()> {
         let path = Self::saved_tcp_addrs_path()?;
         let contents = if self.saved_tcp_addrs.is_empty() {
-            String::new()
+            "[]\n".to_string()
         } else {
-            format!("{}\n", self.saved_tcp_addrs.join("\n"))
+            format!(
+                "[\n{}\n]\n",
+                self.saved_tcp_addrs
+                    .iter()
+                    .map(|address| format!("  \"{}\"", address))
+                    .collect::<Vec<_>>()
+                    .join(",\n")
+            )
         };
         fs::write(path, contents)?;
         Ok(())
@@ -288,8 +307,8 @@ impl State {
         if !self.saved_tcp_addrs.iter().any(|saved| saved == address) {
             self.saved_tcp_addrs.push(address.to_string());
             self.saved_tcp_addrs.sort();
-            self.persist_saved_tcp_addrs()?;
         }
+        self.persist_saved_tcp_addrs()?;
         self.selected_tcp_addr = Some(address.to_string());
         Ok(())
     }
@@ -610,7 +629,14 @@ impl State {
         else {
             bail!("TCP thread does not exist.")
         };
+        let was_connected = bichannel.is_conn_to_endpoint().unwrap_or(false);
         bichannel.killswitch_engage()?;
+        if !was_connected {
+            spawn(move || {
+                let _ = handle.join();
+            });
+            return Ok(());
+        }
         let res = handle
             .join()
             .map_err(|e| anyhow!("Join handle err: {e:?}"))?;
