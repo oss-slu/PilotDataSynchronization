@@ -1,9 +1,12 @@
 ﻿use anyhow::Result;
 use anyhow::{anyhow, bail};
+use std::collections::BTreeSet;
+use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
 use std::thread::{JoinHandle, spawn};
 use iced::time::Duration;
 use crate::bichannel;
@@ -45,6 +48,9 @@ pub(crate) struct State {
     pub ipc_bichannel: Option<ParentBiChannel<ToIpcThreadMessage, FromIpcThreadMessage>>,
     pub tcp_bichannel: Option<ParentBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>>,
     pub last_send_timestamp: Option<String>,
+    pub saved_tcp_addrs: Vec<String>,
+    pub selected_tcp_addr: Option<String>,
+    pub tcp_addr_validation_error: Option<String>,
 }
 impl Default for State {
     fn default() -> State {
@@ -70,6 +76,10 @@ impl Default for State {
             ipc_bichannel: None,
             tcp_bichannel: None,
             last_send_timestamp: None,
+            saved_tcp_addrs: Vec::new(),
+            selected_tcp_addr: None,
+            tcp_addr_validation_error: None,
+
         }
     }
 }
@@ -228,6 +238,81 @@ fn send_packet_and_debug(stream: &mut std::net::TcpStream, packet: &str) -> Resu
 }
 // --- State impl -------------------------------------------------------------
 impl State {
+    fn saved_tcp_addrs_path() -> Result<PathBuf> {
+        let mut path = dirs::config_dir()
+            .ok_or_else(|| anyhow!("Could not find config directory"))?;
+        path.push("PilotDataSynchronization");
+        fs::create_dir_all(&path)?;
+        path.push("relay_ips.json");
+        Ok(path)
+    }
+
+    pub fn load_saved_tcp_addrs(&mut self) -> Result<()> {
+        let path = Self::saved_tcp_addrs_path()?;
+        let Ok(contents) = fs::read_to_string(path) else {
+            return Ok(());
+        };
+
+        let mut uniq = BTreeSet::new();
+        let trimmed = contents.trim();
+        let body = trimmed
+            .strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
+            .ok_or_else(|| anyhow!("InvalidTCP"))?;
+        let addresses = if body.trim().is_empty() {
+            Vec::new()
+        } else {
+            body.split(',')
+                .map(|entry| entry.trim().trim_matches('"').to_string())
+                .collect::<Vec<_>>()
+        };
+        for address in addresses {
+            let candidate = address.trim();
+            if Self::validate_tcp_addr(candidate).is_ok() {
+                uniq.insert(candidate.to_string());
+            }
+        }
+
+        self.saved_tcp_addrs = uniq.into_iter().collect();
+        Ok(())
+    }
+
+    fn persist_saved_tcp_addrs(&self) -> Result<()> {
+        let path = Self::saved_tcp_addrs_path()?;
+        let contents = if self.saved_tcp_addrs.is_empty() {
+            "[]\n".to_string()
+        } else {
+            format!(
+                "[\n{}\n]\n",
+                self.saved_tcp_addrs
+                    .iter()
+                    .map(|address| format!("  \"{}\"", address))
+                    .collect::<Vec<_>>()
+                    .join(",\n")
+            )
+        };
+        fs::write(path, contents)?;
+        Ok(())
+    }
+
+    pub fn validate_tcp_addr(address: &str) -> Result<()> {
+        let _parsed = address
+            .trim()
+            .parse::<SocketAddr>()
+            .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:9999"))?;
+        Ok(())
+    }
+
+    pub fn save_tcp_addr_if_new(&mut self, address: &str) -> Result<()> {
+        if !self.saved_tcp_addrs.iter().any(|saved| saved == address) {
+            self.saved_tcp_addrs.push(address.to_string());
+            self.saved_tcp_addrs.sort();
+        }
+        self.persist_saved_tcp_addrs()?;
+        self.selected_tcp_addr = Some(address.to_string());
+        Ok(())
+    }
+
     // Simple metric helpers used by update/view code that expect them.
     pub fn refresh_metrics_now(&mut self) {
         // placeholder: in future compute accurate rates from history
@@ -544,7 +629,14 @@ impl State {
         else {
             bail!("TCP thread does not exist.")
         };
+        let was_connected = bichannel.is_conn_to_endpoint().unwrap_or(false);
         bichannel.killswitch_engage()?;
+        if !was_connected {
+            spawn(move || {
+                let _ = handle.join();
+            });
+            return Ok(());
+        }
         let res = handle
             .join()
             .map_err(|e| anyhow!("Join handle err: {e:?}"))?;

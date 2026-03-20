@@ -1,4 +1,3 @@
-use std::time::Instant;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     // generic time update signal
@@ -30,6 +29,7 @@ pub(crate) enum Message {
     DisconnectTcp,
 
     TcpAddrFieldUpdate(String),
+    SavedTcpAddrSelected(String),
 
     SendPacket,
 }
