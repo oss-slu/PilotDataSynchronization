@@ -1,4 +1,4 @@
-﻿use anyhow::Result;
+use anyhow::Result;
 use anyhow::{anyhow, bail};
 use std::io::BufRead;
 use std::io::BufReader;
@@ -178,20 +178,13 @@ impl State {
             // Debug: show the concrete socket name/identifier the relay will listen on
             println!("[RELAY] listening on socket: {:?}", name.borrow());
             
-            let opts = ListenerOptions::new().name(name.clone());
+             let opts = ListenerOptions::new().name(name);
             let listener = match opts.create_sync() {
                 Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
                     eprintln!("Error: socket file occupied: {}", printname);
                     return Ok(());
                 }
-                Ok(l) => {
-                    println!("✓ Successfully created named pipe listener");
-                    l
-                }
-                Err(e) => {
-                    eprintln!("✗ Failed to create listener: {} (kind: {:?})", e, e.kind());
-                    return Err(anyhow!("Failed to create listener: {}", e));
-                }
+                x => x.unwrap(),
             };
             listener
                 .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)

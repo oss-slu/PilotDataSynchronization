@@ -9,7 +9,8 @@ mod view;
 // use channel::ChannelMessage;
 
 use self::{
-    message::Message,
+    // ipc::ipc_connection_loop,
+    message::{FromIpcThreadMessage, Message},
     state::State,
     update::update,
     view::view,
