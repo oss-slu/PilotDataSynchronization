@@ -82,6 +82,40 @@ fn baton_data_element(state: &State) -> UIElement {
         Some(data) => format!("[BATON]: {}", data),
         None => "No data from baton.".into(),
     };
+    text(baton_data).into()
+}
+
+// Added this for tcp counter - Nyla Hughes
+fn metrics_block(state: &State) -> UIElement {
+    if !state.show_metrics {
+        return text("").into();
+    }
+
+    let packets_60 = state.packets_last_60s;
+    let bps_str = human_bps(state.bps);
+
+    column![
+        text(format!("Packets sent in the last 60's: {packets_60}")),
+        text(format!("Throughput: {bps_str}")),
+    ]
+    .into()
+}
+
+fn human_bps(bps: f64) -> String {
+    const K: f64 = 1_000.0;
+    if bps < K {
+        return format!("{:.0} bps", bps);
+    }
+    let kbps = bps / K;
+    if kbps < K {
+        return format!("{:.1} Kbps", kbps);
+    }
+    let mbps = kbps / K;
+    if mbps < K {
+        return format!("{:.2} Mbps", mbps);
+    }
+    let gbps = mbps / K;
+    format!("{:.2} Gbps", gbps)
     text(content).into()
 }
 

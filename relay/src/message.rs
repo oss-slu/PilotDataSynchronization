@@ -15,6 +15,10 @@ pub(crate) enum Message {
     AirspeedToggle(bool),
     VerticalAirspeedToggle(bool),
     HeadingToggle(bool),
+    RollToggle(bool),
+    PitchToggle(bool),
+    YawToggle(bool),
+    GForceToggle(bool),
 
     // Messages for the GUI Card pop-up
     CardOpen,
