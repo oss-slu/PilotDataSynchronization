@@ -241,3 +241,7 @@ fn send_packet_button(state: &State) -> Option<UIElement> {
         Some(button("Send Packet (No Baton Connection)").into())
     }
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429

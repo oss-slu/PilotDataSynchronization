@@ -7,6 +7,8 @@ mod view;
 
 use self::{
     // ipc::ipc_connection_loop,
+    message::{FromIpcThreadMessage, Message},
+    // ipc::ipc_connection_loop,
     message::Message,
     state::State,
     update::update,
