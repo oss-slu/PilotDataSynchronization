@@ -1,7 +1,20 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\bramh\\Documents\\CS\\OpenSourceWithSLU\\Testing\\PilotDataSynchronization\\",
-  "Documents": [],
+  "WorkspaceRootPath": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\view.rs||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\view.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\update.rs||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\update.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\state.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -9,11 +22,54 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": -1,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:128:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "view.rs",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\view.rs",
+              "RelativeDocumentMoniker": "relay\\src\\view.rs",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\view.rs",
+              "RelativeToolTip": "relay\\src\\view.rs",
+              "ViewState": "AgIAANwAAAAAAAAAAAAgwO8AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-03-24T20:31:48.547Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "update.rs",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\update.rs",
+              "RelativeDocumentMoniker": "relay\\src\\update.rs",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\update.rs",
+              "RelativeToolTip": "relay\\src\\update.rs",
+              "ViewState": "AgIAAHgAAAAAAAAAAAAswAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-03-24T20:29:10.691Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "state.rs",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs",
+              "RelativeDocumentMoniker": "relay\\src\\state.rs",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs",
+              "RelativeToolTip": "relay\\src\\state.rs",
+              "ViewState": "AgIAABIAAAAAAAAAAAAAABsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-03-24T20:17:38.828Z",
+              "EditorCaption": ""
             }
           ]
         }

@@ -150,6 +150,22 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.heading_toggle = value;
             Task::none()
         }
+        M::RollToggle(value) => {
+            state.roll_toggle = value;
+            Task::none()
+        }
+        M::PitchToggle(value) => {
+            state.pitch_toggle = value;
+            Task::none()
+        }
+        M::YawToggle(value) => {
+            state.yaw_toggle = value;
+            Task::none()
+        }
+        M::GForceToggle(value) => {
+            state.gforce_toggle = value;
+            Task::none()
+        }
         M::CreateXMLFile => create_xml_file(state),
         M::CardOpen => {
             state.card_open = true;
@@ -185,9 +201,6 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
     };
     downloads_path.push("iMotions.xml");
 
-    // Create file in downloads directory. If alr there, will overwrite the existing file.
-    let mut file = File::create(&downloads_path).expect("Creating XML File.");
-
     // Check if all dataref toggles are false. If so, return error message
     if !state.altitude_toggle
         && !state.airspeed_toggle
@@ -198,8 +211,6 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
         && !state.yaw_toggle
         && !state.gforce_toggle
     {
-    // Validate toggles
-    if !state.altitude_toggle && !state.airspeed_toggle && !state.vertical_airspeed_toggle && !state.heading_toggle {
         state.error_message = Some("Please select at least one dataref toggle".into());
         return Task::none();
     }
