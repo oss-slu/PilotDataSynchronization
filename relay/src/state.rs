@@ -1,9 +1,4 @@
-<<<<<<< HEAD
-﻿use anyhow::{anyhow, bail, Result};
-=======
-use anyhow::Result;
-use anyhow::{anyhow, bail};
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
+use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::BufRead;
@@ -29,10 +24,6 @@ use interprocess::local_socket::{
     ToFsName,
     ToNsName,
 };
-<<<<<<< HEAD
-=======
-use interprocess::local_socket::NameType;
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
 use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
 use std::sync::{OnceLock, Mutex};
 
@@ -123,11 +114,7 @@ impl Default for State {
     }
 }
 
-<<<<<<< HEAD
-// --- Helper functions -------------------------------------------------------
-=======
 // --- helper functions -------------------------------------------------------
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
 fn sanitize_field(s: &str) -> String {
     s.replace('\r', "")
         .replace('\n', "")
@@ -237,10 +224,6 @@ fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
         .collect::<Vec<_>>()
         .join(" ");
     human_log("TX", &format!("hex: {}", hex));
-<<<<<<< HEAD
-    
-=======
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
     stream
         .write_all(packet.as_bytes())
         .map_err(|e| anyhow!("write_all failed: {}", e))?;
@@ -301,14 +284,14 @@ impl State {
         let contents = if self.saved_tcp_addrs.is_empty() {
             "[]\n".to_string()
         } else {
-            format![
-                "[\n{}\n]",
+            format!(
+                "[\n{}\n]\n",
                 self.saved_tcp_addrs
                     .iter()
                     .map(|address| format!("  \"{}\"", address))
                     .collect::<Vec<_>>()
                     .join(",\n")
-            ]
+            )
         };
         fs::write(path, contents)?;
         Ok(())
@@ -332,36 +315,21 @@ impl State {
         Ok(())
     }
 
-<<<<<<< HEAD
     pub fn refresh_metrics_now(&mut self) {
         let now = Instant::now();
         self.refresh_metrics(now);
     }
 
-=======
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
     pub fn on_tcp_packet_sent(&mut self, bytes: usize) {
         let now = Instant::now();
         self.sent_packet_times.push_back(now);
         self.sent_samples.push_back((now, bytes));
         self.refresh_metrics(now);
-<<<<<<< HEAD
         self.log_event(format!("Sent packet ({} bytes)", bytes));
     }
 
     fn refresh_metrics(&mut self, now: Instant) {
         let window60 = StdDuration::from_secs(60);
-=======
-    }
-
-    pub fn refresh_metrics_now(&mut self) {
-        let now = Instant::now();
-        self.refresh_metrics(now);
-    }
-
-    fn refresh_metrics(&mut self, now: Instant) {
-        let window60 = std::time::Duration::from_secs(60);
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
         while let Some(&t) = self.sent_packet_times.front() {
             if now.duration_since(t) > window60 {
                 self.sent_packet_times.pop_front();
@@ -371,11 +339,7 @@ impl State {
         }
         self.packets_last_60s = self.sent_packet_times.len();
 
-<<<<<<< HEAD
         let window1 = StdDuration::from_secs(1);
-=======
-        let window1 = std::time::Duration::from_secs(1);
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
         while let Some(&(t, _)) = self.sent_samples.front() {
             if now.duration_since(t) > window1 {
                 self.sent_samples.pop_front();
@@ -406,23 +370,23 @@ impl State {
 
             println!("[RELAY] listening on socket: {:?}", name.borrow());
             
-<<<<<<< HEAD
             let opts = ListenerOptions::new().name(name.clone());
             let listener = match opts.create_sync() {
                 Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    human_log("IPC", &format![
-=======
-             let opts = ListenerOptions::new().name(name);
-            let listener = match opts.create_sync() {
-                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
                     human_log("IPC", &format!(
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
                         "Could not start server because the socket file is occupied. Check if {} is in use.",
                         printname
-                    ]);
+                    ));
                     return Ok(());
                 }
-                x => x.unwrap(),
+                Ok(l) => {
+                    println!("✓ Successfully created named pipe listener");
+                    l
+                }
+                Err(e) => {
+                    eprintln!("✗ Failed to create listener: {} (kind: {:?})", e, e.kind());
+                    return Err(anyhow!("Failed to create listener: {}", e));
+                }
             };
             
             listener
@@ -430,11 +394,7 @@ impl State {
                 .expect("Error setting non-blocking mode on listener");
             
             human_log("IPC", &format!("Server running at {}", printname));
-<<<<<<< HEAD
-            let mut buffer = String::with_capacity(128);
-=======
             let mut buffer = String::with_capacity(256);
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
             
             while !child_bichannel.is_killswitch_engaged() {
                 let conn = listener.accept();
@@ -455,10 +415,7 @@ impl State {
                 let mut conn = BufReader::new(conn);
                 child_bichannel.set_is_conn_to_endpoint(true)?;
                 
-<<<<<<< HEAD
-=======
                 // read initial/greeting line if present
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
                 let mut greeting_attempts = 0;
                 loop {
                     match conn.read_line(&mut buffer) {
@@ -482,10 +439,7 @@ impl State {
                     }
                 }
                 
-<<<<<<< HEAD
-=======
                 // Send greeting response
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
                 if let Err(e) = conn.get_mut().write_all(b"Hello, from the relay (Rust)!\n") {
                     eprintln!("Failed to send greeting: {e}");
                     let _ = child_bichannel.set_is_conn_to_endpoint(false);
@@ -499,10 +453,7 @@ impl State {
                 println!("[RELAY] Sent greeting response");
                 buffer.clear();
 
-<<<<<<< HEAD
-=======
                 // Continuously receive data from plugin
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
                 while !child_bichannel.is_killswitch_engaged() {
                     for message in child_bichannel.received_messages() {
                         match message {}
@@ -598,16 +549,13 @@ impl State {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
                             let fields = normalize_baton_payload(&data);
-<<<<<<< HEAD
                             
 
-=======
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
                             if fields.len() < 2 {
-                                human_log("TCP", &format![
+                                human_log("TCP", &format!(
                                     "Dropping packet: not enough fields (need >=2) but baton sent {}: {:?}",
                                     fields.len(), fields
-                                ]);
+                                ));
                                 continue;
                             }
 
@@ -655,10 +603,7 @@ impl State {
                                 continue;
                             }
 
-<<<<<<< HEAD
-=======
                             // Paired mapping
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
                             let mut idx = 0usize;
                             let mut send_pair_if_present = |name: &str, idx: &mut usize| -> Result<()> {
                                 if *idx + 1 < fields.len() {
@@ -699,10 +644,6 @@ impl State {
         else {
             bail!("TCP thread does not exist.")
         };
-<<<<<<< HEAD
-        
-=======
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
         let was_connected = bichannel.is_conn_to_endpoint().unwrap_or(false);
         bichannel.killswitch_engage()?;
         
@@ -712,10 +653,7 @@ impl State {
             });
             return Ok(());
         }
-<<<<<<< HEAD
         
-=======
->>>>>>> fa6f0b33510adb2a81dc569aabecfd40d9f3d429
         let res = handle.join().map_err(|e| anyhow!("Join handle err: {e:?}"))?;
         Ok(res?)
     }
