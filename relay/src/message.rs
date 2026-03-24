@@ -1,4 +1,3 @@
-use std::time::Instant;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     // generic time update signal
@@ -34,6 +33,7 @@ pub(crate) enum Message {
     DisconnectTcp,
 
     TcpAddrFieldUpdate(String),
+    SavedTcpAddrSelected(String),
 
     SendPacket,
 }
@@ -50,9 +50,17 @@ pub(crate) enum FromIpcThreadMessage {
 }
 
 pub(crate) enum ToTcpThreadMessage {
+    // outgoing payload to TCP thread
     Send(String),
 }
-//added this for tcp counter - Nyla Hughes
+
 pub(crate) enum FromTcpThreadMessage {
-    Sent { bytes: usize, at: Instant },
+    /// TCP thread successfully connected to remote
+    Connected,
+    /// TCP thread disconnected (may include reason)
+    Disconnected(String),
+    /// A packet was sent to remote (In bytes)
+    Sent(usize),
+    /// Error reported 
+    SendError(String),
 }
