@@ -112,8 +112,7 @@ void send_current_pilot_data() {
 
 float flight_loop_callback(float inElapsedSinceLastCall,
                            float inElapsedTimeSinceLastFlightLoop,
-                           int inCounter,
-                           void *inRefcon) {
+                           int inCounter, void *inRefcon) {
   send_current_pilot_data();
   return SEND_INTERVAL_MS / 1000.0f;
 }
@@ -261,10 +260,11 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   float currentPilotPitch = XPLMGetDataf(pitchPilotRef);
   string pitchPilotStr = build_str("Pitch, Pilot", "°", currentPilotPitch);
   float currentPilotYaw = XPLMGetDataf(yawFlightmodelRef);
-  string yawPilotStr = build_str("Yaw, Pilot (from Flightmodel)", "°",
-                                 currentPilotYaw);
+  string yawPilotStr =
+      build_str("Yaw, Pilot (from Flightmodel)", "°", currentPilotYaw);
   float currentPilotGForce = XPLMGetDataf(gforceVerticalRef);
-  string gPilotStr = build_str("G-Force, Pilot (Vert)", "G", currentPilotGForce);
+  string gPilotStr =
+      build_str("G-Force, Pilot (Vert)", "G", currentPilotGForce);
 
   int last_offset = 10;
   auto get_next_y_offset = [&last_offset, t]() {
@@ -273,11 +273,16 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   };
 
   vector<string> draw_order = {
-      elevationFlightmodelStr,  elevationPilotStr,
-      airspeedFlightmodelStr,   verticalVelocityFlightmodelStr,
-      verticalVelocityPilotStr, headingFlightmodelStr,
-      headingPilotStr,          rollPilotStr,
-      pitchPilotStr,            yawPilotStr,
+      elevationFlightmodelStr,
+      elevationPilotStr,
+      airspeedFlightmodelStr,
+      verticalVelocityFlightmodelStr,
+      verticalVelocityPilotStr,
+      headingFlightmodelStr,
+      headingPilotStr,
+      rollPilotStr,
+      pitchPilotStr,
+      yawPilotStr,
       gPilotStr,
   };
 
