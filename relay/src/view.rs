@@ -44,6 +44,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     elements.push(tcp_connect_button(state));
     elements.push(tcp_disconnect_button());
 
+    // Metrics (if enabled)
+    elements.push(metrics_block(state));
+
     // XML download / card
     elements.push(xml_download_popup(state));
 
@@ -82,7 +85,7 @@ fn baton_data_element(state: &State) -> UIElement {
         Some(data) => format!("[BATON]: {}", data),
         None => "No data from baton.".into(),
     };
-    text(baton_data).into()
+    text(content).into()
 }
 
 // Added this for tcp counter - Nyla Hughes
@@ -116,7 +119,6 @@ fn human_bps(bps: f64) -> String {
     }
     let gbps = mbps / K;
     format!("{:.2} Gbps", gbps)
-    text(content).into()
 }
 
 fn tcp_connect_status_element(state: &State) -> UIElement {
@@ -165,6 +167,7 @@ fn tcp_validation_text(state: &State) -> UIElement {
         text(" ").into()
     }
 }
+
 fn tcp_connect_button(state: &State) -> UIElement {
     column![
         row![
@@ -204,6 +207,18 @@ fn xml_download_popup(state: &State) -> UIElement {
                     toggler(state.heading_toggle)
                         .label("Heading")
                         .on_toggle(Message::HeadingToggle),
+                    toggler(state.roll_toggle)
+                        .label("Roll")
+                        .on_toggle(Message::RollToggle),
+                    toggler(state.pitch_toggle)
+                        .label("Pitch")
+                        .on_toggle(Message::PitchToggle),
+                    toggler(state.yaw_toggle)
+                        .label("Yaw")
+                        .on_toggle(Message::YawToggle),
+                    toggler(state.gforce_toggle)
+                        .label("G-Force")
+                        .on_toggle(Message::GForceToggle),
                     button("Generate XML File").on_press(Message::CreateXMLFile),
                 ],
             )
@@ -225,20 +240,4 @@ fn send_packet_button(state: &State) -> Option<UIElement> {
     } else {
         Some(button("Send Packet (No Baton Connection)").into())
     }
-}
-
-/// Format bytes-per-second into a human-friendly string.
-fn human_bps(bps: f64) -> String {
-    if bps <= 0.0 {
-        return "0 B/s".into();
-    }
-    if bps < 1024.0 {
-        return format!("{:.0} B/s", bps);
-    }
-    let kb = bps / 1024.0;
-    if kb < 1024.0 {
-        return format!("{:.1} KB/s", kb);
-    }
-    let mb = kb / 1024.0;
-    format!("{:.2} MB/s", mb)
 }
