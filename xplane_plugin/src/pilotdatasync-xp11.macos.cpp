@@ -45,8 +45,16 @@ static XPLMDataRef verticalVelocityFlightmodelRef;
 static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
 static XPLMDataRef headingPilotRef;
+static XPLMDataRef yawFlightmodelRef;
+static XPLMDataRef rollFlightmodelRef;
+static XPLMDataRef rollPilotRef;
+static XPLMDataRef pitchFlightmodelRef;
+static XPLMDataRef pitchPilotRef;
+static XPLMDataRef gforceHorizontalRef;
+static XPLMDataRef gforceVerticalRef;
 
 rust::cxxbridge1::Box<Baton> baton = new_baton_handle();
+static const int SEND_INTERVAL_MS = 50;
 
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
 
@@ -80,29 +88,41 @@ std::string get_current_timestamp() {
   return buf;
 }
 
+void send_current_pilot_data() {
+  float msToFeetRate = 3.28084f;
+  float msToKnotsRate = 1.94384f;
+  float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * msToFeetRate;
+  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+  float currentPilotHeading = XPLMGetDataf(headingPilotRef);
+  float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
+  float currentPilotRoll = XPLMGetDataf(rollPilotRef);
+  float currentPilotPitch = XPLMGetDataf(pitchPilotRef);
+  float currentPilotYaw = XPLMGetDataf(yawFlightmodelRef);
+  float currentPilotGForce = XPLMGetDataf(gforceVerticalRef);
+
+  std::vector<float> send_to_baton = {
+      currentPilotElevation, currentPilotAirspeed,
+      currentPilotHeading,   currentPilotVerticalVelocity,
+      currentPilotRoll,      currentPilotPitch,
+      currentPilotYaw,       currentPilotGForce,
+  };
+  baton->send(send_to_baton);
+  last_send_timestamp = get_current_timestamp();
+}
+
+float flight_loop_callback(float inElapsedSinceLastCall,
+                           float inElapsedTimeSinceLastFlightLoop,
+                           int inCounter, void *inRefcon) {
+  send_current_pilot_data();
+  return SEND_INTERVAL_MS / 1000.0f;
+}
+
 int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
                   void *in_refcon) {
   if (is_down) {
     if (x >= button_left && x <= button_right && y >= button_bottom &&
         y <= button_top) {
-      float msToFeetRate = 3.28084;
-      float msToKnotsRate = 1.94384;
-      float currentPilotElevation =
-          XPLMGetDataf(elevationPilotRef) * msToFeetRate;
-      float currentPilotAirspeed =
-          XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
-      float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-      float currentPilotVerticalVelocity =
-          XPLMGetDataf(verticalVelocityPilotRef);
-
-      std::vector<float> send_to_baton = {
-          currentPilotElevation,
-          currentPilotAirspeed,
-          currentPilotHeading,
-          currentPilotVerticalVelocity,
-      };
-      baton->send(send_to_baton);
-      last_send_timestamp = get_current_timestamp();
+      send_current_pilot_data();
     }
   }
   return 0;
@@ -149,15 +169,27 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   headingFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/mag_psi");
   headingPilotRef = XPLMFindDataRef(
       "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
+  yawFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/psi");
+  rollFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/phi");
+  rollPilotRef =
+      XPLMFindDataRef("sim/cockpit2/gauges/indicators/roll_AHARS_deg_pilot");
+  pitchFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/theta");
+  pitchPilotRef =
+      XPLMFindDataRef("sim/cockpit2/gauges/indicators/pitch_AHARS_deg_pilot");
+  gforceHorizontalRef = XPLMFindDataRef("sim/flightmodel/forces/g_side");
+  gforceVerticalRef = XPLMFindDataRef("sim/flightmodel/forces/g_nrml");
 
   g_window = XPLMCreateWindowEx(&params);
   XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
   XPLMSetWindowTitle(g_window, "Positional Flight Data");
+  XPLMRegisterFlightLoopCallback(flight_loop_callback,
+                                 SEND_INTERVAL_MS / 1000.0f, NULL);
 
   return g_window != NULL;
 }
 
 PLUGIN_API void XPluginStop() {
+  XPLMUnregisterFlightLoopCallback(flight_loop_callback, NULL);
   XPLMDestroyWindow(g_window);
   g_window = NULL;
 }
@@ -223,6 +255,16 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   float currentPilotHeading = XPLMGetDataf(headingPilotRef);
   string headingPilotStr =
       build_str("Heading, Pilot", "°M", currentPilotHeading);
+  float currentPilotRoll = XPLMGetDataf(rollPilotRef);
+  string rollPilotStr = build_str("Roll, Pilot", "°", currentPilotRoll);
+  float currentPilotPitch = XPLMGetDataf(pitchPilotRef);
+  string pitchPilotStr = build_str("Pitch, Pilot", "°", currentPilotPitch);
+  float currentPilotYaw = XPLMGetDataf(yawFlightmodelRef);
+  string yawPilotStr =
+      build_str("Yaw, Pilot (from Flightmodel)", "°", currentPilotYaw);
+  float currentPilotGForce = XPLMGetDataf(gforceVerticalRef);
+  string gPilotStr =
+      build_str("G-Force, Pilot (Vert)", "G", currentPilotGForce);
 
   int last_offset = 10;
   auto get_next_y_offset = [&last_offset, t]() {
@@ -231,10 +273,17 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   };
 
   vector<string> draw_order = {
-      elevationFlightmodelStr,  elevationPilotStr,
-      airspeedFlightmodelStr,   verticalVelocityFlightmodelStr,
-      verticalVelocityPilotStr, headingFlightmodelStr,
+      elevationFlightmodelStr,
+      elevationPilotStr,
+      airspeedFlightmodelStr,
+      verticalVelocityFlightmodelStr,
+      verticalVelocityPilotStr,
+      headingFlightmodelStr,
       headingPilotStr,
+      rollPilotStr,
+      pitchPilotStr,
+      yawPilotStr,
+      gPilotStr,
   };
 
   for (string line : draw_order) {
@@ -271,12 +320,4 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
       (last_send_timestamp.empty() ? "Never" : last_send_timestamp);
   XPLMDrawString(col_text, button_right + 10, button_bottom + 8,
                  (char *)ts_label.c_str(), NULL, xplmFont_Proportional);
-
-  vector<float> send_to_baton = {
-      currentPilotElevation,
-      currentPilotAirspeed,
-      currentPilotHeading,
-      currentPilotVerticalVelocity,
-  };
-  baton->send(send_to_baton);
 }
