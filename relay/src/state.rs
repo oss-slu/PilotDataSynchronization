@@ -92,7 +92,7 @@ fn sanitize_field(s: &str) -> String {
         .replace(';', ",")
         .trim()
         .to_string()
-}
+} 
 fn normalize_baton_payload(raw: &str) -> Vec<String> {
     // trim whitespace, remove surrounding CR/LF
     let mut s = raw.trim().replace('\r', "").replace('\n', "");
