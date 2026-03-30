@@ -118,7 +118,7 @@ fn now_epoch_millis() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| std::time::Duration::from_secs(0));
     format!("{}.{:03}", now.as_secs(), now.subsec_millis())
-}
+} 
 
 // -- Buffered human logger --------------------------------------------------
 //
