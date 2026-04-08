@@ -4,9 +4,6 @@ Flight Phase and Event Labeling System
 This script applies rule-based labeling to raw flight telemetry data.
 Labels are assigned based on thresholds for altitude, velocity, vertical speed,
 heading, roll, and g-force parameters.
-
-Author: Pilot Training Data Synchronization Project
-Date: April 08, 2026
 """
 
 import pandas as pd
@@ -307,8 +304,8 @@ def main():
     """Main execution function."""
     # Define paths relative to inference folder
     inference_dir = Path(__file__).parent
-    input_file = inference_dir / 'Data' / 'raw_flight_data.csv'  # ← Updated
-    output_file = inference_dir / 'Data' / 'labeled_flight_data.csv'  # ← Updated
+    input_file = inference_dir / 'Data' / 'raw_flight_data_updated.csv'  # ← input file
+    output_file = inference_dir / 'Data' / 'labeled_flight_data.csv'  # ← output file
     
     logger.info("="*60)
     logger.info("Flight Event Labeling System")
