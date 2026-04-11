@@ -153,7 +153,7 @@ fn now_epoch_millis() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| StdDuration::from_secs(0));
     format!("{}.{:03}", now.as_secs(), now.subsec_millis())
-}
+} 
 
 // -- Buffered human logger --------------------------------------------------
 const LOG_FLUSH_INTERVAL_MS: u64 = 2000;
