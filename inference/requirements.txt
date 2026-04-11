@@ -1,0 +1,8 @@
+# Python dependencies for flight event labeling system
+# Install with: py -m pip install -r requirements.txt
+
+# Data manipulation and analysis
+pandas>=1.5.0
+
+# Numerical computing
+numpy>=1.23.0
