@@ -150,6 +150,22 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.heading_toggle = value;
             Task::none()
         }
+        M::RollToggle(value) => {
+            state.roll_toggle = value;
+            Task::none()
+        }
+        M::PitchToggle(value) => {
+            state.pitch_toggle = value;
+            Task::none()
+        }
+        M::YawToggle(value) => {
+            state.yaw_toggle = value;
+            Task::none()
+        }
+        M::GForceToggle(value) => {
+            state.gforce_toggle = value;
+            Task::none()
+        }
         M::CreateXMLFile => create_xml_file(state),
         M::CardOpen => {
             state.card_open = true;
@@ -185,8 +201,16 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
     };
     downloads_path.push("iMotions.xml");
 
-    // Validate toggles
-    if !state.altitude_toggle && !state.airspeed_toggle && !state.vertical_airspeed_toggle && !state.heading_toggle {
+    // Validate toggles - check if all dataref toggles are false
+    if !state.altitude_toggle
+        && !state.airspeed_toggle
+        && !state.vertical_airspeed_toggle
+        && !state.heading_toggle
+        && !state.roll_toggle
+        && !state.pitch_toggle
+        && !state.yaw_toggle
+        && !state.gforce_toggle
+    {
         state.error_message = Some("Please select at least one dataref toggle".into());
         return Task::none();
     }
@@ -217,6 +241,36 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
         contents.push_str("\t\t<Field Id=\"PilotHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
         contents.push_str("\t</Sample>\n");
     }
+
+    // New samples for Roll, Pitch, Yaw, G-Force
+    if state.roll_toggle {
+        contents.push_str("\t<Sample Id=\"RollSync\" Name=\"Roll Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelRoll\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotRoll\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
+    if state.pitch_toggle {
+        contents.push_str("\t<Sample Id=\"PitchSync\" Name=\"Pitch Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelPitch\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotPitch\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
+    if state.yaw_toggle {
+        contents.push_str("\t<Sample Id=\"YawSync\" Name=\"Yaw Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelYaw\" Range=\"Variable\" Min=\"-180\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotYaw\" Range=\"Variable\" Min=\"-180\" Max=\"360\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
+    if state.gforce_toggle {
+        contents.push_str("\t<Sample Id=\"GForceSync\" Name=\"G-Force Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelGForce\" Range=\"Variable\" Min=\"-10\" Max=\"10\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotGForce\" Range=\"Variable\" Min=\"-10\" Max=\"10\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
     contents.push_str("</EventSource>");
 
     match File::create(&downloads_path) {

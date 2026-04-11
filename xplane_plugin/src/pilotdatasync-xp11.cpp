@@ -2,6 +2,7 @@
 // "Hello, World" plugin code found here:
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <iostream>
@@ -49,7 +50,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
 // An opaque handle to the window we will create
 static XPLMWindowID g_window;
 
-// DataRef Identifiers
+// DataRef Identifiers (use lowercase variable names consistently)
 static XPLMDataRef elevationFlightmodelRef;
 static XPLMDataRef elevationPilotRef;
 static XPLMDataRef airspeedFlightmodelRef;
@@ -58,10 +59,26 @@ static XPLMDataRef verticalVelocityFlightmodelRef;
 static XPLMDataRef verticalVelocityPilotRef;
 static XPLMDataRef headingFlightmodelRef;
 static XPLMDataRef headingPilotRef;
+// Additional DataRefs for roll/pitch/yaw/g-force (note: no yawPilotRef — yaw
+// pilot gauge not available)
+static XPLMDataRef yawFlightmodelRef;
+static XPLMDataRef rollFlightmodelRef;
+static XPLMDataRef rollPilotRef;
+static XPLMDataRef pitchFlightmodelRef;
+static XPLMDataRef pitchPilotRef;
+// g-force now provided as horizontal (side) and vertical (normal) components
+static XPLMDataRef gforceHorizontalRef;
+static XPLMDataRef gforceVerticalRef;
 
 // baton handle -- a "Box" is the name for a Rust pointer. This Box is handled
 // by the cxx crate interface and acts like a normal pointer.
 rust::cxxbridge1::Box<Baton> baton = new_baton_handle();
+
+// Throttling mechanism to limit send frequency
+static std::chrono::steady_clock::time_point last_send_time =
+    std::chrono::steady_clock::now();
+static const int SEND_INTERVAL_MS =
+    50; // Send every 50ms (20 Hz) instead of every frame
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
@@ -105,8 +122,8 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
     if (x >= button_left && x <= button_right && y >= button_bottom &&
         y <= button_top) {
       // Gather data as in draw_pilotdatasync_plugin
-      float msToFeetRate = 3.28084;
-      float msToKnotsRate = 1.94384;
+      float msToFeetRate = 3.28084f;
+      float msToKnotsRate = 1.94384f;
       float currentPilotElevation =
           XPLMGetDataf(elevationPilotRef) * msToFeetRate;
       float currentPilotAirspeed =
@@ -115,11 +132,20 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
       float currentPilotVerticalVelocity =
           XPLMGetDataf(verticalVelocityPilotRef);
 
+      // New fields
+      float currentPilotRoll = XPLMGetDataf(rollPilotRef);
+      float currentPilotPitch = XPLMGetDataf(pitchPilotRef);
+      // Yaw pilot DataRef isn't available; use flightmodel yaw as fallback
+      float currentPilotYaw = XPLMGetDataf(yawFlightmodelRef);
+      // Use vertical (normal) g for the "Pilot G" value to preserve previous
+      // single-G field behavior
+      float currentPilotGForce = XPLMGetDataf(gforceVerticalRef);
+
       std::vector<float> send_to_baton = {
-          currentPilotElevation,
-          currentPilotAirspeed,
-          currentPilotHeading,
-          currentPilotVerticalVelocity,
+          currentPilotElevation, currentPilotAirspeed,
+          currentPilotHeading,   currentPilotVerticalVelocity,
+          currentPilotRoll,      currentPilotPitch,
+          currentPilotYaw,       currentPilotGForce,
       };
       baton->send(send_to_baton);
 
@@ -171,7 +197,7 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   airspeedPilotRef =
       XPLMFindDataRef("sim/cockpit2/gauges/indicators/airspeed_kts_pilot");
 
-  // DataRefs for Vertical Velocitys
+  // DataRefs for Vertical Velocity
   verticalVelocityFlightmodelRef =
       XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
   verticalVelocityPilotRef =
@@ -181,6 +207,20 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   headingFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/mag_psi");
   headingPilotRef = XPLMFindDataRef(
       "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot");
+
+  // Obtain datarefs for Yaw, Roll, Pitch
+  yawFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/psi");
+  rollFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/phi");
+  rollPilotRef =
+      XPLMFindDataRef("sim/cockpit2/gauges/indicators/roll_AHARS_deg_pilot");
+
+  pitchFlightmodelRef = XPLMFindDataRef("sim/flightmodel/position/theta");
+  pitchPilotRef =
+      XPLMFindDataRef("sim/cockpit2/gauges/indicators/pitch_AHARS_deg_pilot");
+
+  // g-force components (horizontal/side and vertical/normal)
+  gforceHorizontalRef = XPLMFindDataRef("sim/flightmodel/forces/g_side");
+  gforceVerticalRef = XPLMFindDataRef("sim/flightmodel/forces/g_nrml");
 
   g_window = XPLMCreateWindowEx(&params);
 
@@ -221,8 +261,8 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   float col_white[] = {1.0, 1.0, 1.0}; // RGB
 
   // Dataref provides altitudes in meters, need to convert to feet and knots
-  float msToFeetRate = 3.28084;
-  float msToKnotsRate = 1.94384;
+  float msToFeetRate = 3.28084f;
+  float msToKnotsRate = 1.94384f;
 
   auto build_str = [](string label, string unit, float value) {
     string suffix = !std::isnan(value) ? std::to_string(value) + " " + unit
@@ -257,7 +297,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
   float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
   string verticalVelocityPilotStr = build_str(
-      "Vertical Velocity, Flightmodel", "ft/min", currentPilotVerticalVelocity);
+      "Vertical Velocity, Pilot", "ft/min", currentPilotVerticalVelocity);
 
   float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
   string headingFlightmodelStr =
@@ -266,6 +306,40 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   float currentPilotHeading = XPLMGetDataf(headingPilotRef);
   string headingPilotStr =
       build_str("Heading, Pilot", "°M", currentPilotHeading);
+
+  // New parameters (roll, pitch, yaw, g-force)
+  float currentFlightmodelRoll = XPLMGetDataf(rollFlightmodelRef);
+  string rollFlightmodelStr =
+      build_str("Roll, Flightmodel", "°", currentFlightmodelRoll);
+  float currentPilotRoll = XPLMGetDataf(rollPilotRef);
+  string rollPilotStr = build_str("Roll, Pilot", "°", currentPilotRoll);
+
+  float currentFlightmodelPitch = XPLMGetDataf(pitchFlightmodelRef);
+  string pitchFlightmodelStr =
+      build_str("Pitch, Flightmodel", "°", currentFlightmodelPitch);
+  float currentPilotPitch = XPLMGetDataf(pitchPilotRef);
+  string pitchPilotStr = build_str("Pitch, Pilot", "°", currentPilotPitch);
+
+  float currentFlightmodelYaw = XPLMGetDataf(yawFlightmodelRef);
+  // use flightmodel yaw as the pilot yaw value since yaw pilot DataRef is not
+  // available
+  float currentPilotYaw = currentFlightmodelYaw;
+  string yawPilotStr =
+      build_str("Yaw, Pilot (from Flightmodel)", "°", currentPilotYaw);
+  string yawFlightmodelStr =
+      build_str("Yaw, Flightmodel", "°", currentFlightmodelYaw);
+
+  // g-force: show both vertical (normal) and horizontal (side) components.
+  float currentFlightmodelGVert = XPLMGetDataf(gforceVerticalRef);
+  string gFlightmodelVertStr =
+      build_str("G-Force, Flightmodel (Vert)", "G", currentFlightmodelGVert);
+  float currentFlightmodelGHoriz = XPLMGetDataf(gforceHorizontalRef);
+  string gFlightmodelHorizStr =
+      build_str("G-Force, Flightmodel (Horiz)", "G", currentFlightmodelGHoriz);
+
+  // For backward compatibility use vertical G as the single "Pilot G" value
+  float currentPilotG = currentFlightmodelGVert;
+  string gPilotStr = build_str("G-Force, Pilot (Vert)", "G", currentPilotG);
 
   // use this get_next_y_offset() lambda function to find the next vertical
   // pixel start position on the window for string rendering for you.
@@ -276,10 +350,22 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   };
 
   vector<string> draw_order = {
-      elevationFlightmodelStr,  elevationPilotStr,
-      airspeedFlightmodelStr,   verticalVelocityFlightmodelStr,
-      verticalVelocityPilotStr, headingFlightmodelStr,
+      elevationFlightmodelStr,
+      elevationPilotStr,
+      airspeedFlightmodelStr,
+      verticalVelocityFlightmodelStr,
+      verticalVelocityPilotStr,
+      headingFlightmodelStr,
       headingPilotStr,
+      rollFlightmodelStr,
+      rollPilotStr,
+      pitchFlightmodelStr,
+      pitchPilotStr,
+      yawPilotStr,
+      yawPilotStr,
+      gFlightmodelVertStr,
+      gFlightmodelHorizStr,
+      gPilotStr,
   };
 
   // print each line in order on the window
@@ -322,13 +408,37 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   XPLMDrawString(col_text, button_right + 10, button_bottom + 8,
                  (char *)ts_label.c_str(), NULL, xplmFont_Proportional);
 
-  // Send flight data to Relay via Baton. Order may be incorrect, and iMotions'
-  // .xml file must be modified to reflect any changes here
-  vector<float> send_to_baton = {
-      currentPilotElevation,
-      currentPilotAirspeed,
-      currentPilotHeading,
-      currentPilotVerticalVelocity,
-  };
-  baton->send(send_to_baton);
+  // THROTTLE SENDING TO PREVENT SOCKET OVERFLOW
+  auto now = std::chrono::steady_clock::now();
+  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now - last_send_time)
+                        .count();
+
+  if (elapsed_ms >= SEND_INTERVAL_MS) {
+    // Send flight data to Relay via Baton. Order must match Relay expectations:
+    // current behavior: plugin sends Pilot-only values in order:
+    //  [Altitude, Airspeed, Heading, VerticalVelocity, Roll, Pitch, Yaw,
+    //  G-Force]
+    // Keep that order and use flightmodel yaw and vertical G for compatibility.
+    vector<float> send_to_baton = {
+        currentPilotElevation, currentPilotAirspeed,
+        currentPilotHeading,   currentPilotVerticalVelocity,
+        currentPilotRoll,      currentPilotPitch,
+        currentPilotYaw,       currentPilotG,
+    };
+
+    {
+      char dbg[256];
+      std::snprintf(dbg, sizeof(dbg),
+                    "[PDS PLUGIN] Draw send -> alt=%.3f air=%.3f hdg=%.3f "
+                    "vv=%.3f roll=%.3f pitch=%.3f yaw=%.3f g=%.3f\n",
+                    send_to_baton[0], send_to_baton[1], send_to_baton[2],
+                    send_to_baton[3], send_to_baton[4], send_to_baton[5],
+                    send_to_baton[6], send_to_baton[7]);
+      XPLMDebugString(dbg);
+    }
+    baton->send(send_to_baton);
+
+    last_send_time = now;
+  }
 }
