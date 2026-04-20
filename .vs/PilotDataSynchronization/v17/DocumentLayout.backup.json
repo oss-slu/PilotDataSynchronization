@@ -3,12 +3,32 @@
   "WorkspaceRootPath": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README_TRAINING.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\README_TRAINING.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\train_model.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\train_model.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\README.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\requirements.txt||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\requirements.txt||{8B382828-6202-11D1-8870-0000F87579D2}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Results\\results.txt||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\Results\\results.txt||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Models\\sample_Models.txt||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\Models\\sample_Models.txt||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\state.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\generate_balanced_data.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:inference\\generate_balanced_data.py||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\label_generator.py||{8B382828-6202-11D1-8870-0000F87579D2}",
@@ -43,10 +63,6 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\view.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\state.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\update.rs||{3B902123-F8A7-4915-9F01-361F908088D0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:relay\\src\\update.rs||{3B902123-F8A7-4915-9F01-361F908088D0}"
     }
@@ -71,58 +87,96 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "README.md",
-              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README.md",
-              "RelativeDocumentMoniker": "inference\\README.md",
-              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README.md",
-              "RelativeToolTip": "inference\\README.md",
-              "ViewState": "AgIAABcAAAAAAAAAAAAqwEAAAAAjAAAAAAAAAA==",
+              "Title": "README_TRAINING.md",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README_TRAINING.md",
+              "RelativeDocumentMoniker": "inference\\README_TRAINING.md",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README_TRAINING.md",
+              "RelativeToolTip": "inference\\README_TRAINING.md",
+              "ViewState": "AgIAAAcAAAAAAAAAAAAUwCYAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
-              "WhenOpened": "2026-04-08T23:01:22.989Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "requirements.txt",
-              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\requirements.txt",
-              "RelativeDocumentMoniker": "inference\\requirements.txt",
-              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\requirements.txt",
-              "RelativeToolTip": "inference\\requirements.txt",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAAANAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003109|",
-              "WhenOpened": "2026-04-08T22:59:37.595Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "validate_labels.py",
-              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\validate_labels.py",
-              "RelativeDocumentMoniker": "inference\\validate_labels.py",
-              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\validate_labels.py",
-              "RelativeToolTip": "inference\\validate_labels.py",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABYAAAAyAAAAAAAAAA==",
-              "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHeSURBVDhPpVMxa1NRFP7ebZLSlgaltNpSVCySRUxL0NAh4FJpHWpxcZAUBEPG/AKHDsVBN5eGrCnoYKCDoDiUCKKBjtZBUZtJ2ojYJr40ue\u002B\u002B47k3VzD0hQr94OOed8853/k47z2cCETk2NAgk8mQDQMhhFjK5/Mb9vEotIDruoEsFovEzVvZbPaWLTcQ9uxCpVLp4l\u002Bk0\u002BlEPB5/wIPm7RVC9uxCMpm0UTdKpRKi0WiCQy3wUt8FCvw7VSNxbRapG4voDwucGgyjXC7bzH84ePt1HysbH/GhWoNstzA1OoSFhZuxQqFg8sfu4FutAd\u002BT8KSEYm7v7GJ0YnLClgYLaAcjU9N4Vx9Dda8OBz7OjwywSNsIXY39vEL7TxWpxv2eO3hWHUZ19xc8ti25UdvXzdpNWH0BDj8JiLOrPXfweOu9mRgRhOXUEPr7IiBfYeacB9HaBNRvQH4f6\u002BlgMERwGxJP7grEoq9shj9Uz\u002BVGpmIi4vXcwdzlcePgzLAuZPiSGw869Jg\u002Biw1Mvw50oLGcuoh71y8h1HwB1Js8UfFLnwScNnBhdYVLWsy1IwK5XM5GHaw9uu0LeSCMddZA32lz7zjOQxMcByK1SPU3O/Rjnai2fkjNz8/5L77TyQJ/AJc67LNf3QeWAAAAAElFTkSuQmCC",
-              "WhenOpened": "2026-04-08T22:56:42.591Z",
+              "WhenOpened": "2026-04-20T07:39:10.193Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "label_generator.py",
-              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\label_generator.py",
-              "RelativeDocumentMoniker": "inference\\label_generator.py",
-              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\label_generator.py",
-              "RelativeToolTip": "inference\\label_generator.py",
-              "ViewState": "AgIAACABAAAAAAAAAAAAAFIBAAAKAAAAAAAAAA==",
+              "Title": "README.md",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README.md",
+              "RelativeDocumentMoniker": "inference\\README.md",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\README.md",
+              "RelativeToolTip": "inference\\README.md",
+              "ViewState": "AgIAACcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-04-20T07:38:19.969Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "train_model.py",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\train_model.py",
+              "RelativeDocumentMoniker": "inference\\train_model.py",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\train_model.py",
+              "RelativeToolTip": "inference\\train_model.py",
+              "ViewState": "AgIAAGYAAAAAAAAAAAAAAA0AAAANAAAAAAAAAA==",
               "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHeSURBVDhPpVMxa1NRFP7ebZLSlgaltNpSVCySRUxL0NAh4FJpHWpxcZAUBEPG/AKHDsVBN5eGrCnoYKCDoDiUCKKBjtZBUZtJ2ojYJr40ue\u002B\u002B47k3VzD0hQr94OOed8853/k47z2cCETk2NAgk8mQDQMhhFjK5/Mb9vEotIDruoEsFovEzVvZbPaWLTcQ9uxCpVLp4l\u002Bk0\u002BlEPB5/wIPm7RVC9uxCMpm0UTdKpRKi0WiCQy3wUt8FCvw7VSNxbRapG4voDwucGgyjXC7bzH84ePt1HysbH/GhWoNstzA1OoSFhZuxQqFg8sfu4FutAd\u002BT8KSEYm7v7GJ0YnLClgYLaAcjU9N4Vx9Dda8OBz7OjwywSNsIXY39vEL7TxWpxv2eO3hWHUZ19xc8ti25UdvXzdpNWH0BDj8JiLOrPXfweOu9mRgRhOXUEPr7IiBfYeacB9HaBNRvQH4f6\u002BlgMERwGxJP7grEoq9shj9Uz\u002BVGpmIi4vXcwdzlcePgzLAuZPiSGw869Jg\u002Biw1Mvw50oLGcuoh71y8h1HwB1Js8UfFLnwScNnBhdYVLWsy1IwK5XM5GHaw9uu0LeSCMddZA32lz7zjOQxMcByK1SPU3O/Rjnai2fkjNz8/5L77TyQJ/AJc67LNf3QeWAAAAAElFTkSuQmCC",
-              "WhenOpened": "2026-04-08T22:56:03.767Z",
+              "WhenOpened": "2026-04-20T07:34:00.045Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "results.txt",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Results\\results.txt",
+              "RelativeDocumentMoniker": "inference\\Results\\results.txt",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Results\\results.txt",
+              "RelativeToolTip": "inference\\Results\\results.txt",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003109|",
+              "WhenOpened": "2026-04-20T07:33:28.742Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 4,
+              "Title": "sample_Models.txt",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Models\\sample_Models.txt",
+              "RelativeDocumentMoniker": "inference\\Models\\sample_Models.txt",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Models\\sample_Models.txt",
+              "RelativeToolTip": "inference\\Models\\sample_Models.txt",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003109|",
+              "WhenOpened": "2026-04-20T07:33:15.056Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "generate_balanced_data.py",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\generate_balanced_data.py",
+              "RelativeDocumentMoniker": "inference\\generate_balanced_data.py",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\generate_balanced_data.py",
+              "RelativeToolTip": "inference\\generate_balanced_data.py",
+              "ViewState": "AgIAALEAAAAAAAAAAAAkwN8AAAAKAAAAAAAAAA==",
+              "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHeSURBVDhPpVMxa1NRFP7ebZLSlgaltNpSVCySRUxL0NAh4FJpHWpxcZAUBEPG/AKHDsVBN5eGrCnoYKCDoDiUCKKBjtZBUZtJ2ojYJr40ue\u002B\u002B47k3VzD0hQr94OOed8853/k47z2cCETk2NAgk8mQDQMhhFjK5/Mb9vEotIDruoEsFovEzVvZbPaWLTcQ9uxCpVLp4l\u002Bk0\u002BlEPB5/wIPm7RVC9uxCMpm0UTdKpRKi0WiCQy3wUt8FCvw7VSNxbRapG4voDwucGgyjXC7bzH84ePt1HysbH/GhWoNstzA1OoSFhZuxQqFg8sfu4FutAd\u002BT8KSEYm7v7GJ0YnLClgYLaAcjU9N4Vx9Dda8OBz7OjwywSNsIXY39vEL7TxWpxv2eO3hWHUZ19xc8ti25UdvXzdpNWH0BDj8JiLOrPXfweOu9mRgRhOXUEPr7IiBfYeacB9HaBNRvQH4f6\u002BlgMERwGxJP7grEoq9shj9Uz\u002BVGpmIi4vXcwdzlcePgzLAuZPiSGw869Jg\u002Biw1Mvw50oLGcuoh71y8h1HwB1Js8UfFLnwScNnBhdYVLWsy1IwK5XM5GHaw9uu0LeSCMddZA32lz7zjOQxMcByK1SPU3O/Rjnai2fkjNz8/5L77TyQJ/AJc67LNf3QeWAAAAAElFTkSuQmCC",
+              "WhenOpened": "2026-04-08T23:14:58.374Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "label_generator.py",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\label_generator.py",
+              "RelativeDocumentMoniker": "inference\\label_generator.py",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\label_generator.py",
+              "RelativeToolTip": "inference\\label_generator.py",
+              "ViewState": "AgIAABoBAAAAAAAAAAAAACoBAABNAAAAAAAAAA==",
+              "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHeSURBVDhPpVMxa1NRFP7ebZLSlgaltNpSVCySRUxL0NAh4FJpHWpxcZAUBEPG/AKHDsVBN5eGrCnoYKCDoDiUCKKBjtZBUZtJ2ojYJr40ue\u002B\u002B47k3VzD0hQr94OOed8853/k47z2cCETk2NAgk8mQDQMhhFjK5/Mb9vEotIDruoEsFovEzVvZbPaWLTcQ9uxCpVLp4l\u002Bk0\u002BlEPB5/wIPm7RVC9uxCMpm0UTdKpRKi0WiCQy3wUt8FCvw7VSNxbRapG4voDwucGgyjXC7bzH84ePt1HysbH/GhWoNstzA1OoSFhZuxQqFg8sfu4FutAd\u002BT8KSEYm7v7GJ0YnLClgYLaAcjU9N4Vx9Dda8OBz7OjwywSNsIXY39vEL7TxWpxv2eO3hWHUZ19xc8ti25UdvXzdpNWH0BDj8JiLOrPXfweOu9mRgRhOXUEPr7IiBfYeacB9HaBNRvQH4f6\u002BlgMERwGxJP7grEoq9shj9Uz\u002BVGpmIi4vXcwdzlcePgzLAuZPiSGw869Jg\u002Biw1Mvw50oLGcuoh71y8h1HwB1Js8UfFLnwScNnBhdYVLWsy1IwK5XM5GHaw9uu0LeSCMddZA32lz7zjOQxMcByK1SPU3O/Rjnai2fkjNz8/5L77TyQJ/AJc67LNf3QeWAAAAAElFTkSuQmCC",
+              "WhenOpened": "2026-04-08T22:56:03.767Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
               "Title": "NewFile",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\NewFile",
               "RelativeDocumentMoniker": "inference\\NewFile",
@@ -130,12 +184,11 @@
               "RelativeToolTip": "inference\\NewFile",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-04-08T22:55:20.485Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-08T22:55:20.485Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 12,
               "Title": "raw_flight_data_updated.csv",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Data\\raw_flight_data_updated.csv",
               "RelativeDocumentMoniker": "inference\\Data\\raw_flight_data_updated.csv",
@@ -143,12 +196,36 @@
               "RelativeToolTip": "inference\\Data\\raw_flight_data_updated.csv",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002120|",
-              "WhenOpened": "2026-04-08T22:51:56.157Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-08T22:51:56.157Z"
             },
             {
               "$type": "Document",
               "DocumentIndex": 5,
+              "Title": "state.rs",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs",
+              "RelativeDocumentMoniker": "relay\\src\\state.rs",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs",
+              "RelativeToolTip": "relay\\src\\state.rs",
+              "ViewState": "AgIAAEEBAAAAAAAAAAAAAHsAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-03-24T20:17:38.828Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "validate_labels.py",
+              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\validate_labels.py",
+              "RelativeDocumentMoniker": "inference\\validate_labels.py",
+              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\validate_labels.py",
+              "RelativeToolTip": "inference\\validate_labels.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABYAAAAyAAAAAAAAAA==",
+              "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHeSURBVDhPpVMxa1NRFP7ebZLSlgaltNpSVCySRUxL0NAh4FJpHWpxcZAUBEPG/AKHDsVBN5eGrCnoYKCDoDiUCKKBjtZBUZtJ2ojYJr40ue\u002B\u002B47k3VzD0hQr94OOed8853/k47z2cCETk2NAgk8mQDQMhhFjK5/Mb9vEotIDruoEsFovEzVvZbPaWLTcQ9uxCpVLp4l\u002Bk0\u002BlEPB5/wIPm7RVC9uxCMpm0UTdKpRKi0WiCQy3wUt8FCvw7VSNxbRapG4voDwucGgyjXC7bzH84ePt1HysbH/GhWoNstzA1OoSFhZuxQqFg8sfu4FutAd\u002BT8KSEYm7v7GJ0YnLClgYLaAcjU9N4Vx9Dda8OBz7OjwywSNsIXY39vEL7TxWpxv2eO3hWHUZ19xc8ti25UdvXzdpNWH0BDj8JiLOrPXfweOu9mRgRhOXUEPr7IiBfYeacB9HaBNRvQH4f6\u002BlgMERwGxJP7grEoq9shj9Uz\u002BVGpmIi4vXcwdzlcePgzLAuZPiSGw869Jg\u002Biw1Mvw50oLGcuoh71y8h1HwB1Js8UfFLnwScNnBhdYVLWsy1IwK5XM5GHaw9uu0LeSCMddZA32lz7zjOQxMcByK1SPU3O/Rjnai2fkjNz8/5L77TyQJ/AJc67LNf3QeWAAAAAElFTkSuQmCC",
+              "WhenOpened": "2026-04-08T22:56:42.591Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
               "Title": "raw_flight_data.csv",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Data\\raw_flight_data.csv",
               "RelativeDocumentMoniker": "inference\\Data\\raw_flight_data.csv",
@@ -156,12 +233,11 @@
               "RelativeToolTip": "inference\\Data\\raw_flight_data.csv",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002120|",
-              "WhenOpened": "2026-04-08T22:51:55.302Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-08T22:51:55.302Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 11,
               "Title": "data_logger.py",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\inference\\Data\\data_logger.py",
               "RelativeDocumentMoniker": "inference\\Data\\data_logger.py",
@@ -169,12 +245,11 @@
               "RelativeToolTip": "inference\\Data\\data_logger.py",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHeSURBVDhPpVMxa1NRFP7ebZLSlgaltNpSVCySRUxL0NAh4FJpHWpxcZAUBEPG/AKHDsVBN5eGrCnoYKCDoDiUCKKBjtZBUZtJ2ojYJr40ue\u002B\u002B47k3VzD0hQr94OOed8853/k47z2cCETk2NAgk8mQDQMhhFjK5/Mb9vEotIDruoEsFovEzVvZbPaWLTcQ9uxCpVLp4l\u002Bk0\u002BlEPB5/wIPm7RVC9uxCMpm0UTdKpRKi0WiCQy3wUt8FCvw7VSNxbRapG4voDwucGgyjXC7bzH84ePt1HysbH/GhWoNstzA1OoSFhZuxQqFg8sfu4FutAd\u002BT8KSEYm7v7GJ0YnLClgYLaAcjU9N4Vx9Dda8OBz7OjwywSNsIXY39vEL7TxWpxv2eO3hWHUZ19xc8ti25UdvXzdpNWH0BDj8JiLOrPXfweOu9mRgRhOXUEPr7IiBfYeacB9HaBNRvQH4f6\u002BlgMERwGxJP7grEoq9shj9Uz\u002BVGpmIi4vXcwdzlcePgzLAuZPiSGw869Jg\u002Biw1Mvw50oLGcuoh71y8h1HwB1Js8UfFLnwScNnBhdYVLWsy1IwK5XM5GHaw9uu0LeSCMddZA32lz7zjOQxMcByK1SPU3O/Rjnai2fkjNz8/5L77TyQJ/AJc67LNf3QeWAAAAAElFTkSuQmCC",
-              "WhenOpened": "2026-04-08T22:51:53.087Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-08T22:51:53.087Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 13,
               "Title": "main.rs",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\main.rs",
               "RelativeDocumentMoniker": "relay\\src\\main.rs",
@@ -182,12 +257,11 @@
               "RelativeToolTip": "relay\\src\\main.rs",
               "ViewState": "AgIAACQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-03-24T22:06:20.002Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-24T22:06:20.002Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 14,
               "Title": "view.rs",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\view.rs",
               "RelativeDocumentMoniker": "relay\\src\\view.rs",
@@ -195,12 +269,11 @@
               "RelativeToolTip": "relay\\src\\view.rs",
               "ViewState": "AgIAAN0AAAAAAAAAAAAiwFgAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-03-24T20:31:48.547Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-24T20:31:48.547Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 11,
+              "DocumentIndex": 15,
               "Title": "update.rs",
               "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\update.rs",
               "RelativeDocumentMoniker": "relay\\src\\update.rs",
@@ -208,21 +281,7 @@
               "RelativeToolTip": "relay\\src\\update.rs",
               "ViewState": "AgIAAGAAAAAAAAAAAAAiwIIAAAAdAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-03-24T20:29:10.691Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 10,
-              "Title": "state.rs",
-              "DocumentMoniker": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs",
-              "RelativeDocumentMoniker": "relay\\src\\state.rs",
-              "ToolTip": "C:\\Users\\scorp\\source\\repos\\PilotDataSynchronization\\relay\\src\\state.rs",
-              "RelativeToolTip": "relay\\src\\state.rs",
-              "ViewState": "AgIAAD0CAAAAAAAAAAAiwB0CAAAuAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-03-24T20:17:38.828Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-24T20:29:10.691Z"
             }
           ]
         }

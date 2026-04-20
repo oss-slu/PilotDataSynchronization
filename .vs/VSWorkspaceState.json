@@ -1,6 +1,10 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\inference",
+    "\\relay",
+    "\\relay\\src"
   ],
+  "SelectedNode": "\\relay\\src\\state.rs",
   "PreviewInSolutionExplorer": false
 }
