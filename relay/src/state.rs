@@ -121,7 +121,7 @@ fn sanitize_field(s: &str) -> String {
         .replace(';', ",")
         .trim()
         .to_string()
-  
+}
 fn normalize_baton_payload(raw: &str) -> Vec<String> {
     let mut s = raw.trim().replace('\r', "").replace('\n', "");
     while s.starts_with(';') {
