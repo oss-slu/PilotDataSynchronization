@@ -231,7 +231,7 @@ def main():
     # Define paths relative to inference folder
     inference_dir = Path(__file__).parent
     data_file = inference_dir / 'Data' / 'labeled_flight_data.csv'
-    models_dir = inference_dir / 'models'
+    models_dir = inference_dir / 'Models'
     
     logger.info("="*60)
     logger.info("Flight Event Prediction - Model Training")

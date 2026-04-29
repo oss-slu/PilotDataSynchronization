@@ -147,7 +147,7 @@ def validate_labeled_dataset(file_path: Path) -> bool:
 def main():
     """Main execution function."""
     inference_dir = Path(__file__).parent
-    labeled_file = inference_dir / 'labeled_flight_data.csv'
+    labeled_file = inference_dir / 'Data' / 'labeled_flight_data.csv'
     
     if not labeled_file.exists():
         print(f"Error: {labeled_file} not found")

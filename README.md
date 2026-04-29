@@ -3,16 +3,33 @@
 - `relay`: External GUI program that takes the data extracted by `xplane_plugin` and sends it to iMotions over TCP
 - `baton`: C++ library for communicating with `relay`. Provides an object that handles inter-process communication (IPC) and abstracts over it for ease-of-use. Currently located in `xplane_plugin/subprojects`
 
+**Additional Components:**
+- `inference`: Python-based module for logging, labeling, and training a machine learning model using the collected flight data
+
 # Details
 ## High-Level View
 The data flow is as follows:
 - `xplane_plugin` extracts the data
 - `xplane_plugin` uses the `baton` library to send the data to the `relay` program
 - `relay` sends the data to iMotions
+- *(optional)* `inference` can log the same TCP data stream for dataset creation and model training
 
 `relay` and `baton` are developed by this team and are not external programs/libraries.
 
 `xplane_plugin` and `relay` are top level subprojects in the repo. It is currently undecided whether `baton` will be top level or not, and so for now will be found under `xplane_plugin/subprojects/`. In the event that we begin work on Prepar3D during this iteration, we can decide if `baton` is generic enough to use for both simulators and move it to the top level, or have a `baton` version for each simulator plugin as an internal dependency.
+
+#Data Being Sent:
+The system currently sends 8 flight parameters:
+- altitude  
+- heading  
+- vertical speed  
+- airspeed / velocity  
+- roll  
+- pitch  
+- yaw  
+- g-force  
+
+These are mapped in the relay to iMotions events such as `AltitudeSync`, `RollSync`, `YawSync`, etc.
 
 ## Mid-Level View
 ### Why `baton`?
@@ -22,14 +39,17 @@ However, this limitation only extends to what language the communication is comp
 
 A secondary benefit to using Rust over C++ for `baton` is that we can leverage Rust's superior concurrency and safety guarantees. By managing the threading and communication in the Rust library and providing the plugin only a very limited interface by which it can pass in values to be sent to `relay`, we make a worthwhile exchange. We trade up-front complexity for vastly reduced need for debugging further down the line, as our code is more likely to be sound. This is an important consideration, as the project will be passed on to new students for next iteration. It is a much better use of developer time to work on developing features instead of being mired in deeply complex concurrency concerns similar to the ones that appeared during the first iteration of this project when we began.
 
+#Additional Note:
+Recent updates include non-blocking IPC handling in `baton`, improved shutdown handling (killswitch flags), and more stable relay connection management to prevent repeated connection bugs.
+
 ## Visual Overview 
 ### Sample Metric Graphs
 Here is a link to the same metric graphs, the reason for this is so that youre able to see how the data is supposed to look, just in case you want to add to this project but you dont have access to Imotions. 
 https://docs.google.com/document/d/1KRa0qkovk8kHhXT9Z3p66wXcQFLISTJb8F0M-sINLZ8/edit?usp=sharing 
+
 ### System Data Flow Diagram
 For total understanding of how the data is actually being sent and where it works here is a flow diagram that shows how the data is being sent. 
 https://docs.google.com/document/d/1KRa0qkovk8kHhXT9Z3p66wXcQFLISTJb8F0M-sINLZ8/edit?usp=sharing 
-
 
 ## Low-Level View
 Work in progress.
@@ -72,4 +92,9 @@ Work in progress.
    - `meson test -C build`
    - `cd relay && cargo test`
    - `cd xplane_plugin/subprojects/baton && cargo test`
+#Additional Validation Notes:
+- Data logging has been tested with hundreds of samples with no missing values  
+- Labeling pipeline successfully processed over 16k rows, though some flight phase labels are still missing  
+- Final validation still requires a full real-time flight session with X-Plane + iMotions connected  
+
 Note: `.rust-toolchain.toml` will cause `rustup` (and CI) to prefer the stable toolchain and auto-install the components/targets listed, keeping local and CI toolchains aligned
