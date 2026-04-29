@@ -18,7 +18,7 @@ The data flow is as follows:
 
 `xplane_plugin` and `relay` are top level subprojects in the repo. It is currently undecided whether `baton` will be top level or not, and so for now will be found under `xplane_plugin/subprojects/`. In the event that we begin work on Prepar3D during this iteration, we can decide if `baton` is generic enough to use for both simulators and move it to the top level, or have a `baton` version for each simulator plugin as an internal dependency.
 
-#Data Being Sent:
+## Data Being Sent:
 The system currently sends 8 flight parameters:
 - altitude  
 - heading  
