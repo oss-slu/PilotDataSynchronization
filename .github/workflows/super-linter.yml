@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Super-Linter with Auto-Fix
-        uses: super-linter/super-linter@v7.2.1
+        uses: super-linter/super-linter@v8.3.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_ALL_CODEBASE: true

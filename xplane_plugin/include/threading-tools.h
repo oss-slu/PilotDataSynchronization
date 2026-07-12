@@ -16,7 +16,7 @@ struct ThreadMessage {
 
   ThreadMessage(float const (&values)[4], const bool tf)
       : values_for_packet{values[0], values[1], values[2], values[3]},
-        end_execution_flag(tf){};
+        end_execution_flag(tf) {};
 };
 
 class ThreadQueue {
