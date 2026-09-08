@@ -6,3 +6,9 @@ pandas>=1.5.0
 
 # Numerical computing
 numpy>=1.23.0
+
+# Machine learning (train_model.py)
+scikit-learn>=1.2.0
+
+# Model persistence (train_model.py)
+joblib>=1.2.0
