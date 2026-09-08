@@ -1,14 +1,18 @@
 # Python dependencies for flight event labeling system
-# Install with: py -m pip install -r requirements.txt
+#
+# Supported Python version: 3.9 - 3.12 (developed/tested with Python 3.11)
+#
+# Install with:
+#   python3 -m pip install -r inference/requirements.txt
 
 # Data manipulation and analysis
-pandas>=1.5.0
+pandas>=1.5.0,<4.0.0
 
 # Numerical computing
-numpy>=1.23.0
+numpy>=1.23.0,<3.0.0
 
-# Machine learning (train_model.py)
-scikit-learn>=1.2.0
+# Machine learning (train_model.py, test_model.py)
+scikit-learn>=1.2.0,<2.0.0
 
-# Model persistence (train_model.py)
-joblib>=1.2.0
+# Model persistence (train_model.py, test_model.py)
+joblib>=1.2.0,<2.0.0

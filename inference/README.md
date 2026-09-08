@@ -27,8 +27,8 @@ The system labels data with the following 13 event types:
 - **LANDING** - Final approach and touchdown (altitude < 500ft, descending)
 
 ### Maneuver Events
-- **TURN_LEFT** - Left turn (roll < -5° or heading change < -3°/s)
-- **TURN_RIGHT** - Right turn (roll > 5° or heading change > 3°/s)
+- **TURN_LEFT** - Left turn (roll < -5Â° or heading change < -3Â°/s)
+- **TURN_RIGHT** - Right turn (roll > 5Â° or heading change > 3Â°/s)
 
 ### Speed Events
 - **HIGH_SPEED** - Velocity > 200 knots
@@ -46,13 +46,33 @@ The system labels data with the following 13 event types:
 
 ### Prerequisites
 
-**Python 3.7 or higher required**
+**Supported Python version: 3.9 - 3.12 (developed/tested with Python 3.11)**
 
-Install dependencies:
-Using pip
-py -m pip install -r requirements.txt
-Or install packages directly
-py -m pip install pandas numpy
+Using [uv](https://docs.astral.sh/uv/) (recommended):
+
+```
+cd inference
+uv sync
+uv run python train_model.py
+```
+
+`uv sync` reads `inference/pyproject.toml`/`inference/uv.lock` and creates `inference/.venv` automatically.
+
+Or with a plain virtual environment:
+
+```
+python3 -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# macOS/Linux
+source .venv/bin/activate
+
+python3 -m pip install -r inference/requirements.txt
+```
+
+No other manual package installation is required.
 
 
 

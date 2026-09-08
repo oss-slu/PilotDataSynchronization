@@ -21,11 +21,17 @@ The `train_model.py` script trains a Random Forest classifier to predict flight 
 
 ## Prerequisites
 
-### Required Python Packages
-pip install pandas numpy scikit-learn joblib
+### Supported Python Version
 
-Or your in Python 3:
-py -m pip install scikit-learn pandas numpy joblib
+Python 3.9 - 3.12 (developed/tested with Python 3.11).
+
+### Required Python Packages
+
+Install all dependencies in one step from `inference/requirements.txt` (no separate manual installs needed):
+
+```
+python3 -m pip install -r inference/requirements.txt
+```
 
 ### Required Data
 Ensure you have labeled training data at:
