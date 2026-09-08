@@ -27,8 +27,8 @@ The system labels data with the following 13 event types:
 - **LANDING** - Final approach and touchdown (altitude < 500ft, descending)
 
 ### Maneuver Events
-- **TURN_LEFT** - Left turn (roll < -5° or heading change < -3°/s)
-- **TURN_RIGHT** - Right turn (roll > 5° or heading change > 3°/s)
+- **TURN_LEFT** - Left turn (roll < -5ï¿½ or heading change < -3ï¿½/s)
+- **TURN_RIGHT** - Right turn (roll > 5ï¿½ or heading change > 3ï¿½/s)
 
 ### Speed Events
 - **HIGH_SPEED** - Velocity > 200 knots
@@ -63,3 +63,11 @@ cd .. py label_generator.py
 3. Validate labels
 py validate_labels.py
 4. Use labeled data for ML training
+
+## Testing
+
+Run the inference unit tests with:
+
+```bash
+python -m pytest inference/tests -v
+```
