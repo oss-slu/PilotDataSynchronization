@@ -28,19 +28,19 @@ def validate_labeled_dataset(file_path: Path) -> bool:
     
     try:
         df = pd.read_csv(file_path)
-        print(f"✓ Successfully loaded dataset: {len(df)} rows")
+        print(f"[OK] Successfully loaded dataset: {len(df)} rows")
     except Exception as e:
-        print(f"✗ Error loading dataset: {e}")
+        print(f"[FAIL] Error loading dataset: {e}")
         return False
     
     # Check 1: No missing labels
     print("\n1. Checking for missing labels...")
     missing_count = df['event_label'].isna().sum()
     if missing_count > 0:
-        print(f"✗ FAILED: {missing_count} rows have missing labels")
+        print(f"[FAIL] FAILED: {missing_count} rows have missing labels")
         return False
     else:
-        print(f"✓ PASSED: All {len(df)} rows have labels")
+        print(f"[OK] PASSED: All {len(df)} rows have labels")
     
     # Check 2: Expected columns exist
     print("\n2. Checking required columns...")
@@ -49,10 +49,10 @@ def validate_labeled_dataset(file_path: Path) -> bool:
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
-        print(f"✗ FAILED: Missing columns: {missing_cols}")
+        print(f"[FAIL] FAILED: Missing columns: {missing_cols}")
         return False
     else:
-        print(f"✓ PASSED: All required columns present")
+        print(f"[OK] PASSED: All required columns present")
     
     # Check 3: Valid label set
     print("\n3. Checking label validity...")
@@ -72,7 +72,7 @@ def validate_labeled_dataset(file_path: Path) -> bool:
     if missing:
         print(f"⚠ INFO: Labels not used: {missing}")
     
-    print(f"✓ PASSED: Label validation complete")
+    print(f"[OK] PASSED: Label validation complete")
     
     # Check 4: Manual spot-check samples
     print("\n4. Manual spot-check of sample rows...")
@@ -111,26 +111,26 @@ def validate_labeled_dataset(file_path: Path) -> bool:
     
     # Altitude should be non-negative
     if (df['altitude'] < 0).any():
-        print("✗ WARNING: Negative altitude values found")
+        print("[FAIL] WARNING: Negative altitude values found")
         checks_passed = False
     
     # Velocity should be non-negative
     if (df['velocity'] < 0).any():
-        print("✗ WARNING: Negative velocity values found")
+        print("[FAIL] WARNING: Negative velocity values found")
         checks_passed = False
     
     # Heading should be 0-360
     if (df['heading'] < 0).any() or (df['heading'] > 360).any():
-        print("✗ WARNING: Heading values outside 0-360 range")
+        print("[FAIL] WARNING: Heading values outside 0-360 range")
         checks_passed = False
     
     # Roll typically -180 to 180
     if (df['roll'] < -180).any() or (df['roll'] > 180).any():
-        print("✗ WARNING: Roll values outside typical range")
+        print("[FAIL] WARNING: Roll values outside typical range")
         checks_passed = False
     
     if checks_passed:
-        print("✓ PASSED: All data ranges valid")
+        print("[OK] PASSED: All data ranges valid")
     
     print("\n" + "="*70)
     print("VALIDATION SUMMARY")
@@ -140,7 +140,7 @@ def validate_labeled_dataset(file_path: Path) -> bool:
     print(f"Coverage: {len(actual_labels)}/{len(expected_labels)} expected labels")
     print("="*70)
     
-    print("\n✓ VALIDATION COMPLETE - Dataset ready for ML training")
+    print("\n[OK] VALIDATION COMPLETE - Dataset ready for ML training")
     return True
 
 

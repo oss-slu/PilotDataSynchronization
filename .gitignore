@@ -34,3 +34,7 @@
 
 # Auto-generated iMotions.xml file from GUI
 iMotions.xml
+
+# Python virtual environments
+**/.venv/
+**/__pycache__/
