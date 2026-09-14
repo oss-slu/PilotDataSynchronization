@@ -67,10 +67,10 @@ def validate_labeled_dataset(file_path: Path) -> bool:
     missing = expected_labels - actual_labels
     
     if unexpected:
-        print(f"⚠ WARNING: Unexpected labels found: {unexpected}")
-    
+        print(f"[WARN] Unexpected labels found: {unexpected}")
+
     if missing:
-        print(f"⚠ INFO: Labels not used: {missing}")
+        print(f"[INFO] Labels not used: {missing}")
     
     print(f"[OK] PASSED: Label validation complete")
     

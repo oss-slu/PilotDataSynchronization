@@ -21,18 +21,28 @@ Current CSV output (`inference/Data/raw_flight_data.csv`):
 | Field | Type | Units | Source (DataRef) | Notes |
 |---|---|---|---|---|
 | `timestamp` | ISO-8601 string (UTC, ms precision) | — | wall-clock time at CSV write, not sim time | Set by `data_logger.py`, not the plugin |
-| `altitude` | float | feet, MSL | `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Pilot's barometric altimeter reading |
+| `altitude` | float | **currently feet × 3.28084, not feet** (bug, see below) | `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Pilot's barometric altimeter reading |
 | `heading` | float | degrees magnetic | `sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot` | AHARS-sourced |
 | `vertical_speed` | float | feet/min | `sim/cockpit2/gauges/indicators/vvi_fpm_pilot` | Positive = climbing |
-| `velocity` | float | knots | `sim/cockpit2/gauges/indicators/airspeed_kts_pilot` | Indicated airspeed, not true airspeed |
+| `velocity` | float | **currently knots × 1.94384, not knots** (bug, see below) | `sim/cockpit2/gauges/indicators/airspeed_kts_pilot` | Indicated airspeed, not true airspeed |
 | `roll` | float | degrees | `sim/cockpit2/gauges/indicators/roll_AHARS_deg_pilot` | |
 | `pitch` | float | degrees | `sim/cockpit2/gauges/indicators/pitch_AHARS_deg_pilot` | |
-| `yaw` | float | degrees | `sim/flightmodel/position/psi` | No pilot-side yaw DataRef exists; flightmodel yaw is used as a fallback |
+| `yaw` | float | degrees | `sim/flightmodel/position/psi` | This is X-Plane's **true heading**, not a yaw angle — no pilot-side yaw DataRef exists. In committed data it tracks `heading` within a near-constant magnetic-variation offset, so it's effectively a near-duplicate of `heading` rather than independent signal |
 | `g_force` | float | G | `sim/flightmodel/forces/g_nrml` | Vertical (normal) component only; horizontal/side G is read by the plugin but not sent |
 
-All values are pilot-side instrument readings (subject to simulated sensor
+Most values are pilot-side instrument readings (subject to simulated sensor
 error), not the aircraft's raw physical state — see note 2 in
-`key_datarefs.md`.
+`key_datarefs.md`. `yaw` and `g_force` are exceptions: both come from
+`sim/flightmodel/*` DataRefs rather than a pilot-side instrument.
+
+**Known bug — `altitude` and `velocity` are mis-scaled (tracked as #196):** the
+plugin multiplies `altitude_ft_pilot` (already feet) by 3.28084 and
+`airspeed_kts_pilot` (already knots) by 1.94384 before sending
+(`pilotdatasync-xp11.cpp:279,288`). The unit-conversion comment near that code
+only applies to the flightmodel DataRefs, not these two. Until the plugin is
+fixed, values in these two columns — and anything derived from them,
+including existing labels — are scaled by those factors, not in the units
+stated above.
 
 ## 2. What the client asked for vs. what exists
 
@@ -78,8 +88,8 @@ ingestion path differ depending on the answer.
 | Field | Type | Units | Source | Status |
 |---|---|---|---|---|
 | `timestamp` | ISO-8601 string, UTC | — | data_logger.py | exists |
-| `pilot_id` | string | — | pilot metadata join key | **missing — needs to be added to the send path** |
-| `flight_id` | string | — | generated per session | **missing** |
+| `pilot_id` | string | — | pilot metadata join key | **missing — see capture-point note below** |
+| `flight_id` | string | — | generated per session | **missing — see capture-point note below** |
 | `altitude` | float | ft MSL | plugin | exists |
 | `target_altitude` | float | ft MSL | scenario/autopilot (TBD, see §3) | **missing** |
 | `altitude_deviation` | float | ft | computed | derived, see §5 |
@@ -94,8 +104,17 @@ ingestion path differ depending on the answer.
 | `velocity_deviation` | float | kts | computed | derived, see §5 |
 | `roll` | float | deg | plugin | exists (extra, not part of deviation set) |
 | `pitch` | float | deg | plugin | exists (extra) |
-| `yaw` | float | deg | plugin | exists (extra) |
+| `yaw` | float | deg | plugin | exists (extra); true heading, see §1 |
 | `g_force` | float | G | plugin | exists (extra) |
+
+**`pilot_id` / `flight_id` capture point:** these can't be added at the
+plugin/relay layer without a larger change — baton's `send` takes a
+`CxxVector<f32>`, and the relay emits one fixed-format iMotions event per
+value, so there's no slot for a string id in the 20 Hz stream, and both ids
+are constant for a whole session anyway. Capturing them once at the logger —
+e.g. `--pilot-id` / `--flight-id` arguments on `data_logger.py`, written into
+each row or a session sidecar file — avoids touching the plugin, baton, and
+relay.
 
 ### 4b. Pilot metadata table (one row per pilot, joined on `pilot_id`)
 
@@ -135,6 +154,17 @@ Use a wrapped angular difference:
 angular_diff(actual, target) = ((actual - target + 180) mod 360) - 180
 ```
 
+This formula assumes **floored modulo** (Python's `%` and `numpy.mod` both
+behave this way). It does not hold as written in C++ or Rust, where `%`/`fmod`
+return a negative remainder for a negative left-hand side — both the plugin
+and the relay are implemented in those languages, so a direct port of this
+line would be wrong there. The formula's output range is also `[-180, 180)`:
+a difference of exactly +180° maps to -180°. `label_generator.py`'s
+`_calculate_heading_change` computes a related turn-rate quantity and returns
++180 for the same input, so the two aren't consistent at that boundary. If
+heading deviation ends up computed in more than one place, point every
+implementation at one shared helper rather than re-deriving this formula.
+
 For clustering, each deviation should also be available in absolute-value
 and/or normalized (e.g. z-scored per pilot or per metric) form, since raw
 units differ in scale (ft vs. deg vs. kts) — this will be finalized in the
@@ -155,3 +185,8 @@ feature-engineering step, not in this schema doc.
    telemetry to pilot metadata.
 5. **Timestamp is wall-clock, not simulation time** — fine for a single
    continuous session, but worth noting if flights are paused/resumed.
+6. **`altitude` and `velocity` are mis-scaled by the plugin** — not in the
+   feet/knots units this schema states, until the fix tracked in #196 lands.
+7. **`yaw` is effectively a duplicate of `heading`** (true heading vs.
+   magnetic heading, offset by magnetic variation) rather than independent
+   signal — worth reconsidering as a model feature.

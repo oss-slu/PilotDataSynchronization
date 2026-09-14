@@ -7,7 +7,9 @@ speed/altitude extremes, high-g events, and normal flight).
 
 ## Prerequisites
 
-**Supported Python version: 3.9 - 3.12 (developed/tested with Python 3.11)**
+**Supported Python version: 3.11 or newer** (matches `.python-version`; the committed models were
+pickled with a scikit-learn version that only installs on 3.11+, and earlier versions can't load
+them)
 
 Using [uv](https://docs.astral.sh/uv/) (recommended):
 
@@ -17,8 +19,9 @@ uv sync
 ```
 
 `uv sync` reads `inference/pyproject.toml` / `inference/uv.lock` and creates `inference/.venv`
-automatically. Prefix commands with `uv run` (e.g. `uv run python inference/label_generator.py`),
-or activate `inference/.venv` and run `python` directly.
+automatically. Prefix commands with `uv run` (e.g., from the project root, `uv run --project
+inference python inference/label_generator.py`), or activate `inference/.venv` and run `python`
+directly.
 
 Or with a plain virtual environment, from the project root:
 
@@ -31,8 +34,12 @@ python3 -m venv .venv
 # macOS/Linux
 source .venv/bin/activate
 
-python3 -m pip install -r inference/requirements.txt
+python -m pip install -r inference/requirements.txt
 ```
+
+`python3` is omitted deliberately: a Windows venv only contains `python.exe` (no `python3.exe`), so
+`python3 -m pip` would fall through to a system Python instead of the activated venv. `python -m
+pip` resolves to the venv's interpreter on all platforms once activated.
 
 No other manual package installation is required.
 
@@ -44,19 +51,23 @@ the project root** (`PilotDataSynchronization/`), with the virtual environment a
 | Step | Script | Purpose | Input | Output |
 |---|---|---|---|---|
 | 1 | `inference/Data/data_logger.py` | Collects live telemetry from the relay over TCP and appends it to a raw CSV | Telemetry socket stream | `inference/Data/raw_flight_data.csv` |
-| 1b | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline | none | `inference/Data/raw_flight_data.csv` |
-| 2 | `inference/label_generator.py` | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row | `inference/Data/raw_flight_data_updated.csv` | `inference/Data/labeled_flight_data.csv` |
+| 1b | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline | none | `inference/Data/synthetic_flight_data.csv` |
+| 2 | `inference/label_generator.py` | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row | `inference/Data/raw_flight_data.csv` | `inference/Data/labeled_flight_data.csv` |
 | 3 | `inference/validate_labels.py` | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution | `inference/Data/labeled_flight_data.csv` | Console report only (exit code 0/1) |
 | 4 | `inference/prepare_data.py` | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs — independent of the training step below | `inference/Data/labeled_flight_data.csv` | `inference/dataset/*.csv`, `label_mapping.json`, `scaler_params.json` |
-| 5 | `inference/train_model.py` | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall | `inference/Data/labeled_flight_data.csv` | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl` |
-| 6 | `inference/test_model.py` | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it | Trained model + labeled/test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json` |
+| 5 | `inference/train_model.py` | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall | `inference/Data/labeled_flight_data.csv` | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl`, `inference/dataset/test.csv` |
+| 6 | `inference/test_model.py` | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it | Trained model + held-out test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json` |
 
 ### Step 4 and step 5/6 are independent
 
-`train_model.py` and `test_model.py` read directly from `inference/Data/labeled_flight_data.csv` —
-they do **not** consume `prepare_data.py`'s output in `inference/dataset/`. Run `prepare_data.py`
-only if you need a separately scaled/split copy of the data (e.g. for a different model or
-notebook); it is not required to train or test the shipped Random Forest model.
+`train_model.py` reads directly from `inference/Data/labeled_flight_data.csv` — it does **not**
+consume `prepare_data.py`'s output in `inference/dataset/`. Run `prepare_data.py` only if you need
+a separately scaled/split copy of the data (e.g. for a different model or notebook); it is not
+required to train or test the shipped Random Forest model.
+
+`train_model.py` does, however, write its own held-out 20% split to `inference/dataset/test.csv`,
+which `test_model.py` reads first (see "Model details" below) — this is a different file from
+`prepare_data.py`'s `dataset/test_processed.csv` and does not depend on step 4 having run.
 
 ## Commands (run from the project root)
 
@@ -64,13 +75,12 @@ notebook); it is not required to train or test the shipped Random Forest model.
 # 1. Collect data from the relay (leave running while flying/simulating)
 python inference/Data/data_logger.py --port 5001
 
-#   ...or, without hardware, generate synthetic balanced data instead:
+#   ...or, without hardware, generate synthetic balanced data instead, then copy/rename
+#   inference/Data/synthetic_flight_data.csv to inference/Data/raw_flight_data.csv:
 python inference/generate_balanced_data.py
 
 # 2. Generate labels
-#    label_generator.py reads inference/Data/raw_flight_data_updated.csv by default.
-#    If you produced inference/Data/raw_flight_data.csv in step 1 instead, copy/rename
-#    it to raw_flight_data_updated.csv first (see Troubleshooting).
+#    label_generator.py reads inference/Data/raw_flight_data.csv by default.
 python inference/label_generator.py
 
 # 3. Validate the labeled dataset
@@ -125,8 +135,9 @@ thresholds.
 `train_model.py` trains a `RandomForestClassifier` on 8 input features (`altitude`, `heading`,
 `vertical_speed`, `velocity`, `roll`, `pitch`, `yaw`, `g_force`) against the `event_label` target,
 with an 80/20 stratified train/test split. When run, it: loads the labeled dataset, displays the
-class distribution, splits into train/test sets, trains the model, displays feature importance,
-evaluates on the test set, prints accuracy/precision/recall, and saves the trained model.
+class distribution, splits into train/test sets, saves the held-out test split to
+`inference/dataset/test.csv`, trains the model, displays feature importance, evaluates on the test
+set, prints accuracy/precision/recall, and saves the trained model.
 
 Model parameters:
 - `n_estimators`: 100 trees
@@ -140,18 +151,18 @@ Model parameters:
 
 `test_model.py` looks for a model in this order: `inference/Models/bestModel.pkl`, then
 `inference/Models/finalModel.pkl`. It looks for test data in this order:
-`inference/dataset/test.csv` (not produced by any script here — `prepare_data.py` writes
-`test_processed.csv`, so this candidate is normally skipped), then
-`inference/Data/labeled_flight_data.csv`, then `inference/labeled_flight_data.csv`.
+`inference/dataset/test.csv` (the held-out split `train_model.py` saves — the model never trained
+on these rows), then `inference/Data/labeled_flight_data.csv` (fallback; this is the full dataset
+the model *did* train on, so metrics from this fallback measure memorization, not generalization),
+then `inference/labeled_flight_data.csv`. Run `train_model.py` before `test_model.py` so the
+held-out split exists and the first candidate is used.
 
 ## Troubleshooting
 
-- **`FileNotFoundError` for `raw_flight_data_updated.csv` when running `label_generator.py`** —
-  the script hardcodes `inference/Data/raw_flight_data_updated.csv` as its input, which is not the
-  same filename that `data_logger.py` (`raw_flight_data.csv`) or `generate_balanced_data.py`
-  (also `raw_flight_data.csv`) write. Copy or rename your generated file to
-  `raw_flight_data_updated.csv` before running `label_generator.py`, or edit the `input_file`
-  path in `label_generator.py`'s `main()`.
+- **`FileNotFoundError` for `raw_flight_data.csv` when running `label_generator.py` after step
+  1b** — `generate_balanced_data.py` writes synthetic data to `inference/Data/synthetic_flight_data.csv`
+  rather than overwriting the real collected `raw_flight_data.csv`. Copy or rename it to
+  `raw_flight_data.csv` before running `label_generator.py`.
 - **`UnicodeEncodeError: 'charmap' codec can't encode character '✓'` on Windows** — several
   scripts print a ✓ character, and the default Windows console codepage (cp1252) can't encode it.
   Set `PYTHONUTF8=1` before running (e.g. `set PYTHONUTF8=1` in cmd.exe,
@@ -181,14 +192,18 @@ Model parameters:
 - `train_model.py` — Trains and saves a Random Forest classifier
 - `test_model.py` — Loads a trained model, runs inference, evaluates, and saves predictions
 - `requirements.txt` / `pyproject.toml` / `uv.lock` — Python dependencies
-- `Data/raw_flight_data.csv`, `Data/raw_flight_data_updated.csv` — Raw telemetry input (not tracked for new data; sample files present in this repo)
+- `Data/raw_flight_data.csv` — Raw telemetry input (not tracked for new data; a sample file is present in this repo); written by step 1 or renamed from step 1b's output
+- `Data/synthetic_flight_data.csv` — Output of `generate_balanced_data.py` (step 1b); rename to `raw_flight_data.csv` to feed it into step 2
 - `Data/labeled_flight_data.csv` — Labeled dataset output of step 2 / input to steps 3-6
-- `dataset/` — Output of `prepare_data.py` (optional)
+- `dataset/test.csv` — Held-out test split saved by `train_model.py`; read by `test_model.py`
+- `dataset/` (other files) — Output of `prepare_data.py` (optional)
 - `Models/` — Trained model files (`bestModel.pkl`, `finalModel.pkl`)
 - `predictions_output.csv`, `evaluation_metrics.json` — Output of `test_model.py`
 
 ## Verification
 
-This workflow was verified end-to-end from the project root in a fresh virtual environment
-(`python -m venv`, `pip install -r inference/requirements.txt`), running steps 1b through 6 in
-order and confirming each script's documented input/output files were produced correctly.
+Each script's documented input/output paths were checked to chain together correctly (step 1 or
+1b's renamed output → step 2 → step 3 → steps 4-6). The committed `Data/labeled_flight_data.csv`
+and the trained models under `Models/` come from a real logged flight, not from
+`generate_balanced_data.py`'s synthetic output — the committed dataset only contains the 9 event
+classes that flight produced, not all 13 the synthetic generator can create.

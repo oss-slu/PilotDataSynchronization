@@ -304,7 +304,7 @@ def main():
     """Main execution function."""
     # Define paths relative to inference folder
     inference_dir = Path(__file__).parent
-    input_file = inference_dir / 'Data' / 'raw_flight_data_updated.csv'  # ← input file
+    input_file = inference_dir / 'Data' / 'raw_flight_data.csv'  # ← input file
     output_file = inference_dir / 'Data' / 'labeled_flight_data.csv'  # ← output file
     
     logger.info("="*60)
