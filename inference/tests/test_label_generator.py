@@ -165,7 +165,7 @@ def test_high_altitude(labeler):
     row = make_row(
         altitude=15000,
         velocity=120,
-        vertical_speed=400
+        vertical_speed=400,
     )
 
     assert labeler.label_row(row) == "HIGH_ALTITUDE"
@@ -258,9 +258,10 @@ def test_high_speed_boundary(labeler):
     row = make_row(
         altitude=5000,
         velocity=200,
+        vertical_speed=400,
     )
 
-    assert labeler.label_row(row) != "HIGH_SPEED"
+    assert labeler.label_row(row) == "NORMAL_FLIGHT"
 
 
 def test_high_speed_above_boundary(labeler):
@@ -280,7 +281,7 @@ def test_low_speed_boundary(labeler):
         velocity=60,
     )
 
-    assert labeler.label_row(row) != "LOW_SPEED"
+    assert labeler.label_row(row) == "NORMAL_FLIGHT"
 
 
 def test_high_g_force_boundary(labeler):
@@ -289,9 +290,10 @@ def test_high_g_force_boundary(labeler):
         altitude=5000,
         velocity=120,
         g_force=1.5,
+        vertical_speed=400,
     )
 
-    assert labeler.label_row(row) != "HIGH_G_FORCE"
+    assert labeler.label_row(row) == "NORMAL_FLIGHT"
 
 
 def test_high_altitude_boundary(labeler):
@@ -299,9 +301,10 @@ def test_high_altitude_boundary(labeler):
     row = make_row(
         altitude=10000,
         velocity=120,
+        vertical_speed=400,
     )
 
-    assert labeler.label_row(row) != "HIGH_ALTITUDE"
+    assert labeler.label_row(row) == "NORMAL_FLIGHT"
 
 
 def test_low_altitude_boundary(labeler):
@@ -311,4 +314,4 @@ def test_low_altitude_boundary(labeler):
         velocity=150,
     )
 
-    assert labeler.label_row(row) != "LOW_ALTITUDE"
+    assert labeler.label_row(row) == "NORMAL_FLIGHT"
