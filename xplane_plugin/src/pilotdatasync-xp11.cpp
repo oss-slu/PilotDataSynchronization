@@ -121,13 +121,10 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
     // Button bounds are set in draw_pilotdatasync_plugin
     if (x >= button_left && x <= button_right && y >= button_bottom &&
         y <= button_top) {
-      // Gather data as in draw_pilotdatasync_plugin
-      float msToFeetRate = 3.28084f;
-      float msToKnotsRate = 1.94384f;
-      float currentPilotElevation =
-          XPLMGetDataf(elevationPilotRef) * msToFeetRate;
-      float currentPilotAirspeed =
-          XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+      // Gather data as in draw_pilotdatasync_plugin. The pilot datarefs are
+      // already in feet and knots, so no conversion is applied.
+      float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
+      float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
       float currentPilotHeading = XPLMGetDataf(headingPilotRef);
       float currentPilotVerticalVelocity =
           XPLMGetDataf(verticalVelocityPilotRef);
@@ -260,7 +257,9 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
 
   float col_white[] = {1.0, 1.0, 1.0}; // RGB
 
-  // Dataref provides altitudes in meters, need to convert to feet and knots
+  // The flightmodel datarefs are in meters and meters per second, so they are
+  // converted to feet and knots. The pilot datarefs are already in feet and
+  // knots.
   float msToFeetRate = 3.28084f;
   float msToKnotsRate = 1.94384f;
 
@@ -276,7 +275,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string elevationFlightmodelStr = build_str("Elevation, Flightmodel (MSL)",
                                              "ft", currentFlightmodelElevation);
 
-  float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * msToFeetRate;
+  float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
   string elevationPilotStr =
       build_str("Elevation, Pilot (MSL)", "ft", currentPilotElevation);
 
@@ -285,7 +284,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string airspeedFlightmodelStr =
       build_str("Airspeed, Flightmodel", "knots", currentFlightmodelAirspeed);
 
-  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
   string airspeedPilotStr =
       build_str("Airspeed, Pilot", "knots", currentPilotAirspeed);
 
