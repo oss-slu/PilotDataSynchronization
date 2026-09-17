@@ -245,8 +245,8 @@ def main():
 
     # Data paths (try multiple locations)
     data_candidates = [
-        inference_dir / 'dataset' / 'test.csv',  # Processed test set
-        inference_dir / 'Data' / 'labeled_flight_data.csv',  # Full labeled dataset
+        inference_dir / 'dataset' / 'test.csv',  # Held-out split saved by train_model.py
+        inference_dir / 'Data' / 'labeled_flight_data.csv',  # Full labeled dataset (fallback; overlaps with training data)
         inference_dir / 'labeled_flight_data.csv'  # Alternative location
     ]
 

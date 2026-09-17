@@ -2,6 +2,7 @@
 
 Outputs:
     - Trained model files: models/bestModel.pkl & models/finalModel.pkl
+    - Held-out test split: dataset/test.csv (read by test_model.py for evaluation)
     - Evaluation metrics: accuracy, precision, recall
 """
 
@@ -104,8 +105,26 @@ class FlightEventModelTrainer:
         
         logger.info(f"Training set: {len(X_train)} samples")
         logger.info(f"Test set: {len(X_test)} samples")
-        
+
         return X_train, X_test, y_train, y_test
+
+    def save_test_split(self, X_test: pd.DataFrame, y_test: pd.Series, output_path: Path):
+        """
+        Save the held-out test split so test_model.py can evaluate on data the
+        model never trained on, instead of re-scoring the full labeled dataset.
+
+        Args:
+            X_test: Held-out test features
+            y_test: Held-out test labels
+            output_path: Path to write the combined test CSV
+        """
+        test_df = X_test.copy()
+        test_df[self.target_column] = y_test
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        test_df.to_csv(output_path, index=False)
+
+        logger.info(f"[OK] Saved held-out test split ({len(test_df)} samples) to: {output_path}")
     
     def train_model(self, X_train: pd.DataFrame, y_train: pd.Series):
         """
@@ -232,6 +251,7 @@ def main():
     inference_dir = Path(__file__).parent
     data_file = inference_dir / 'Data' / 'labeled_flight_data.csv'
     models_dir = inference_dir / 'Models'
+    test_split_file = inference_dir / 'dataset' / 'test.csv'
     
     logger.info("="*60)
     logger.info("Flight Event Prediction - Model Training")
@@ -248,7 +268,10 @@ def main():
         
         # Prepare train/test split
         X_train, X_test, y_train, y_test = trainer.prepare_data(df, test_size=0.2)
-        
+
+        # Save the held-out split so test_model.py can evaluate on unseen data
+        trainer.save_test_split(X_test, y_test, test_split_file)
+
         # Train model
         trainer.train_model(X_train, y_train)
         
