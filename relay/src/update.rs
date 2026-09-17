@@ -259,8 +259,8 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
 
     if state.yaw_toggle {
         contents.push_str("\t<Sample Id=\"YawSync\" Name=\"Yaw Synchronization\">\n");
-        contents.push_str("\t\t<Field Id=\"FlightModelYaw\" Range=\"Variable\" Min=\"-180\" Max=\"360\" />\n");
-        contents.push_str("\t\t<Field Id=\"PilotYaw\" Range=\"Variable\" Min=\"-180\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelYaw\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotYaw\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
         contents.push_str("\t</Sample>\n");
     }
 
