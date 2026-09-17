@@ -128,16 +128,17 @@ Packets are semicolon-delimited and CRLF-terminated. The value appears twice bec
 
 ### No iMotions? Use the mock server
 
-`src/server/` is a minimal TCP listener you can point the relay at to confirm that it connects and transmits:
+`src/server/` is a minimal TCP listener you can point the relay at to watch the data stream:
 
 ```bash
 cd src/server
-cargo run          # listening on port 7878
+cargo run              # listening on 127.0.0.1:9999
+cargo run -- 7878      # or pick another port
 ```
 
-Enter `127.0.0.1:7878` in the relay and press `Connect TCP`.
+Enter `127.0.0.1:9999` in the relay and press `Connect TCP`.
 
-> The mock server reads a single buffer per connection and does not loop, so it prints only the first packet it receives, not a continuous stream. It is enough to prove that the relay connects and sends, and no more.
+The mock server prints every packet it receives, numbered, until the relay disconnects. It does not reply to the relay.
 
 ## Verifying it works
 
