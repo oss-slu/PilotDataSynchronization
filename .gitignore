@@ -44,3 +44,7 @@ inference/predictions_output.csv
 inference/evaluation_metrics.json
 inference/Models/*.pkl
 inference/dataset/test.csv
+
+# Local build archives
+/xplane_plugin.zip
+/src.zip
