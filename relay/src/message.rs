@@ -52,6 +52,9 @@ pub(crate) enum FromIpcThreadMessage {
 pub(crate) enum ToTcpThreadMessage {
     // outgoing payload to TCP thread
     Send(String),
+
+    // a fully built packet to write as-is, used by the Send Packet button
+    SendRaw(String),
 }
 
 pub(crate) enum FromTcpThreadMessage {

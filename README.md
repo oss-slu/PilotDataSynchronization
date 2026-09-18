@@ -95,7 +95,7 @@ Then, in order:
 5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
 6. Start X-Plane. Flight data now flows automatically.
 
-> The `Send Packet` button does not send anything. It only records a timestamp, which is not displayed anywhere. Ignore it, the data stream is automatic.
+> The `Send Packet` button sends one test packet, `E;1;PilotDataSync;;;;;AltitudeSync;0;0`, and shows the time it was sent next to the button. It is a connection check and needs TCP connected, not X-Plane. Avoid pressing it during a recording, since iMotions receives the zeros as a real altitude sample. The live data stream is automatic and does not need this button.
 
 Two more behaviors that catch people out:
 

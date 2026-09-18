@@ -3,8 +3,11 @@ use std::fs::File;
 use std::io::Write;
 use std::time::{Duration as StdDuration, Instant};
 
+use chrono::Local;
+
 use crate::{
-    message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage, Message, State,
+    message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage,
+    state::build_test_packet, Message, State,
 };
 
 fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
@@ -181,9 +184,18 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::SendPacket => {
-            let now = std::time::SystemTime::now();
-            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-            state.last_send_timestamp = Some(format!("{}", duration.as_secs()));
+            let connected = state.is_tcp_connected();
+            match state.tcp_bichannel.as_mut() {
+                Some(tcp_bi) if connected => {
+                    let _ = tcp_bi.send_to_child(ToTcpThreadMessage::SendRaw(build_test_packet()));
+                    state.error_message = None;
+                    state.last_send_timestamp = Some(Local::now().format("%H:%M:%S").to_string());
+                    state.log_event("Test packet queued".into());
+                }
+                _ => {
+                    state.error_message = Some("Connect TCP before sending a test packet".into());
+                }
+            }
             Task::none()
         }
     }
@@ -291,4 +303,60 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
     }
 
     Task::none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
+    use std::thread::sleep;
+
+    // Waits for a condition, polling every 10ms, so the test does not hang.
+    fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
+        for _ in 0..200 {
+            if condition() {
+                return true;
+            }
+            sleep(StdDuration::from_millis(10));
+        }
+        false
+    }
+
+    #[test]
+    fn send_packet_writes_one_test_packet_to_the_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+
+        let (stream, _) = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
+
+        update(&mut state, Message::SendPacket);
+
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read failed");
+
+        assert_eq!(line, "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n");
+        assert!(state.last_send_timestamp.is_some());
+        assert_eq!(state.error_message, None);
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn send_packet_without_tcp_reports_an_error() {
+        let mut state = State::default();
+
+        update(&mut state, Message::SendPacket);
+
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Connect TCP before sending a test packet")
+        );
+        assert!(state.last_send_timestamp.is_none());
+    }
 }

@@ -147,6 +147,12 @@ fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
     packet
 }
 
+// Dummy packet for the Send Packet button. AltitudeSync is used because
+// iMotions only accepts sample ids that appear in the generated iMotions.xml.
+pub(crate) fn build_test_packet() -> String {
+    build_imotions_packet("AltitudeSync", &["0".to_string(), "0".to_string()])
+}
+
 fn now_epoch_millis() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -623,6 +629,13 @@ impl State {
                             let _ = send_pair_if_present("YawSync", &mut idx);
                             let _ = send_pair_if_present("GForceSync", &mut idx);
                         }
+                        ToTcpThreadMessage::SendRaw(packet) => {
+                            let res = send_packet_and_debug(&mut stream, &packet);
+                            let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
+                            if let Err(e) = res {
+                                human_log("TCP", &format!("Test packet failed: {}", e));
+                            }
+                        }
                     }
                 }
                 std::thread::sleep(StdDuration::from_millis(1));
@@ -667,5 +680,18 @@ impl State {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_packet_matches_imotions_format() {
+        assert_eq!(
+            build_test_packet(),
+            "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n"
+        );
     }
 }
