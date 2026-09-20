@@ -145,7 +145,7 @@ In the relay's terminal, you should see roughly this sequence:
 
 ```
 [RELAY] listening on socket: "baton.sock"
-✓ Successfully created named pipe listener
+[OK] Successfully created named pipe listener
 [...] TCP - Successfully connected to iMotions server.
 [...] TX - packet len=50 text="E;1;PilotDataSync;;;;;AltitudeSync;1250.5;1250.5\r\n"
 ```

@@ -379,11 +379,11 @@ impl State {
                     return Ok(());
                 }
                 Ok(l) => {
-                    println!("✓ Successfully created named pipe listener");
+                    println!("[OK] Successfully created named pipe listener");
                     l
                 }
                 Err(e) => {
-                    eprintln!("✗ Failed to create listener: {} (kind: {:?})", e, e.kind());
+                    eprintln!("[ERROR] Failed to create listener: {} (kind: {:?})", e, e.kind());
                     return Err(anyhow!("Failed to create listener: {}", e));
                 }
             };
