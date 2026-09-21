@@ -17,12 +17,10 @@ Start the components in this order: iMotions (or the mock server) → relay → 
 | [rustup](https://rustup.rs) / Rust | stable | `relay`, `baton` | On Windows also run `rustup target add x86_64-pc-windows-gnu` |
 | Meson | >= 1.7.0 | `xplane_plugin` | `python -m pip install "meson>=1.7.0"` |
 | Ninja | latest | `xplane_plugin` | `python -m pip install ninja` |
-| Python 3 | 3.x | `inference`, and the plugin build | Must be callable as `python3`. See the note below |
+| Python 3 | 3.x | `inference`, and the plugin build | The plugin build uses the same Python that runs Meson |
 | mingw-w64 | any version supporting C++20 | `xplane_plugin` | Needed for native Windows builds too, not only for cross-compiling |
 
 The X-Plane SDK and GoogleTest are not manual installs. Meson downloads both automatically during `meson setup`, using the `.wrap` files in `xplane_plugin/subprojects/`. A failure at that step is a network problem, not a missing folder.
-
-> `python3` must be on your PATH. The baton build shells out to `python3 script.py` (see `xplane_plugin/subprojects/baton/meson.build`). On Windows the command is frequently only `python` or `py`, and the failure surfaces much later as `FileNotFoundError` from `shutil.copyfile`. Check with `python3 --version` before you build.
 
 ## Build everything
 
@@ -168,7 +166,7 @@ In the relay's window:
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |
 | The plugin never connects, even after the relay is started | baton gave up after roughly 90 seconds of retries and does not re-arm | Disable and re-enable the plugin in X-Plane |
 | `meson setup` fails while downloading subprojects | The X-Plane SDK and GoogleTest are fetched over the network | Check connectivity or proxy settings, then re-run `meson setup build` |
-| The baton build fails with `FileNotFoundError` from `shutil.copyfile` | `python3` is not on PATH, or the Rust target is missing | Confirm `python3 --version`, and run `rustup target add x86_64-pc-windows-gnu` |
+| The baton build fails with `FileNotFoundError` from `shutil.copyfile` | `script.py` could not find the files cargo was expected to produce | Check the cargo output above the error. On Windows, confirm the target is installed with `rustup target add x86_64-pc-windows-gnu` |
 
 # Details
 ## High-Level View
