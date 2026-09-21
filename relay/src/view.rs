@@ -58,7 +58,7 @@ fn spawn_error_message(state: &State) -> Option<UIElement> {
         .error_message
         .as_ref()
         .map(|err| {
-            container(text(format!("⚠️ {}", err)))
+            container(text(format!("[WARN] {}", err)))
                 .padding(10)
                 .width(Length::Fill)
                 .style(container::rounded_box)
