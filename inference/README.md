@@ -48,15 +48,15 @@ No other manual package installation is required.
 The scripts are meant to be run in this order. Every command below is written to be run **from
 the project root** (`PilotDataSynchronization/`), with the virtual environment activated.
 
-| Step | Script | Purpose | Input | Output |
-|---|---|---|---|---|
-| 1 | `inference/Data/data_logger.py` | Collects live telemetry from the relay over TCP and appends it to a raw CSV | Telemetry socket stream | `inference/Data/raw_flight_data.csv` |
-| 1b | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline | none | `inference/Data/synthetic_flight_data.csv` |
-| 2 | `inference/label_generator.py` | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row | `inference/Data/raw_flight_data.csv` | `inference/Data/labeled_flight_data.csv` |
-| 3 | `inference/validate_labels.py` | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution | `inference/Data/labeled_flight_data.csv` | Console report only (exit code 0/1) |
-| 4 | `inference/prepare_data.py` | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs — independent of the training step below | `inference/Data/labeled_flight_data.csv` | `inference/dataset/*.csv`, `label_mapping.json`, `scaler_params.json` |
-| 5 | `inference/train_model.py` | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall | `inference/Data/labeled_flight_data.csv` | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl`, `inference/dataset/test.csv` |
-| 6 | `inference/test_model.py` | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it | Trained model + held-out test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json` |
+| Step | Script                                | Purpose                                                                                                                                  | Input                                          | Output                                                                                            |
+| ---- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1    | `inference/Data/data_logger.py`       | Collects live telemetry from the relay over TCP and appends it to a raw CSV                                                              | Telemetry socket stream                        | `inference/Data/raw_flight_data.csv`                                                              |
+| 1b   | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline                                  | none                                           | `inference/Data/synthetic_flight_data.csv`                                                        |
+| 2    | `inference/label_generator.py`        | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row  | `inference/Data/raw_flight_data.csv`           | `inference/Data/labeled_flight_data.csv`                                                          |
+| 3    | `inference/validate_labels.py`        | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution                   | `inference/Data/labeled_flight_data.csv`       | Console report only (exit code 0/1)                                                               |
+| 4    | `inference/prepare_data.py`           | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs — independent of the training step below | `inference/Data/labeled_flight_data.csv`       | `inference/dataset/*.csv`, `label_mapping.json`, `scaler_params.json`                             |
+| 5    | `inference/train_model.py`            | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall                                         | `inference/Data/labeled_flight_data.csv`       | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl`, `inference/dataset/test.csv` |
+| 6    | `inference/test_model.py`             | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it                                             | Trained model + held-out test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json`                           |
 
 ### Step 4 and step 5/6 are independent
 
@@ -105,6 +105,7 @@ label_generator.py`); the scripts resolve their own input/output paths relative 
 The system labels data with 13 event types:
 
 **Flight phases**
+
 - `TAXI` — Ground operations (altitude < 50ft, speed < 30 knots)
 - `TAKEOFF` — Transition from ground to air (low altitude, climbing, 50-100 knots)
 - `CRUISE` — Steady flight at altitude (altitude > 3000ft, stable vertical speed)
@@ -112,18 +113,22 @@ The system labels data with 13 event types:
 - `LANDING` — Final approach and touchdown (altitude < 500ft, descending)
 
 **Maneuver events**
+
 - `TURN_LEFT` — Left turn (roll < -5° or heading change < -3°/s)
 - `TURN_RIGHT` — Right turn (roll > 5° or heading change > 3°/s)
 
 **Speed events**
+
 - `HIGH_SPEED` — Velocity > 200 knots
 - `LOW_SPEED` — Velocity < 60 knots (while airborne)
 
 **Altitude events**
+
 - `HIGH_ALTITUDE` — Altitude > 10,000 feet
 - `LOW_ALTITUDE` — Altitude < 1,000 feet (while airborne)
 
 **Special events**
+
 - `HIGH_G_FORCE` — G-force > 1.5g
 - `NORMAL_FLIGHT` — Default steady flight (none of the above conditions)
 
@@ -140,6 +145,7 @@ class distribution, splits into train/test sets, saves the held-out test split t
 set, prints accuracy/precision/recall, and saves the trained model.
 
 Model parameters:
+
 - `n_estimators`: 100 trees
 - `max_depth`: None (unlimited depth)
 - `min_samples_split`: 2
@@ -153,7 +159,7 @@ Model parameters:
 `inference/Models/finalModel.pkl`. It looks for test data in this order:
 `inference/dataset/test.csv` (the held-out split `train_model.py` saves — the model never trained
 on these rows), then `inference/Data/labeled_flight_data.csv` (fallback; this is the full dataset
-the model *did* train on, so metrics from this fallback measure memorization, not generalization),
+the model _did_ train on, so metrics from this fallback measure memorization, not generalization),
 then `inference/labeled_flight_data.csv`. Run `train_model.py` before `test_model.py` so the
 held-out split exists and the first candidate is used.
 
@@ -163,14 +169,6 @@ held-out split exists and the first candidate is used.
   1b** — `generate_balanced_data.py` writes synthetic data to `inference/Data/synthetic_flight_data.csv`
   rather than overwriting the real collected `raw_flight_data.csv`. Copy or rename it to
   `raw_flight_data.csv` before running `label_generator.py`.
-- **`UnicodeEncodeError: 'charmap' codec can't encode character '✓'` on Windows** — several
-  scripts print a ✓ character, and the default Windows console codepage (cp1252) can't encode it.
-  Set `PYTHONUTF8=1` before running (e.g. `set PYTHONUTF8=1` in cmd.exe,
-  `$env:PYTHONUTF8=1` in PowerShell, `export PYTHONUTF8=1` in bash), or run `chcp 65001` first.
-- **`ValueError: Missing required columns` in `label_generator.py`, `validate_labels.py`, or
-  `prepare_data.py`** — the input CSV is missing one of `altitude`, `velocity`, `vertical_speed`,
-  `heading`, `roll`, `g_force` (and `pitch`/`yaw`/`event_label` for later steps). Check the header
-  row of your CSV against `CSV_FIELDS` in `Data/data_logger.py`.
 - **`validate_labels.py` reports "Negative velocity values found" or missing label categories** —
   this is expected with small or synthetic datasets that don't exercise every flight phase (e.g.
   `TAKEOFF`, `APPROACH`, `LANDING`, `LOW_ALTITUDE` require specific altitude/speed/vertical-speed
@@ -180,7 +178,7 @@ held-out split exists and the first candidate is used.
   produce `inference/Models/bestModel.pkl`.
 - **`inference/.venv` not picked up / `uv run` uses the wrong Python** — make sure you're running
   `uv` commands from inside `inference/` (where `pyproject.toml` lives), or pass `--project
-  inference` from the repository root.
+inference` from the repository root.
 
 ## Files
 
