@@ -28,9 +28,7 @@ pub(crate) fn view(state: &State) -> UIElement {
     elements.push(baton_connect_status_element(state));
 
     // Action buttons
-    if let Some(btn) = send_packet_button(state) {
-        elements.push(btn);
-    }
+    elements.push(send_packet_row(state));
 
     // TCP controls and status
     elements.push(tcp_connect_status_element(state));
@@ -234,10 +232,30 @@ fn xml_download_popup(state: &State) -> UIElement {
 }
 
 /// Send packet button: enabled variant wires the message, disabled variant is inert.
-fn send_packet_button(state: &State) -> Option<UIElement> {
-    if state.active_baton_connection {
-        Some(button("Send Packet").on_press(Message::SendPacket).into())
+fn send_packet_button(state: &State) -> UIElement {
+    if state.is_tcp_connected() {
+        button("Send Packet").on_press(Message::SendPacket).into()
     } else {
-        Some(button("Send Packet (No Baton Connection)").into())
+        button("Send Packet (TCP Not Connected)").into()
     }
+}
+
+/// Timestamp of the last test packet, shown next to the button.
+fn last_send_timestamp_element(state: &State) -> UIElement {
+    let content = match &state.last_send_timestamp {
+        Some(timestamp) => format!("Last test packet: {}", timestamp),
+        None => "No test packet sent yet".to_string(),
+    };
+    text(content).into()
+}
+
+/// The Send Packet button with its timestamp beside it.
+fn send_packet_row(state: &State) -> UIElement {
+    row![
+        send_packet_button(state),
+        last_send_timestamp_element(state),
+    ]
+    .spacing(5)
+    .align_y(iced::Alignment::Center)
+    .into()
 }
