@@ -21,10 +21,10 @@ Current CSV output (`inference/Data/raw_flight_data.csv`):
 | Field | Type | Units | Source (DataRef) | Notes |
 |---|---|---|---|---|
 | `timestamp` | ISO-8601 string (UTC, ms precision) | — | wall-clock time at CSV write, not sim time | Set by `data_logger.py`, not the plugin |
-| `altitude` | float | **currently feet × 3.28084, not feet** (bug, see below) | `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Pilot's barometric altimeter reading |
+| `altitude` | float | feet (data collected before #196 is feet × 3.28084, see below) | `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Pilot's barometric altimeter reading |
 | `heading` | float | degrees magnetic | `sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot` | AHARS-sourced |
 | `vertical_speed` | float | feet/min | `sim/cockpit2/gauges/indicators/vvi_fpm_pilot` | Positive = climbing |
-| `velocity` | float | **currently knots × 1.94384, not knots** (bug, see below) | `sim/cockpit2/gauges/indicators/airspeed_kts_pilot` | Indicated airspeed, not true airspeed |
+| `velocity` | float | knots (data collected before #196 is knots × 1.94384, see below) | `sim/cockpit2/gauges/indicators/airspeed_kts_pilot` | Indicated airspeed, not true airspeed |
 | `roll` | float | degrees | `sim/cockpit2/gauges/indicators/roll_AHARS_deg_pilot` | |
 | `pitch` | float | degrees | `sim/cockpit2/gauges/indicators/pitch_AHARS_deg_pilot` | |
 | `yaw` | float | degrees | `sim/flightmodel/position/psi` | This is X-Plane's **true heading**, not a yaw angle — no pilot-side yaw DataRef exists. In committed data it tracks `heading` within a near-constant magnetic-variation offset, so it's effectively a near-duplicate of `heading` rather than independent signal |
@@ -35,14 +35,14 @@ error), not the aircraft's raw physical state — see note 2 in
 `key_datarefs.md`. `yaw` and `g_force` are exceptions: both come from
 `sim/flightmodel/*` DataRefs rather than a pilot-side instrument.
 
-**Known bug — `altitude` and `velocity` are mis-scaled (tracked as #196):** the
-plugin multiplies `altitude_ft_pilot` (already feet) by 3.28084 and
-`airspeed_kts_pilot` (already knots) by 1.94384 before sending
-(`pilotdatasync-xp11.cpp:279,288`). The unit-conversion comment near that code
-only applies to the flightmodel DataRefs, not these two. Until the plugin is
-fixed, values in these two columns — and anything derived from them,
-including existing labels — are scaled by those factors, not in the units
-stated above.
+**Older data has mis-scaled `altitude` and `velocity` (fixed in #196):** before
+#196, the plugin multiplied `altitude_ft_pilot` (already feet) by 3.28084 and
+`airspeed_kts_pilot` (already knots) by 1.94384 before sending. Data collected
+with the fixed plugin is in feet and knots. The CSVs committed under
+`inference/Data/` were collected before the fix, so their `altitude` and
+`velocity` columns, and the labels derived from them, are still scaled by
+those factors. Divide `altitude` by 3.28084 and `velocity` by 1.94384, or
+re-collect the data, before using it.
 
 ## 2. What the client asked for vs. what exists
 
@@ -185,8 +185,8 @@ feature-engineering step, not in this schema doc.
    telemetry to pilot metadata.
 5. **Timestamp is wall-clock, not simulation time** — fine for a single
    continuous session, but worth noting if flights are paused/resumed.
-6. **`altitude` and `velocity` are mis-scaled by the plugin** — not in the
-   feet/knots units this schema states, until the fix tracked in #196 lands.
+6. **The committed `altitude` and `velocity` data is mis-scaled.** It was
+   collected before the #196 fix and needs rescaling or re-collection (see §1).
 7. **`yaw` is effectively a duplicate of `heading`** (true heading vs.
    magnetic heading, offset by magnetic variation) rather than independent
    signal — worth reconsidering as a model feature.
