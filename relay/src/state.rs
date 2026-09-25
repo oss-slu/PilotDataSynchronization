@@ -334,7 +334,6 @@ impl State {
         self.sent_packet_times.push_back(now);
         self.sent_samples.push_back((now, bytes));
         self.refresh_metrics(now);
-        self.log_event(format!("Sent packet ({} bytes)", bytes));
     }
 
     fn refresh_metrics(&mut self, now: Instant) {
@@ -474,7 +473,7 @@ impl State {
                             continue;
                         }
                         Ok(_s) => {
-                            println!("[RELAY] IPC raw line: {:?}", buffer);
+                            human_log("RX", &format!("baton line={:?}", buffer));
                             let _ = buffer.pop();
                             let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
                             buffer.clear();

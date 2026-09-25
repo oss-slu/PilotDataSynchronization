@@ -118,13 +118,15 @@ fn event_log_element(state: &State) -> UIElement {
     }
 
     // Newest first, so the latest failure is the line the user sees.
-    let entries: Vec<UIElement> = state
-        .event_log
-        .iter()
-        .rev()
-        .take(EVENT_LOG_VISIBLE)
-        .map(|entry| text(entry).size(12).into())
-        .collect();
+    let mut entries: Vec<UIElement> = vec![text("Recent events").size(14).into()];
+    entries.extend(
+        state
+            .event_log
+            .iter()
+            .rev()
+            .take(EVENT_LOG_VISIBLE)
+            .map(|entry| -> UIElement { text(entry).size(12).into() }),
+    );
 
     container(column(entries).spacing(2))
         .padding(10)
