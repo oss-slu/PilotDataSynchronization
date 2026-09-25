@@ -361,44 +361,41 @@ impl State {
         if self.ipc_thread_handle.is_some() {
             bail!("IPC thread already exists.")
         }
+        // Bind the listener on the calling thread. Doing it inside the spawned
+        // thread meant a bind failure had no way back to the caller: the thread
+        // reported `Ok(())`, `ipc_thread_handle` was set for a thread that owned
+        // no listener, and the guard above then rejected every later retry.
+        let printname = "baton.sock";
+        let name = if GenericNamespaced::is_supported() {
+            printname.to_ns_name::<GenericNamespaced>()?
+        } else {
+            let mut path = std::env::temp_dir();
+            path.push(printname);
+            path.to_fs_name::<GenericFilePath>()?
+        };
+
+        println!("[RELAY] listening on socket: {:?}", name.borrow());
+
+        let listener = ListenerOptions::new()
+            .name(name)
+            .create_sync()
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::AddrInUse => anyhow!(
+                    "{} is already in use. Another relay instance may still be running.",
+                    printname
+                ),
+                _ => anyhow!("Failed to create listener: {}", e),
+            })?;
+
+        listener
+            .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
+            .map_err(|e| anyhow!("Error setting non-blocking mode on listener: {}", e))?;
+
+        human_log("IPC", &format!("Server running at {}", printname));
+
         let (ipc_bichannel, mut child_bichannel) =
             bichannel::create_bichannels::<ToIpcThreadMessage, FromIpcThreadMessage>();
         let ipc_thread_handle = spawn(move || {
-            let printname = "baton.sock";
-            let name = if GenericNamespaced::is_supported() {
-                printname.to_ns_name::<GenericNamespaced>().unwrap()
-            } else {
-                let mut path = std::env::temp_dir();
-                path.push(printname);
-                path.to_fs_name::<GenericFilePath>().unwrap()
-            };
-
-            println!("[RELAY] listening on socket: {:?}", name.borrow());
-            
-            let opts = ListenerOptions::new().name(name.clone());
-            let listener = match opts.create_sync() {
-                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    human_log("IPC", &format!(
-                        "Could not start server because the socket file is occupied. Check if {} is in use.",
-                        printname
-                    ));
-                    return Ok(());
-                }
-                Ok(l) => {
-                    println!("✓ Successfully created named pipe listener");
-                    l
-                }
-                Err(e) => {
-                    eprintln!("✗ Failed to create listener: {} (kind: {:?})", e, e.kind());
-                    return Err(anyhow!("Failed to create listener: {}", e));
-                }
-            };
-            
-            listener
-                .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
-                .expect("Error setting non-blocking mode on listener");
-            
-            human_log("IPC", &format!("Server running at {}", printname));
             let mut buffer = String::with_capacity(256);
             
             while !child_bichannel.is_killswitch_engaged() {
