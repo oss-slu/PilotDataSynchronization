@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use chrono::Local;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::BufRead;
@@ -160,6 +161,15 @@ fn now_epoch_millis() -> String {
     format!("{}.{:03}", now.as_secs(), now.subsec_millis())
 } 
 
+/// Wall-clock timestamp for entries shown in the GUI.
+///
+/// `now_epoch_millis` is kept for `human_log`, where epoch values are fine for a
+/// machine-read stderr log; on screen they are unreadable. Milliseconds are kept
+/// because the relay streams at 20 Hz and events can arrive several per second.
+fn now_local_time() -> String {
+    Local::now().format("%H:%M:%S%.3f").to_string()
+}
+
 // -- Buffered human logger --------------------------------------------------
 const LOG_FLUSH_INTERVAL_MS: u64 = 2000;
 
@@ -241,7 +251,7 @@ fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
 // --- State impl -------------------------------------------------------------
 impl State {
     pub fn log_event(&mut self, event: String) {
-        let entry = format!("[{}] {}", now_epoch_millis(), event);
+        let entry = format!("[{}] {}", now_local_time(), event);
         self.event_log.push(entry);
     }
 
@@ -330,7 +340,6 @@ impl State {
         self.sent_packet_times.push_back(now);
         self.sent_samples.push_back((now, bytes));
         self.refresh_metrics(now);
-        self.log_event(format!("Sent packet ({} bytes)", bytes));
     }
 
     fn refresh_metrics(&mut self, now: Instant) {
@@ -470,7 +479,7 @@ impl State {
                             continue;
                         }
                         Ok(_s) => {
-                            println!("[RELAY] IPC raw line: {:?}", buffer);
+                            human_log("RX", &format!("baton line={:?}", buffer));
                             let _ = buffer.pop();
                             let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
                             buffer.clear();
