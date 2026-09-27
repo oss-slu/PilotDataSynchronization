@@ -169,6 +169,10 @@ held-out split exists and the first candidate is used.
   1b** — `generate_balanced_data.py` writes synthetic data to `inference/Data/synthetic_flight_data.csv`
   rather than overwriting the real collected `raw_flight_data.csv`. Copy or rename it to
   `raw_flight_data.csv` before running `label_generator.py`.
+- **`ValueError: Missing required columns` in `label_generator.py`, `validate_labels.py`, or
+  `prepare_data.py`** — the input CSV is missing one of `altitude`, `velocity`, `vertical_speed`,
+  `heading`, `roll`, `g_force` (and `pitch`/`yaw`/`event_label` for later steps). Check the header
+  row of your CSV against `CSV_FIELDS` in `Data/data_logger.py`.
 - **`validate_labels.py` reports "Negative velocity values found" or missing label categories** —
   this is expected with small or synthetic datasets that don't exercise every flight phase (e.g.
   `TAKEOFF`, `APPROACH`, `LANDING`, `LOW_ALTITUDE` require specific altitude/speed/vertical-speed
@@ -178,7 +182,7 @@ held-out split exists and the first candidate is used.
   produce `inference/Models/bestModel.pkl`.
 - **`inference/.venv` not picked up / `uv run` uses the wrong Python** — make sure you're running
   `uv` commands from inside `inference/` (where `pyproject.toml` lives), or pass `--project
-inference` from the repository root.
+  inference` from the repository root.
 
 ## Files
 
