@@ -54,7 +54,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                             if let Some(tcp_bi) = state.tcp_bichannel.as_mut() {
                                 let _ = tcp_bi.send_to_child(ToTcpThreadMessage::Send(data.clone()));
                             }
-                            state.log_event(format!("Baton packet: {}", data));
                             state.latest_baton_send = Some(data);
                             state.last_baton_instant = Some(Instant::now());
                             state.active_baton_connection = true;

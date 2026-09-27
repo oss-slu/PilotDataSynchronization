@@ -13,6 +13,9 @@ type UIElement<'a> = Element<'a, Message>;
 
 const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:9999";
 
+/// How many of the most recent `event_log` entries the GUI renders.
+const EVENT_LOG_VISIBLE: usize = 5;
+
 /// Compose the UI by collecting small, single-responsibility elements.
 pub(crate) fn view(state: &State) -> UIElement {
     let mut elements: Vec<UIElement> = Vec::new();
@@ -44,6 +47,9 @@ pub(crate) fn view(state: &State) -> UIElement {
 
     // Metrics (if enabled)
     elements.push(metrics_block(state));
+
+    // Recent event log
+    elements.push(event_log_element(state));
 
     // XML download / card
     elements.push(xml_download_popup(state));
@@ -100,6 +106,31 @@ fn metrics_block(state: &State) -> UIElement {
         text(format!("Throughput: {bps_str}")),
     ]
     .into()
+}
+
+/// Render the most recent `event_log` entries so connect/disconnect failures
+/// are visible in the GUI instead of only being recorded in state.
+fn event_log_element(state: &State) -> UIElement {
+    if state.event_log.is_empty() {
+        return text("").into();
+    }
+
+    // Newest first, so the latest failure is the line the user sees.
+    let mut entries: Vec<UIElement> = vec![text("Recent events").size(14).into()];
+    entries.extend(
+        state
+            .event_log
+            .iter()
+            .rev()
+            .take(EVENT_LOG_VISIBLE)
+            .map(|entry| -> UIElement { text(entry).size(12).into() }),
+    );
+
+    container(column(entries).spacing(2))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
 }
 
 fn human_bps(bps: f64) -> String {
