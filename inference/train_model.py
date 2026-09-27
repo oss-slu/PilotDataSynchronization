@@ -153,7 +153,7 @@ class FlightEventModelTrainer:
         logger.info(f"\nTraining on {len(X_train)} samples...")
         self.model.fit(X_train, y_train)
         
-        logger.info("✓ Model training completed")
+        logger.info("[OK] Model training completed")
         
         # Display feature importance
         self._display_feature_importance()
@@ -239,10 +239,10 @@ class FlightEventModelTrainer:
         logger.info("\nSaving trained models:")
         
         joblib.dump(self.model, best_model_path)
-        logger.info(f"  ✓ Saved: {best_model_path}")
+        logger.info(f"  [OK] Saved: {best_model_path}")
         
         joblib.dump(self.model, final_model_path)
-        logger.info(f"  ✓ Saved: {final_model_path}")
+        logger.info(f"  [OK] Saved: {final_model_path}")
 
 
 def main():

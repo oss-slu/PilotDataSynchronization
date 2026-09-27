@@ -275,7 +275,7 @@ class FlightEventLabeler:
         if unexpected_labels:
             logger.warning(f"Found unexpected labels: {unexpected_labels}")
         
-        logger.info("✓ All rows have valid labels")
+        logger.info("[OK] All rows have valid labels")
     
     def _print_label_statistics(self, df: pd.DataFrame) -> None:
         """
@@ -304,8 +304,8 @@ def main():
     """Main execution function."""
     # Define paths relative to inference folder
     inference_dir = Path(__file__).parent
-    input_file = inference_dir / 'Data' / 'raw_flight_data.csv'  # ← input file
-    output_file = inference_dir / 'Data' / 'labeled_flight_data.csv'  # ← output file
+    input_file = inference_dir / 'Data' / 'raw_flight_data.csv'  # input file
+    output_file = inference_dir / 'Data' / 'labeled_flight_data.csv'  # output file
     
     logger.info("="*60)
     logger.info("Flight Event Labeling System")
@@ -329,7 +329,7 @@ def main():
         logger.error(f"Labeling failed: {e}")
         raise
     
-    logger.info("\n✓ Labeling process completed successfully")
+    logger.info("\n[OK] Labeling process completed successfully")
 
 
 if __name__ == '__main__':

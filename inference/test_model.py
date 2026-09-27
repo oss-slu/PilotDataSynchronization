@@ -58,7 +58,7 @@ class FlightEventModelTester:
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
         self.model = joblib.load(model_path)
-        logger.info(f"✓ Model loaded successfully: {type(self.model).__name__}")
+        logger.info(f"[OK] Model loaded successfully: {type(self.model).__name__}")
 
         # Display model parameters
         if hasattr(self.model, 'n_estimators'):
@@ -82,7 +82,7 @@ class FlightEventModelTester:
             raise FileNotFoundError(f"Test data file not found: {data_path}")
 
         df = pd.read_csv(data_path)
-        logger.info(f"✓ Loaded {len(df)} test samples")
+        logger.info(f"[OK] Loaded {len(df)} test samples")
 
         # Verify required feature columns exist
         missing_cols = [col for col in self.feature_columns if col not in df.columns]
@@ -92,11 +92,11 @@ class FlightEventModelTester:
         # Check if labels exist (for evaluation)
         has_labels = self.target_column in df.columns
         if has_labels:
-            logger.info(f"✓ Test data contains ground truth labels")
+            logger.info(f"[OK] Test data contains ground truth labels")
             logger.info("\nActual label distribution:")
             print(df[self.target_column].value_counts().to_string())
         else:
-            logger.warning("⚠ Test data does not contain labels (evaluation will be skipped)")
+            logger.warning("[WARN] Test data does not contain labels (evaluation will be skipped)")
 
         return df
 
@@ -123,7 +123,7 @@ class FlightEventModelTester:
         logger.info(f"\nGenerating predictions for {len(X_test)} samples...")
         predictions = self.model.predict(X_test)
 
-        logger.info("✓ Inference completed")
+        logger.info("[OK] Inference completed")
         logger.info(f"\nPredicted label distribution:")
         unique, counts = np.unique(predictions, return_counts=True)
         for label, count in zip(unique, counts):
@@ -159,7 +159,7 @@ class FlightEventModelTester:
         }
 
         # Display evaluation metrics
-        logger.info("\n📊 Evaluation Metrics:")
+        logger.info("\n[METRICS] Evaluation Metrics:")
         logger.info("="*60)
         logger.info(f"  Accuracy:  {accuracy:.4f} ({accuracy*100:.2f}%)")
         logger.info(f"  Precision: {precision:.4f} ({precision*100:.2f}%)")
@@ -167,11 +167,11 @@ class FlightEventModelTester:
         logger.info("="*60)
 
         # Display detailed classification report
-        logger.info("\n📋 Detailed Classification Report:")
+        logger.info("\n[REPORT] Detailed Classification Report:")
         print("\n" + classification_report(y_true, y_pred, zero_division=0))
 
         # Display confusion matrix
-        logger.info("🔢 Confusion Matrix:")
+        logger.info("[MATRIX] Confusion Matrix:")
         cm = confusion_matrix(y_true, y_pred)
         classes = sorted(y_true.unique())
 
@@ -192,7 +192,7 @@ class FlightEventModelTester:
             predictions: Predicted labels
             output_path: Path to save predictions
         """
-        logger.info(f"\n💾 Saving predictions to: {output_path}")
+        logger.info(f"\n[SAVE] Saving predictions to: {output_path}")
 
         # Create output DataFrame with original data and predictions
         output_df = df.copy()
@@ -208,7 +208,7 @@ class FlightEventModelTester:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_df.to_csv(output_path, index=False)
 
-        logger.info(f"✓ Saved {len(output_df)} predictions")
+        logger.info(f"[OK] Saved {len(output_df)} predictions")
         logger.info(f"  Columns: {', '.join(output_df.columns.tolist())}")
 
     def save_metrics(self, metrics: dict, output_path: Path):
@@ -221,14 +221,14 @@ class FlightEventModelTester:
         """
         import json
 
-        logger.info(f"\n💾 Saving metrics to: {output_path}")
+        logger.info(f"\n[SAVE] Saving metrics to: {output_path}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         with output_path.open('w') as f:
             json.dump(metrics, f, indent=2)
 
-        logger.info("✓ Metrics saved successfully")
+        logger.info("[OK] Metrics saved successfully")
 
 
 def main():
@@ -303,14 +303,14 @@ def main():
             # Save metrics
             tester.save_metrics(metrics, output_metrics)
         else:
-            logger.info("\n⚠ Skipping evaluation (no ground truth labels available)")
+            logger.info("\n[WARN] Skipping evaluation (no ground truth labels available)")
 
         # Save predictions
         tester.save_predictions(test_data, predictions, output_predictions)
 
         # Final summary
         logger.info("\n" + "="*60)
-        logger.info("✅ Testing Complete!")
+        logger.info("[OK] Testing Complete!")
         logger.info("="*60)
         logger.info(f"\nModel used: {model_path}")
         logger.info(f"Test data: {data_path_used}")
@@ -318,15 +318,15 @@ def main():
 
         if metrics:
             logger.info(f"Metrics saved: {output_metrics}")
-            logger.info(f"\n📊 Final Results:")
+            logger.info(f"\n[METRICS] Final Results:")
             logger.info(f"  Accuracy:  {metrics['accuracy']:.4f}")
             logger.info(f"  Precision: {metrics['precision']:.4f}")
             logger.info(f"  Recall:    {metrics['recall']:.4f}")
 
-        logger.info("\n✓ All outputs saved in inference/ folder")
+        logger.info("\n[OK] All outputs saved in inference/ folder")
 
     except Exception as e:
-        logger.error(f"\n❌ Testing failed: {e}")
+        logger.error(f"\n[ERROR] Testing failed: {e}")
         raise
 
 
