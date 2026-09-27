@@ -67,23 +67,30 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             }
 
             // process TCP messages
-            if let Some(tcp_bichannel) = &state.tcp_bichannel {
-                for msg in tcp_bichannel.received_messages() {
-                    match msg {
-                        FromTcpThreadMessage::Connected => {
-                            state.log_event("TCP connected to iMotions".into());
-                            state.tcp_connected = true;
-                        }
-                        FromTcpThreadMessage::Disconnected(reason) => {
-                            state.log_event(format!("TCP disconnected: {}", reason));
-                            state.tcp_connected = false;
-                        }
-                        FromTcpThreadMessage::Sent(bytes) => {
-                            state.on_tcp_packet_sent(bytes);
-                        }
-                        FromTcpThreadMessage::SendError(err) => {
-                            state.log_event(format!("TCP send error: {}", err));
-                        }
+            let tcp_messages = state
+                .tcp_bichannel
+                .as_ref()
+                .map(|bichannel| bichannel.received_messages())
+                .unwrap_or_default();
+            for msg in tcp_messages {
+                match msg {
+                    FromTcpThreadMessage::Connected => {
+                        state.log_event("TCP connected to iMotions".into());
+                        state.tcp_connected = true;
+                    }
+                    FromTcpThreadMessage::Disconnected(reason) => {
+                        state.log_event(format!("TCP disconnected: {}", reason));
+                        state.error_message = Some(reason);
+                        state.tcp_connected = false;
+                        // The thread has exited. Clear it so Connect TCP works
+                        // again without pressing Disconnect TCP first.
+                        state.reap_tcp_thread();
+                    }
+                    FromTcpThreadMessage::Sent(bytes) => {
+                        state.on_tcp_packet_sent(bytes);
+                    }
+                    FromTcpThreadMessage::SendError(err) => {
+                        state.log_event(format!("TCP send error: {}", err));
                     }
                 }
             }
@@ -342,6 +349,56 @@ mod tests {
         assert_eq!(line, "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n");
         assert!(state.last_send_timestamp.is_some());
         assert_eq!(state.error_message, None);
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // Pumps the Update message the GUI subscription would send, so queued
+    // thread messages are processed.
+    fn pump_update(state: &mut State, ticks: usize) {
+        for _ in 0..ticks {
+            let _ = update(state, Message::Update);
+            sleep(StdDuration::from_millis(10));
+        }
+    }
+
+    // A port nothing listens on, obtained by binding and then dropping.
+    fn closed_port_addr() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        drop(listener);
+        addr
+    }
+
+    #[test]
+    fn failed_connect_surfaces_an_error_and_allows_a_retry() {
+        let mut state = State::default();
+        state
+            .tcp_connect(closed_port_addr())
+            .expect("tcp_connect should spawn a thread");
+
+        pump_update(&mut state, 200);
+
+        let error = state.error_message.clone().expect("no error surfaced");
+        assert!(
+            error.starts_with("TCP connection failed:"),
+            "unexpected error: {error}"
+        );
+        assert!(!state.tcp_connected);
+        assert!(state.tcp_thread_handle.is_none(), "dead thread was kept");
+        assert!(
+            state.event_log.iter().any(|e| e.contains("TCP disconnected")),
+            "failure missing from the event log: {:?}",
+            state.event_log
+        );
+
+        // The retry is the point: this used to fail with "TCP thread already
+        // exists" until Disconnect TCP was pressed.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        state.tcp_connect(addr).expect("retry was rejected");
+        let _ = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "retry never connected");
 
         let _ = state.tcp_disconnect();
     }
