@@ -3,8 +3,11 @@ use std::fs::File;
 use std::io::Write;
 use std::time::{Duration as StdDuration, Instant};
 
+use chrono::Local;
+
 use crate::{
-    message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage, Message, State,
+    message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage,
+    state::build_test_packet, Message, State,
 };
 
 fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
@@ -51,7 +54,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                             if let Some(tcp_bi) = state.tcp_bichannel.as_mut() {
                                 let _ = tcp_bi.send_to_child(ToTcpThreadMessage::Send(data.clone()));
                             }
-                            state.log_event(format!("Baton packet: {}", data));
                             state.latest_baton_send = Some(data);
                             state.last_baton_instant = Some(Instant::now());
                             state.active_baton_connection = true;
@@ -181,9 +183,32 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::SendPacket => {
-            let now = std::time::SystemTime::now();
-            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-            state.last_send_timestamp = Some(format!("{}", duration.as_secs()));
+            let connected = state.is_tcp_connected();
+            let packet = build_test_packet(state);
+            match (packet, state.tcp_bichannel.as_mut()) {
+                (Some(packet), Some(tcp_bi)) if connected => {
+                    match tcp_bi.send_to_child(ToTcpThreadMessage::SendRaw(packet)) {
+                        Ok(()) => {
+                            state.error_message = None;
+                            state.last_send_timestamp =
+                                Some(Local::now().format("%H:%M:%S").to_string());
+                            state.log_event("Test packet queued".into());
+                        }
+                        Err(e) => {
+                            let msg = format!("Sending the test packet failed: {}", e);
+                            state.error_message = Some(msg.clone());
+                            state.log_event(msg);
+                        }
+                    }
+                }
+                (None, _) => {
+                    state.error_message =
+                        Some("Enable at least one dataref toggle to send a test packet".into());
+                }
+                _ => {
+                    state.error_message = Some("Connect TCP before sending a test packet".into());
+                }
+            }
             Task::none()
         }
     }
@@ -259,8 +284,8 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
 
     if state.yaw_toggle {
         contents.push_str("\t<Sample Id=\"YawSync\" Name=\"Yaw Synchronization\">\n");
-        contents.push_str("\t\t<Field Id=\"FlightModelYaw\" Range=\"Variable\" Min=\"-180\" Max=\"360\" />\n");
-        contents.push_str("\t\t<Field Id=\"PilotYaw\" Range=\"Variable\" Min=\"-180\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelYaw\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotYaw\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
         contents.push_str("\t</Sample>\n");
     }
 
@@ -291,4 +316,85 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
     }
 
     Task::none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
+    use std::thread::sleep;
+
+    // Waits for a condition, polling every 10ms, so the test does not hang.
+    fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
+        for _ in 0..200 {
+            if condition() {
+                return true;
+            }
+            sleep(StdDuration::from_millis(10));
+        }
+        false
+    }
+
+    #[test]
+    fn send_packet_writes_one_test_packet_to_the_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+
+        let (stream, _) = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
+
+        let _ = update(&mut state, Message::SendPacket);
+
+        // Bounded so a delivery regression fails the test instead of hanging
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(5)))
+            .expect("set_read_timeout failed");
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read failed");
+
+        assert_eq!(line, "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n");
+        assert!(state.last_send_timestamp.is_some());
+        assert_eq!(state.error_message, None);
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn send_packet_with_every_toggle_off_reports_an_error() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+        state.vertical_airspeed_toggle = false;
+        state.heading_toggle = false;
+        state.roll_toggle = false;
+        state.pitch_toggle = false;
+        state.yaw_toggle = false;
+        state.gforce_toggle = false;
+
+        let _ = update(&mut state, Message::SendPacket);
+
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Enable at least one dataref toggle to send a test packet")
+        );
+        assert!(state.last_send_timestamp.is_none());
+    }
+
+    #[test]
+    fn send_packet_without_tcp_reports_an_error() {
+        let mut state = State::default();
+
+        let _ = update(&mut state, Message::SendPacket);
+
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Connect TCP before sending a test packet")
+        );
+        assert!(state.last_send_timestamp.is_none());
+    }
 }

@@ -13,6 +13,9 @@ type UIElement<'a> = Element<'a, Message>;
 
 const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:9999";
 
+/// How many of the most recent `event_log` entries the GUI renders.
+const EVENT_LOG_VISIBLE: usize = 5;
+
 /// Compose the UI by collecting small, single-responsibility elements.
 pub(crate) fn view(state: &State) -> UIElement {
     let mut elements: Vec<UIElement> = Vec::new();
@@ -28,9 +31,7 @@ pub(crate) fn view(state: &State) -> UIElement {
     elements.push(baton_connect_status_element(state));
 
     // Action buttons
-    if let Some(btn) = send_packet_button(state) {
-        elements.push(btn);
-    }
+    elements.push(send_packet_row(state));
 
     // TCP controls and status
     elements.push(tcp_connect_status_element(state));
@@ -47,6 +48,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     // Metrics (if enabled)
     elements.push(metrics_block(state));
 
+    // Recent event log
+    elements.push(event_log_element(state));
+
     // XML download / card
     elements.push(xml_download_popup(state));
 
@@ -58,7 +62,7 @@ fn spawn_error_message(state: &State) -> Option<UIElement> {
         .error_message
         .as_ref()
         .map(|err| {
-            container(text(format!("⚠️ {}", err)))
+            container(text(format!("[WARN] {}", err)))
                 .padding(10)
                 .width(Length::Fill)
                 .style(container::rounded_box)
@@ -102,6 +106,31 @@ fn metrics_block(state: &State) -> UIElement {
         text(format!("Throughput: {bps_str}")),
     ]
     .into()
+}
+
+/// Render the most recent `event_log` entries so connect/disconnect failures
+/// are visible in the GUI instead of only being recorded in state.
+fn event_log_element(state: &State) -> UIElement {
+    if state.event_log.is_empty() {
+        return text("").into();
+    }
+
+    // Newest first, so the latest failure is the line the user sees.
+    let mut entries: Vec<UIElement> = vec![text("Recent events").size(14).into()];
+    entries.extend(
+        state
+            .event_log
+            .iter()
+            .rev()
+            .take(EVENT_LOG_VISIBLE)
+            .map(|entry| -> UIElement { text(entry).size(12).into() }),
+    );
+
+    container(column(entries).spacing(2))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
 }
 
 fn human_bps(bps: f64) -> String {
@@ -234,10 +263,30 @@ fn xml_download_popup(state: &State) -> UIElement {
 }
 
 /// Send packet button: enabled variant wires the message, disabled variant is inert.
-fn send_packet_button(state: &State) -> Option<UIElement> {
-    if state.active_baton_connection {
-        Some(button("Send Packet").on_press(Message::SendPacket).into())
+fn send_packet_button(state: &State) -> UIElement {
+    if state.is_tcp_connected() {
+        button("Send Packet").on_press(Message::SendPacket).into()
     } else {
-        Some(button("Send Packet (No Baton Connection)").into())
+        button("Send Packet (TCP Not Connected)").into()
     }
+}
+
+/// Timestamp of the last test packet, shown next to the button.
+fn last_send_timestamp_element(state: &State) -> UIElement {
+    let content = match &state.last_send_timestamp {
+        Some(timestamp) => format!("Last test packet: {}", timestamp),
+        None => "No test packet sent yet".to_string(),
+    };
+    text(content).into()
+}
+
+/// The Send Packet button with its timestamp beside it.
+fn send_packet_row(state: &State) -> UIElement {
+    row![
+        send_packet_button(state),
+        last_send_timestamp_element(state),
+    ]
+    .spacing(5)
+    .align_y(iced::Alignment::Center)
+    .into()
 }

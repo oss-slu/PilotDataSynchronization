@@ -16,10 +16,13 @@ elif host_machine.system() == 'linux' and host_machine.cpu_family() == 'x86_64'
   rust_target = 'x86_64-unknown-linux-gnu'
 endif
 
+# With no arguments, this is the Python interpreter that is running Meson
+python = import('python').find_installation()
+
 baton_tgt = custom_target(
   'baton',
   command: [
-    'python3',
+    python,
     '@CURRENT_SOURCE_DIR@/script.py',
     '@OUTDIR@',
     '@CURRENT_SOURCE_DIR@',

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use chrono::Local;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::BufRead;
@@ -147,12 +148,48 @@ fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
     packet
 }
 
+// Dummy packet for the Send Packet button. iMotions only accepts sample ids
+// that appear in the generated iMotions.xml, so the sample has to be one of
+// the enabled toggles. Returns None when every toggle is off.
+pub(crate) fn build_test_packet(state: &State) -> Option<String> {
+    let sample = test_packet_sample(state)?;
+    Some(build_imotions_packet(
+        sample,
+        &["0".to_string(), "0".to_string()],
+    ))
+}
+
+// The first enabled toggle, in the order create_xml_file writes the samples.
+fn test_packet_sample(state: &State) -> Option<&'static str> {
+    [
+        (state.altitude_toggle, "AltitudeSync"),
+        (state.airspeed_toggle, "AirspeedSync"),
+        (state.vertical_airspeed_toggle, "VerticalVelocitySync"),
+        (state.heading_toggle, "HeadingSync"),
+        (state.roll_toggle, "RollSync"),
+        (state.pitch_toggle, "PitchSync"),
+        (state.yaw_toggle, "YawSync"),
+        (state.gforce_toggle, "GForceSync"),
+    ]
+    .into_iter()
+    .find_map(|(enabled, sample)| enabled.then_some(sample))
+}
+
 fn now_epoch_millis() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| StdDuration::from_secs(0));
     format!("{}.{:03}", now.as_secs(), now.subsec_millis())
 } 
+
+/// Wall-clock timestamp for entries shown in the GUI.
+///
+/// `now_epoch_millis` is kept for `human_log`, where epoch values are fine for a
+/// machine-read stderr log; on screen they are unreadable. Milliseconds are kept
+/// because the relay streams at 20 Hz and events can arrive several per second.
+fn now_local_time() -> String {
+    Local::now().format("%H:%M:%S%.3f").to_string()
+}
 
 // -- Buffered human logger --------------------------------------------------
 const LOG_FLUSH_INTERVAL_MS: u64 = 2000;
@@ -235,7 +272,7 @@ fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
 // --- State impl -------------------------------------------------------------
 impl State {
     pub fn log_event(&mut self, event: String) {
-        let entry = format!("[{}] {}", now_epoch_millis(), event);
+        let entry = format!("[{}] {}", now_local_time(), event);
         self.event_log.push(entry);
     }
 
@@ -324,7 +361,6 @@ impl State {
         self.sent_packet_times.push_back(now);
         self.sent_samples.push_back((now, bytes));
         self.refresh_metrics(now);
-        self.log_event(format!("Sent packet ({} bytes)", bytes));
     }
 
     fn refresh_metrics(&mut self, now: Instant) {
@@ -379,11 +415,11 @@ impl State {
                     return Ok(());
                 }
                 Ok(l) => {
-                    println!("✓ Successfully created named pipe listener");
+                    println!("[OK] Successfully created named pipe listener");
                     l
                 }
                 Err(e) => {
-                    eprintln!("✗ Failed to create listener: {} (kind: {:?})", e, e.kind());
+                    eprintln!("[ERROR] Failed to create listener: {} (kind: {:?})", e, e.kind());
                     return Err(anyhow!("Failed to create listener: {}", e));
                 }
             };
@@ -464,7 +500,7 @@ impl State {
                             continue;
                         }
                         Ok(_s) => {
-                            println!("[RELAY] IPC raw line: {:?}", buffer);
+                            human_log("RX", &format!("baton line={:?}", buffer));
                             let _ = buffer.pop();
                             let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
                             buffer.clear();
@@ -623,6 +659,13 @@ impl State {
                             let _ = send_pair_if_present("YawSync", &mut idx);
                             let _ = send_pair_if_present("GForceSync", &mut idx);
                         }
+                        ToTcpThreadMessage::SendRaw(packet) => {
+                            let res = send_packet_and_debug(&mut stream, &packet);
+                            let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
+                            if let Err(e) = res {
+                                human_log("TCP", &format!("Test packet failed: {}", e));
+                            }
+                        }
                     }
                 }
                 std::thread::sleep(StdDuration::from_millis(1));
@@ -667,5 +710,46 @@ impl State {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_packet_matches_imotions_format() {
+        let state = State::default();
+        assert_eq!(
+            build_test_packet(&state).as_deref(),
+            Some("E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n")
+        );
+    }
+
+    #[test]
+    fn test_packet_uses_the_first_enabled_toggle() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+
+        assert_eq!(
+            build_test_packet(&state).as_deref(),
+            Some("E;1;PilotDataSync;;;;;VerticalVelocitySync;0;0\r\n")
+        );
+    }
+
+    #[test]
+    fn test_packet_is_none_when_every_toggle_is_off() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+        state.vertical_airspeed_toggle = false;
+        state.heading_toggle = false;
+        state.roll_toggle = false;
+        state.pitch_toggle = false;
+        state.yaw_toggle = false;
+        state.gforce_toggle = false;
+
+        assert_eq!(build_test_packet(&state), None);
     }
 }

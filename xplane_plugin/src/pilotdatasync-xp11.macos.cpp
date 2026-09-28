@@ -89,10 +89,9 @@ std::string get_current_timestamp() {
 }
 
 void send_current_pilot_data() {
-  float msToFeetRate = 3.28084f;
-  float msToKnotsRate = 1.94384f;
-  float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * msToFeetRate;
-  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+  // The pilot datarefs are already in feet and knots
+  float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
+  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
   float currentPilotHeading = XPLMGetDataf(headingPilotRef);
   float currentPilotVerticalVelocity = XPLMGetDataf(verticalVelocityPilotRef);
   float currentPilotRoll = XPLMGetDataf(rollPilotRef);
@@ -225,7 +224,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string elevationFlightmodelStr = build_str("Elevation, Flightmodel (MSL)",
                                              "ft", currentFlightmodelElevation);
 
-  float currentPilotElevation = XPLMGetDataf(elevationPilotRef) * msToFeetRate;
+  float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
   string elevationPilotStr =
       build_str("Elevation, Pilot (MSL)", "ft", currentPilotElevation);
 
@@ -234,7 +233,7 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   string airspeedFlightmodelStr =
       build_str("Airspeed, Flightmodel", "knots", currentFlightmodelAirspeed);
 
-  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef) * msToKnotsRate;
+  float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
   string airspeedPilotStr =
       build_str("Airspeed, Pilot", "knots", currentPilotAirspeed);
 

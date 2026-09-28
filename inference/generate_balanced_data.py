@@ -209,15 +209,15 @@ def generate_balanced_dataset(samples_per_class: int = 100):
 
 def main():
     inference_dir = Path(__file__).parent
-    output_file = inference_dir / 'Data' / 'raw_flight_data.csv'
-    
+    output_file = inference_dir / 'Data' / 'synthetic_flight_data.csv'
+
     print("Generating balanced synthetic flight data...")
     df = generate_balanced_dataset(samples_per_class=100)
-    
+
     df.to_csv(output_file, index=False)
-    print(f"✓ Generated {len(df)} samples (100 per class)")
-    print(f"✓ Saved to: {output_file}")
-    print("\nNow run: py label_generator.py")
+    print(f"[OK] Generated {len(df)} samples (100 per class)")
+    print(f"[OK] Saved to: {output_file}")
+    print(f"\nTo label this data, copy/rename it to raw_flight_data.csv, then run: py label_generator.py")
 
 
 if __name__ == '__main__':
