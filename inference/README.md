@@ -96,6 +96,23 @@ python inference/train_model.py
 python inference/test_model.py
 ```
 
+## Testing
+
+The label generator tests cover all 13 event labels, threshold boundaries, and heading
+wraparound. Run them from the repository root with:
+
+```
+pytest inference/tests
+```
+
+The same test suite can also be run with `python -m pytest inference/tests`, or from inside
+`inference/` with:
+
+```
+cd inference
+pytest tests
+```
+
 Each script can also be run from inside `inference/` (e.g. `cd inference && python
 label_generator.py`); the scripts resolve their own input/output paths relative to the
 `inference/` directory, not the current working directory.
