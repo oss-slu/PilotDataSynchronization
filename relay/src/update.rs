@@ -399,6 +399,11 @@ mod tests {
         state.tcp_connect(addr).expect("retry was rejected");
         let _ = listener.accept().expect("accept failed");
         assert!(wait_until(|| state.is_tcp_connected()), "retry never connected");
+        assert!(
+            state.error_message.is_none(),
+            "stale failure banner after a successful retry: {:?}",
+            state.error_message
+        );
 
         let _ = state.tcp_disconnect();
     }

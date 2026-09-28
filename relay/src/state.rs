@@ -659,6 +659,9 @@ impl State {
         });
         
         self.tcp_thread_handle = Some(tcp_thread_handle);
+        // Clear any banner left by an earlier failure, so a successful retry
+        // does not keep showing the old error.
+        self.error_message = None;
         Ok(())
     }
 
