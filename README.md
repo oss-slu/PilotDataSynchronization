@@ -160,7 +160,7 @@ In the relay's window:
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| `Connect TCP` appears to do nothing and the status stays `false` | The connection failed. No error is displayed, and pressing `Connect TCP` again fails silently because the previous thread still exists. | Press `Disconnect TCP` first, then `Connect TCP`. This is the most common first-time snag. |
+| `Connect TCP` fails and the status stays `false` | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect TCP` again. `Disconnect TCP` first is no longer needed |
 | `:( No Baton Connection` | The plugin is not loaded, or its window is closed | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
 | Data stops part-way through a flight | The "Positional Flight Data" window was closed or hidden (Windows/Linux only) | Reopen it |
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |

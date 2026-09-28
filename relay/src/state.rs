@@ -574,8 +574,14 @@ impl State {
                     stream
                 }
                 Err(e) => {
-                    human_log("TCP", &format!("Connection failed: {}", e));
-                    bail!("Failed to connect to TCP");
+                    let reason = format!("TCP connection failed: {}", e);
+                    human_log("TCP", &reason);
+                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                    // Report it so the GUI can show the failure and drop this
+                    // thread, instead of the error only reaching stderr.
+                    let _ = child_bichannel
+                        .send_to_parent(FromTcpThreadMessage::Disconnected(reason.clone()));
+                    bail!(reason);
                 }
             };
             
@@ -674,6 +680,9 @@ impl State {
         });
         
         self.tcp_thread_handle = Some(tcp_thread_handle);
+        // Clear any banner left by an earlier failure, so a successful retry
+        // does not keep showing the old error.
+        self.error_message = None;
         Ok(())
     }
 
@@ -698,6 +707,19 @@ impl State {
         
         let res = handle.join().map_err(|e| anyhow!("Join handle err: {e:?}"))?;
         Ok(res?)
+    }
+
+    // Drops a TCP thread that has already exited, so tcp_connect is allowed
+    // to start a new one. The join runs detached because the thread returned
+    // an error and its Result is of no use here.
+    pub fn reap_tcp_thread(&mut self) {
+        if let Some(handle) = self.tcp_thread_handle.take() {
+            spawn(move || {
+                let _ = handle.join();
+            });
+        }
+        self.tcp_bichannel = None;
+        self.tcp_connected = false;
     }
 
     pub fn is_tcp_connected(&self) -> bool {
