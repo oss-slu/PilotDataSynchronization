@@ -148,10 +148,31 @@ fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
     packet
 }
 
-// Dummy packet for the Send Packet button. AltitudeSync is used because
-// iMotions only accepts sample ids that appear in the generated iMotions.xml.
-pub(crate) fn build_test_packet() -> String {
-    build_imotions_packet("AltitudeSync", &["0".to_string(), "0".to_string()])
+// Dummy packet for the Send Packet button. iMotions only accepts sample ids
+// that appear in the generated iMotions.xml, so the sample has to be one of
+// the enabled toggles. Returns None when every toggle is off.
+pub(crate) fn build_test_packet(state: &State) -> Option<String> {
+    let sample = test_packet_sample(state)?;
+    Some(build_imotions_packet(
+        sample,
+        &["0".to_string(), "0".to_string()],
+    ))
+}
+
+// The first enabled toggle, in the order create_xml_file writes the samples.
+fn test_packet_sample(state: &State) -> Option<&'static str> {
+    [
+        (state.altitude_toggle, "AltitudeSync"),
+        (state.airspeed_toggle, "AirspeedSync"),
+        (state.vertical_airspeed_toggle, "VerticalVelocitySync"),
+        (state.heading_toggle, "HeadingSync"),
+        (state.roll_toggle, "RollSync"),
+        (state.pitch_toggle, "PitchSync"),
+        (state.yaw_toggle, "YawSync"),
+        (state.gforce_toggle, "GForceSync"),
+    ]
+    .into_iter()
+    .find_map(|(enabled, sample)| enabled.then_some(sample))
 }
 
 fn now_epoch_millis() -> String {
@@ -698,9 +719,37 @@ mod tests {
 
     #[test]
     fn test_packet_matches_imotions_format() {
+        let state = State::default();
         assert_eq!(
-            build_test_packet(),
-            "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n"
+            build_test_packet(&state).as_deref(),
+            Some("E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n")
         );
+    }
+
+    #[test]
+    fn test_packet_uses_the_first_enabled_toggle() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+
+        assert_eq!(
+            build_test_packet(&state).as_deref(),
+            Some("E;1;PilotDataSync;;;;;VerticalVelocitySync;0;0\r\n")
+        );
+    }
+
+    #[test]
+    fn test_packet_is_none_when_every_toggle_is_off() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+        state.vertical_airspeed_toggle = false;
+        state.heading_toggle = false;
+        state.roll_toggle = false;
+        state.pitch_toggle = false;
+        state.yaw_toggle = false;
+        state.gforce_toggle = false;
+
+        assert_eq!(build_test_packet(&state), None);
     }
 }
