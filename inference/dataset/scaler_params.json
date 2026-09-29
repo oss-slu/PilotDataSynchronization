@@ -1,0 +1,42 @@
+{
+  "mean": {
+    "altitude": 10919.825350475878,
+    "heading": 177.69141293465478,
+    "vertical_speed": 88.61582286494036,
+    "velocity": 287.92066914951295,
+    "roll": 1.4012904919069396,
+    "pitch": 0.9399947828050923,
+    "yaw": 192.66112488827937,
+    "g_force": 0.9993675146427758
+  },
+  "std": {
+    "altitude": 15974.980451453555,
+    "heading": 56.52404256657415,
+    "vertical_speed": 792.7668102421168,
+    "velocity": 147.8922188748233,
+    "roll": 5.354757948764133,
+    "pitch": 4.401205023510534,
+    "yaw": 56.56659002233183,
+    "g_force": 0.05495885773203544
+  },
+  "feature_columns": [
+    "altitude",
+    "heading",
+    "vertical_speed",
+    "velocity",
+    "roll",
+    "pitch",
+    "yaw",
+    "g_force"
+  ],
+  "filled_missing_with_median": {
+    "altitude": 9891.850999999999,
+    "heading": 169.35263,
+    "vertical_speed": 2.7002170000000003,
+    "velocity": 377.14410499999997,
+    "roll": 0.00176,
+    "pitch": 0.2127575,
+    "yaw": 184.89704,
+    "g_force": 0.999399
+  }
+}

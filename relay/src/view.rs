@@ -1,87 +1,74 @@
-//! This module defines the UI View layout using ICED.
+//! UI view definitions using iced.
 //!
-//! UI elements should be defined as **separate functions** and added to the UI elements vector
-//! instead of being written inline in the `view` function.
-//!
-//! This improves modularity, testing, and code readability.
-//!
-//! Examples:
-//!     ```fn spawn_error_message(state: &State) -> Option<UIElement> { /* ... */ } ```
-//!     ``` if let Some(error_element) = spawn_error_message(state) {
-//!             elements.push(error_element.into());
-//!         }   ```
-//!
-//!     ``` fn ipc_disconnect_button(_state: &State) -> UIElement {/* ... */}   ```
-//!     ``` elements.push(tcp_disconnect_button(state)); ```
+//! Each UI element is produced by a small focused function to improve readability,
+//! testability and maintainability. The `view` function composes those elements.
 
-use std::net::ToSocketAddrs;
-
-use iced::{
-    widget::{button, column, container, row, text, text_input, toggler},
-    Element, Length,
-};
+use iced::widget::{button, column, container, pick_list, row, text, text_input, toggler};
+use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
 use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
 
-// TODO: Fix the close button on the UI card. It displays a chinese character meaning "plowed earth"?????
+const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:9999";
+
+/// How many of the most recent `event_log` entries the GUI renders.
+const EVENT_LOG_VISIBLE: usize = 5;
+
+/// Compose the UI by collecting small, single-responsibility elements.
 pub(crate) fn view(state: &State) -> UIElement {
     let mut elements: Vec<UIElement> = Vec::new();
 
-    // OPTIONAL Error message
-    if let Some(error_element) = spawn_error_message(state) {
-        elements.push(error_element.into());
+    // Optional error banner
+    if let Some(err) = spawn_error_message(state) {
+        elements.push(err);
     }
 
-    // Elapsed Time Text
+    // Informational text
     elements.push(elapsed_time_element(state));
-
-    // Baton Latest Send Text
     elements.push(baton_data_element(state));
     elements.push(baton_connect_status_element(state));
 
-    // Send Packet button (Only if baton is running) - Jacob
-    if let Some(send_btn) = send_packet_button(state) {
-        elements.push(send_btn);
-    }
+    // Action buttons
+    elements.push(send_packet_row(state));
 
-    // Added this for tcp counter - Nyla Hughes
+    // TCP controls and status
+    elements.push(tcp_connect_status_element(state));
+    elements.push(check_tcp_status_button());
+
+    // IPC controls
+    elements.push(ipc_connect_button());
+    elements.push(ipc_disconnect_button());
+
+    // TCP connect/disconnect row
+    elements.push(tcp_connect_button(state));
+    elements.push(tcp_disconnect_button());
+
+    // Metrics (if enabled)
     elements.push(metrics_block(state));
 
-    // TCP Connection Status elements
-    elements.push(tcp_connect_status_element(state));
-    elements.push(check_tcp_status_button(state));
+    // Recent event log
+    elements.push(event_log_element(state));
 
-    // IPC Connect/Disconnect Buttons
-    elements.push(ipc_connect_button(state));
-    elements.push(ipc_disconnect_button(state));
+    // XML download / card
+    elements.push(xml_download_popup(state));
 
-    // TCP Connect/Disconnect buttons
-    elements.push(tcp_connect_button(state));
-    elements.push(tcp_disconnect_button(state));
-
-    // XML popup
-    elements.push(xml_downloader_popup(state));
-
-    // Create and return the GUI column from that vector
     column(elements).into()
 }
 
 fn spawn_error_message(state: &State) -> Option<UIElement> {
-    if let Some(error) = &state.error_message {
-        Some(
-            container(text(format!("⚠️ {}", error)))
+    state
+        .error_message
+        .as_ref()
+        .map(|err| {
+            container(text(format!("[WARN] {}", err)))
                 .padding(10)
                 .width(Length::Fill)
                 .style(container::rounded_box)
                 .center_x(Length::Fill)
-                .into(),
-        )
-    } else {
-        None
-    }
+                .into()
+        })
 }
 
 fn elapsed_time_element(state: &State) -> UIElement {
@@ -98,14 +85,11 @@ fn baton_connect_status_element(state: &State) -> UIElement {
 }
 
 fn baton_data_element(state: &State) -> UIElement {
-    // need to update view function with float parsing? perhaps? idk
-    let baton_data = match &state.latest_baton_send {
-        //added this for tcp counter - Nyla Hughes
-        Some(data) => format!("[BATON]: {data}"), 
-        //
+    let content = match &state.latest_baton_send {
+        Some(data) => format!("[BATON]: {}", data),
         None => "No data from baton.".into(),
     };
-    text(baton_data).into()
+    text(content).into()
 }
 
 // Added this for tcp counter - Nyla Hughes
@@ -123,6 +107,32 @@ fn metrics_block(state: &State) -> UIElement {
     ]
     .into()
 }
+
+/// Render the most recent `event_log` entries so connect/disconnect failures
+/// are visible in the GUI instead of only being recorded in state.
+fn event_log_element(state: &State) -> UIElement {
+    if state.event_log.is_empty() {
+        return text("").into();
+    }
+
+    // Newest first, so the latest failure is the line the user sees.
+    let mut entries: Vec<UIElement> = vec![text("Recent events").size(14).into()];
+    entries.extend(
+        state
+            .event_log
+            .iter()
+            .rev()
+            .take(EVENT_LOG_VISIBLE)
+            .map(|entry| -> UIElement { text(entry).size(12).into() }),
+    );
+
+    container(column(entries).spacing(2))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
+}
+
 fn human_bps(bps: f64) -> String {
     const K: f64 = 1_000.0;
     if bps < K {
@@ -144,69 +154,100 @@ fn tcp_connect_status_element(state: &State) -> UIElement {
     text(format!("TCP Connection Status: {}", state.tcp_connected)).into()
 }
 
-fn check_tcp_status_button(_state: &State) -> UIElement {
+/// Simple helper: a button which triggers the app to verify the TCP connection state.
+fn check_tcp_status_button() -> UIElement<'static> {
     button("Check TCP Connection Status")
         .on_press(Message::ConnectionMessage)
         .into()
 }
 
-fn ipc_connect_button(_state: &State) -> UIElement {
+/// IPC connect / disconnect buttons
+fn ipc_connect_button() -> UIElement<'static> {
     button("Connect IPC").on_press(Message::ConnectIpc).into()
 }
 
-fn ipc_disconnect_button(_state: &State) -> UIElement {
+fn ipc_disconnect_button() -> UIElement<'static> {
     button("Disconnect IPC")
         .on_press(Message::DisconnectIpc)
         .into()
 }
 
-fn tcp_connect_button(state: &State) -> UIElement {
-    if state.tcp_addr_field.to_socket_addrs().is_ok() {
-        row![
-            button("Connect TCP").on_press(Message::ConnectTcp),
-            text_input("127.0.0.1:9999", &state.tcp_addr_field)
-                .on_input(|addr| Message::TcpAddrFieldUpdate(addr)),
-            text("Address input is valid")
-        ]
-        .spacing(5)
+/// Build the TCP address input widget wired to `Message::TcpAddrFieldUpdate`.
+fn tcp_addr_input(state: &State) -> UIElement {
+    text_input(DEFAULT_TCP_PLACEHOLDER, &state.tcp_addr_field)
+        .on_input(|addr| Message::TcpAddrFieldUpdate(addr))
         .into()
+}
+
+fn tcp_addr_dropdown(state: &State) -> UIElement {
+    pick_list(
+        state.saved_tcp_addrs.clone(),
+        state.selected_tcp_addr.clone(),
+        Message::SavedTcpAddrSelected,
+    )
+    .placeholder("Saved IPs")
+    .into()
+}
+
+fn tcp_validation_text(state: &State) -> UIElement {
+    if let Some(err) = &state.tcp_addr_validation_error {
+        text(err).into()
     } else {
-        row![
-            button("Connect TCP"),
-            text_input("127.0.0.1:9999", &state.tcp_addr_field)
-                .on_input(|addr| Message::TcpAddrFieldUpdate(addr)),
-            text("Address input is invalid")
-        ]
-        .spacing(5)
-        .into()
+        text(" ").into()
     }
 }
 
-fn tcp_disconnect_button(_state: &State) -> UIElement {
+fn tcp_connect_button(state: &State) -> UIElement {
+    column![
+        row![
+            button("Connect TCP").on_press(Message::ConnectTcp),
+            tcp_addr_input(state),
+            tcp_addr_dropdown(state),
+        ]
+        .spacing(5),
+        tcp_validation_text(state),
+    ]
+    .spacing(5)
+    .into()
+}
+
+fn tcp_disconnect_button() -> UIElement<'static> {
     button("Disconnect TCP")
         .on_press(Message::DisconnectTcp)
         .into()
 }
 
-fn xml_downloader_popup(state: &State) -> UIElement {
+/// XML download card or opener button depending on `state.card_open`
+fn xml_download_popup(state: &State) -> UIElement {
     if state.card_open {
         container(
             card(
-                // FIXME: reword these toggles to actually be snappy wording
-                text(format!("Download the XML File!")),
+                text("Download the XML File!"),
                 column![
                     toggler(state.altitude_toggle)
-                        .label("Altitude Toggle!")
+                        .label("Altitude")
                         .on_toggle(Message::AltitudeToggle),
                     toggler(state.airspeed_toggle)
-                        .label("Airspeed Toggle")
+                        .label("Airspeed")
                         .on_toggle(Message::AirspeedToggle),
                     toggler(state.vertical_airspeed_toggle)
-                        .label("Vertical Airspeed Toggle")
+                        .label("Vertical Airspeed")
                         .on_toggle(Message::VerticalAirspeedToggle),
                     toggler(state.heading_toggle)
-                        .label("Heading Toggle")
+                        .label("Heading")
                         .on_toggle(Message::HeadingToggle),
+                    toggler(state.roll_toggle)
+                        .label("Roll")
+                        .on_toggle(Message::RollToggle),
+                    toggler(state.pitch_toggle)
+                        .label("Pitch")
+                        .on_toggle(Message::PitchToggle),
+                    toggler(state.yaw_toggle)
+                        .label("Yaw")
+                        .on_toggle(Message::YawToggle),
+                    toggler(state.gforce_toggle)
+                        .label("G-Force")
+                        .on_toggle(Message::GForceToggle),
                     button("Generate XML File").on_press(Message::CreateXMLFile),
                 ],
             )
@@ -221,18 +262,31 @@ fn xml_downloader_popup(state: &State) -> UIElement {
     }
 }
 
-
-fn send_packet_button(state: &State) -> Option<UIElement> {
-    if state.active_baton_connection {
-        Some(
-            button("Send Packet")
-                .on_press(Message::SendPacket)
-                .into(),
-        )
+/// Send packet button: enabled variant wires the message, disabled variant is inert.
+fn send_packet_button(state: &State) -> UIElement {
+    if state.is_tcp_connected() {
+        button("Send Packet").on_press(Message::SendPacket).into()
     } else {
-        Some(
-            button("Send Packet (No Baton Connection)")
-                .into(),
-        )
+        button("Send Packet (TCP Not Connected)").into()
     }
+}
+
+/// Timestamp of the last test packet, shown next to the button.
+fn last_send_timestamp_element(state: &State) -> UIElement {
+    let content = match &state.last_send_timestamp {
+        Some(timestamp) => format!("Last test packet: {}", timestamp),
+        None => "No test packet sent yet".to_string(),
+    };
+    text(content).into()
+}
+
+/// The Send Packet button with its timestamp beside it.
+fn send_packet_row(state: &State) -> UIElement {
+    row![
+        send_packet_button(state),
+        last_send_timestamp_element(state),
+    ]
+    .spacing(5)
+    .align_y(iced::Alignment::Center)
+    .into()
 }

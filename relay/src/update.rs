@@ -1,48 +1,96 @@
 use iced::{time::Duration, Task};
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::Write;
+use std::time::{Duration as StdDuration, Instant};
 
-//added this for tcp counter - Nyla Hughes
-use crate::message::{Message, ToTcpThreadMessage, FromIpcThreadMessage, FromTcpThreadMessage}; 
-use crate::State;
+use chrono::Local;
+
+use crate::{
+    message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage,
+    state::build_test_packet, Message, State,
+};
+
+fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
+    let trimmed = address.trim().to_string();
+    match State::validate_tcp_addr(&trimmed) {
+        Ok(()) => {
+            state.tcp_addr_validation_error = None;
+            state.tcp_addr_field = trimmed.clone();
+            if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
+                state.log_event(format!("Saving TCP address failed: {}", e));
+            }
+            if let Err(e) = state.tcp_connect(trimmed.clone()) {
+                state.log_event(format!("TCP connect failed: {}", e));
+            }
+        }
+        Err(e) => {
+            state.tcp_addr_validation_error = Some(e.to_string());
+        }
+    }
+}
 
 pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     use Message as M;
 
-    #[allow(unreachable_patterns)]
+    const LAST_SEEN_WINDOW: StdDuration = StdDuration::from_secs(2);
+
     match message {
         M::Update => {
             state.elapsed_time += Duration::from_millis(10);
 
-            // added this for tcp counter - Nyla Hughes
-            state.refresh_metrics_now(); 
+            // compute active baton connection using centralized helpers
+            let ipc_conn_flag = state.is_ipc_connected();
+            let recent_packet = state
+                .last_baton_instant
+                .map(|t| t.elapsed() <= LAST_SEEN_WINDOW)
+                .unwrap_or(false);
+            state.active_baton_connection = ipc_conn_flag || recent_packet;
 
+            // process IPC messages
             if let Some(ipc_bichannel) = &state.ipc_bichannel {
-                for message in ipc_bichannel.received_messages() {
-                    match message {
+                for msg in ipc_bichannel.received_messages() {
+                    match msg {
                         FromIpcThreadMessage::BatonData(data) => {
-                            state.tcp_bichannel.as_mut().map(|tcp_bichannel| {
-                                tcp_bichannel.send_to_child(ToTcpThreadMessage::Send(data.clone()))
-                            });
+                            if let Some(tcp_bi) = state.tcp_bichannel.as_mut() {
+                                let _ = tcp_bi.send_to_child(ToTcpThreadMessage::Send(data.clone()));
+                            }
                             state.latest_baton_send = Some(data);
+                            state.last_baton_instant = Some(Instant::now());
                             state.active_baton_connection = true;
                         }
                         FromIpcThreadMessage::BatonShutdown => {
                             let _ = state.tcp_disconnect();
                             state.active_baton_connection = false;
                         }
-                        _ => (),
                     }
                 }
             }
-            if let Some(tcp_bichannel) = &state.tcp_bichannel {
-                for message in tcp_bichannel.received_messages() {
-                    match message {
-                        //added this for tcp counter - Nyla Hughes
-                        FromTcpThreadMessage::Sent { bytes, .. } => {
-                            state.on_tcp_packet_sent(bytes); 
-                        }
-                        _ => (),
+
+            // process TCP messages
+            let tcp_messages = state
+                .tcp_bichannel
+                .as_ref()
+                .map(|bichannel| bichannel.received_messages())
+                .unwrap_or_default();
+            for msg in tcp_messages {
+                match msg {
+                    FromTcpThreadMessage::Connected => {
+                        state.log_event("TCP connected to iMotions".into());
+                        state.tcp_connected = true;
+                    }
+                    FromTcpThreadMessage::Disconnected(reason) => {
+                        state.log_event(format!("TCP disconnected: {}", reason));
+                        state.error_message = Some(reason);
+                        state.tcp_connected = false;
+                        // The thread has exited. Clear it so Connect TCP works
+                        // again without pressing Disconnect TCP first.
+                        state.reap_tcp_thread();
+                    }
+                    FromTcpThreadMessage::Sent(bytes) => {
+                        state.on_tcp_packet_sent(bytes);
+                    }
+                    FromTcpThreadMessage::SendError(err) => {
+                        state.log_event(format!("TCP send error: {}", err));
                     }
                 }
             }
@@ -50,69 +98,51 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::WindowCloseRequest(id) => {
-            // pre-shutdown operations go here
             if let Some(ref bichannel) = state.ipc_bichannel {
                 let _ = bichannel.killswitch_engage();
             }
-
             if let Some(ref bichannel) = state.tcp_bichannel {
                 let _ = bichannel.killswitch_engage();
             }
 
-            // delete socket file
-            let socket_file_path = if cfg!(target_os = "macos") {
-                "/tmp/baton.sock"
-            } else {
-                // TODO: add branch for Windows; mac branch is just for testing/building
-                panic!(
-                    "No implementation available for given operating system: {}",
-                    std::env::consts::OS
-                )
-            };
-            std::fs::remove_file(socket_file_path).unwrap();
+            // remove unix socket file on macos test/dev path only
+            if cfg!(target_os = "macos") {
+                let _ = std::fs::remove_file("/tmp/baton.sock");
+            }
 
-            // necessary to actually shut down the window, otherwise the close button will appear to not work
             iced::window::close(id)
         }
         M::ConnectionMessage => {
-            if let Some(status) = state
-                .tcp_bichannel
-                .as_ref()
-                .and_then(|bichannel| bichannel.is_conn_to_endpoint().ok())
-            {
-                state.tcp_connected = status
-            } else {
-                state.tcp_connected = false
-            }
-
+            state.tcp_connected = state.is_tcp_connected();
             Task::none()
         }
         M::ConnectIpc => {
             if let Err(e) = state.ipc_connect() {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("IPC connect failed: {}", e));
+            }
             Task::none()
         }
         M::DisconnectIpc => {
             if let Err(e) = state.ipc_disconnect() {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("IPC disconnect failed: {}", e));
+            }
             Task::none()
         }
         M::ConnectTcp => {
             let address = state.tcp_addr_field.clone();
-            if let Err(e) = state.tcp_connect(address) {
-                state.log_event(format!("Error: {e:?}"));
-            };
+            connect_tcp_with_validation_and_save(state, address);
+            Task::none()
+        }
+        M::SavedTcpAddrSelected(address) => {
+            connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }
         M::DisconnectTcp => {
             if let Err(e) = state.tcp_disconnect() {
-                state.log_event(format!("Error: {e:?}"));
-            };
+                state.log_event(format!("TCP disconnect failed: {}", e));
+            }
             Task::none()
         }
-        // Toggle messages for GUI XML generator
         M::AltitudeToggle(value) => {
             state.altitude_toggle = value;
             Task::none()
@@ -129,8 +159,23 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.heading_toggle = value;
             Task::none()
         }
+        M::RollToggle(value) => {
+            state.roll_toggle = value;
+            Task::none()
+        }
+        M::PitchToggle(value) => {
+            state.pitch_toggle = value;
+            Task::none()
+        }
+        M::YawToggle(value) => {
+            state.yaw_toggle = value;
+            Task::none()
+        }
+        M::GForceToggle(value) => {
+            state.gforce_toggle = value;
+            Task::none()
+        }
         M::CreateXMLFile => create_xml_file(state),
-        // Card Open/Close messages for GUI pop-up-card window
         M::CardOpen => {
             state.card_open = true;
             Task::none()
@@ -140,131 +185,278 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::TcpAddrFieldUpdate(addr) => {
-            // Update the TCP address text input in the GUI
-            let is_chars_valid = addr.chars().all(|c| c.is_numeric() || c == '.' || c == ':');
-            let dot_count = addr.chars().filter(|&c| c == '.').count();
-            let colon_count = addr.chars().filter(|&c| c == ':').count();
-            if is_chars_valid && dot_count <= 3 && colon_count <= 1 {
-                state.tcp_addr_field = addr;
-            }
+            state.tcp_addr_field = addr;
+            state.tcp_addr_validation_error = None;
             Task::none()
         }
         M::SendPacket => {
-            let now = std::time::SystemTime::now();
-            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-            state.last_send_timestamp = Some(format!("{}", duration.as_secs()));
+            let connected = state.is_tcp_connected();
+            let packet = build_test_packet(state);
+            match (packet, state.tcp_bichannel.as_mut()) {
+                (Some(packet), Some(tcp_bi)) if connected => {
+                    match tcp_bi.send_to_child(ToTcpThreadMessage::SendRaw(packet)) {
+                        Ok(()) => {
+                            state.error_message = None;
+                            state.last_send_timestamp =
+                                Some(Local::now().format("%H:%M:%S").to_string());
+                            state.log_event("Test packet queued".into());
+                        }
+                        Err(e) => {
+                            let msg = format!("Sending the test packet failed: {}", e);
+                            state.error_message = Some(msg.clone());
+                            state.log_event(msg);
+                        }
+                    }
+                }
+                (None, _) => {
+                    state.error_message =
+                        Some("Enable at least one dataref toggle to send a test packet".into());
+                }
+                _ => {
+                    state.error_message = Some("Connect TCP before sending a test packet".into());
+                }
+            }
             Task::none()
         }
-        _ => Task::none(),
     }
 }
 
-// Creates a default XML file when a button is clicked in the GUI
 fn create_xml_file(state: &mut State) -> Task<Message> {
-    // Get the user's downloads directory
-    let mut downloads_path =
-        dirs::download_dir().expect("Retrieving the user's Downloads file directory.");
+    let mut downloads_path = match dirs::download_dir() {
+        Some(p) => p,
+        None => {
+            let msg = "Could not determine Downloads directory".to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+            return Task::none();
+        }
+    };
     downloads_path.push("iMotions.xml");
 
-    // Create file in downloads directory. If alr there, will overwrite the existing file.
-    let mut file = File::create(&downloads_path).expect("Creating XML File.");
-
-    // Check if all dataref toggles are false. If so, return error message
+    // Validate toggles - check if all dataref toggles are false
     if !state.altitude_toggle
         && !state.airspeed_toggle
         && !state.vertical_airspeed_toggle
         && !state.heading_toggle
+        && !state.roll_toggle
+        && !state.pitch_toggle
+        && !state.yaw_toggle
+        && !state.gforce_toggle
     {
         state.error_message = Some("Please select at least one dataref toggle".into());
         return Task::none();
     }
-    state.error_message = None; // Clear previous error
+    state.error_message = None;
 
-    // NOTE: This XML formatting was found in the PilotDataSync Slack. Double check this is the correct formatting.
-    let mut contents = String::from(
-        "<EventSource Version=\"1\" Id=\"PilotDataSync\" Name=\"Positional Flight Data\">\n",
-    );
+    let mut contents = String::from("<EventSource Version=\"1\" Id=\"PilotDataSync\" Name=\"Positional Flight Data\">\n");
     if state.altitude_toggle {
-        let mut altitude_str =
-            String::from("\t<Sample Id=\"AltitudeSync\" Name=\"Altitude Synchronization\">\n");
-
-        altitude_str.push_str(
-            "\t\t<Field Id=\"FlightModelAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n",
-        );
-        altitude_str.push_str(
-            "\t\t<Field Id=\"PilotAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n",
-        );
-        altitude_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&altitude_str);
+        contents.push_str("\t<Sample Id=\"AltitudeSync\" Name=\"Altitude Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotAltitude\" Range=\"Variable\" Min=\"0\" Max=\"50000\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     if state.airspeed_toggle {
-        let mut airspeed_str =
-            String::from("\t<Sample Id=\"AirspeedSync\" Name=\"Airspeed Synchronization\">\n");
-
-        airspeed_str.push_str(
-            "\t\t<Field Id=\"FlightModelAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n",
-        );
-        airspeed_str.push_str(
-            "\t\t<Field Id=\"PilotAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n",
-        );
-        airspeed_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&airspeed_str);
+        contents.push_str("\t<Sample Id=\"AirspeedSync\" Name=\"Airspeed Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotAirspeed\" Range=\"Variable\" Min=\"0\" Max=\"600\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     if state.vertical_airspeed_toggle {
-        let mut vertical_airspeed_str = String::from(
-            "\t<Sample Id=\"VerticalVelocitySync\" Name=\"Vertical Velocity Synchronization\">\n",
-        );
-
-        vertical_airspeed_str.push_str("\t\t<Field Id=\"FlightModelVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
-        vertical_airspeed_str.push_str("\t\t<Field Id=\"PilotVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
-        vertical_airspeed_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&vertical_airspeed_str);
+        contents.push_str("\t<Sample Id=\"VerticalVelocitySync\" Name=\"Vertical Velocity Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotVerticalVelocity\" Range=\"Variable\" Min=\"-5000\" Max=\"5000\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
     if state.heading_toggle {
-        let mut heading_str =
-            String::from("\t<Sample Id=\"HeadingSync\" Name=\"Heading Synchronization\">\n");
-
-        heading_str.push_str(
-            "\t\t<Field Id=\"FlightModelHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n",
-        );
-        heading_str.push_str(
-            "\t\t<Field Id=\"PilotHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n",
-        );
-        heading_str.push_str("\t</Sample>\n");
-
-        contents.push_str(&heading_str);
+        contents.push_str("\t<Sample Id=\"HeadingSync\" Name=\"Heading Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotHeading\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t</Sample>\n");
     }
+
+    // New samples for Roll, Pitch, Yaw, G-Force
+    if state.roll_toggle {
+        contents.push_str("\t<Sample Id=\"RollSync\" Name=\"Roll Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelRoll\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotRoll\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
+    if state.pitch_toggle {
+        contents.push_str("\t<Sample Id=\"PitchSync\" Name=\"Pitch Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelPitch\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotPitch\" Range=\"Variable\" Min=\"-180\" Max=\"180\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
+    if state.yaw_toggle {
+        contents.push_str("\t<Sample Id=\"YawSync\" Name=\"Yaw Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelYaw\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotYaw\" Range=\"Variable\" Min=\"0\" Max=\"360\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
+    if state.gforce_toggle {
+        contents.push_str("\t<Sample Id=\"GForceSync\" Name=\"G-Force Synchronization\">\n");
+        contents.push_str("\t\t<Field Id=\"FlightModelGForce\" Range=\"Variable\" Min=\"-10\" Max=\"10\" />\n");
+        contents.push_str("\t\t<Field Id=\"PilotGForce\" Range=\"Variable\" Min=\"-10\" Max=\"10\" />\n");
+        contents.push_str("\t</Sample>\n");
+    }
+
     contents.push_str("</EventSource>");
 
-    // Write XML file
-    file.write_all(contents.as_bytes())
-        .expect("Writing to XML file");
+    match File::create(&downloads_path) {
+        Ok(mut file) => {
+            if let Err(e) = file.write_all(contents.as_bytes()) {
+                let msg = format!("Writing XML file failed: {}", e);
+                state.error_message = Some(msg.clone());
+                state.log_event(msg);
+            } else {
+                state.log_event(format!("XML file written to {}", downloads_path.display()));
+            }
+        }
+        Err(e) => {
+            let msg = format!("Creating XML file failed: {}", e);
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+        }
+    }
 
-    Task::none() // Return type that we need for the Update logic
+    Task::none()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::State;
-    use crate::Message;
+    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
+    use std::thread::sleep;
+
+    // Waits for a condition, polling every 10ms, so the test does not hang.
+    fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
+        for _ in 0..200 {
+            if condition() {
+                return true;
+            }
+            sleep(StdDuration::from_millis(10));
+        }
+        false
+    }
 
     #[test]
-    fn send_packet_updates_timestamp() {
+    fn send_packet_writes_one_test_packet_to_the_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+
         let mut state = State::default();
-    
-        assert!(state.last_send_timestamp.is_none());
+        state.tcp_connect(addr).expect("tcp_connect failed");
 
-        // Should simulate sending a packet
-        let _ = super::update(&mut state, Message::SendPacket);
+        let (stream, _) = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
 
-        // After update, timestamp should be set
+        let _ = update(&mut state, Message::SendPacket);
+
+        // Bounded so a delivery regression fails the test instead of hanging
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(5)))
+            .expect("set_read_timeout failed");
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read failed");
+
+        assert_eq!(line, "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n");
         assert!(state.last_send_timestamp.is_some());
-        let ts = state.last_send_timestamp.as_ref().unwrap();
-       
-        assert!(ts.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(state.error_message, None);
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // Pumps the Update message the GUI subscription would send, so queued
+    // thread messages are processed.
+    fn pump_update(state: &mut State, ticks: usize) {
+        for _ in 0..ticks {
+            let _ = update(state, Message::Update);
+            sleep(StdDuration::from_millis(10));
+        }
+    }
+
+    // A port nothing listens on, obtained by binding and then dropping.
+    fn closed_port_addr() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        drop(listener);
+        addr
+    }
+
+    #[test]
+    fn failed_connect_surfaces_an_error_and_allows_a_retry() {
+        let mut state = State::default();
+        state
+            .tcp_connect(closed_port_addr())
+            .expect("tcp_connect should spawn a thread");
+
+        pump_update(&mut state, 200);
+
+        let error = state.error_message.clone().expect("no error surfaced");
+        assert!(
+            error.starts_with("TCP connection failed:"),
+            "unexpected error: {error}"
+        );
+        assert!(!state.tcp_connected);
+        assert!(state.tcp_thread_handle.is_none(), "dead thread was kept");
+        assert!(
+            state.event_log.iter().any(|e| e.contains("TCP disconnected")),
+            "failure missing from the event log: {:?}",
+            state.event_log
+        );
+
+        // The retry is the point: this used to fail with "TCP thread already
+        // exists" until Disconnect TCP was pressed.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        state.tcp_connect(addr).expect("retry was rejected");
+        let _ = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "retry never connected");
+        assert!(
+            state.error_message.is_none(),
+            "stale failure banner after a successful retry: {:?}",
+            state.error_message
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn send_packet_with_every_toggle_off_reports_an_error() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+        state.vertical_airspeed_toggle = false;
+        state.heading_toggle = false;
+        state.roll_toggle = false;
+        state.pitch_toggle = false;
+        state.yaw_toggle = false;
+        state.gforce_toggle = false;
+
+        let _ = update(&mut state, Message::SendPacket);
+
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Enable at least one dataref toggle to send a test packet")
+        );
+        assert!(state.last_send_timestamp.is_none());
+    }
+
+    #[test]
+    fn send_packet_without_tcp_reports_an_error() {
+        let mut state = State::default();
+
+        let _ = update(&mut state, Message::SendPacket);
+
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Connect TCP before sending a test packet")
+        );
+        assert!(state.last_send_timestamp.is_none());
     }
 }
