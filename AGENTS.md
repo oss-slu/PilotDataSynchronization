@@ -18,7 +18,7 @@ Run from the repo root, in order, per component:
 - Plugin (also builds baton): `cd xplane_plugin && meson setup build && meson compile -C build && meson test -C build`
 - Relay: `cd relay && cargo test`
 - Baton: `cd xplane_plugin/subprojects/baton && cargo test`
-- Inference: `cd inference && uv sync`, then `uv run python <script>`. There is no automated test suite yet.
+- Inference: `cd inference && uv sync`, then `uv run python <script>`. `uv run pytest` runs the tests in `inference/tests/`; most scripts are untested.
 
 CI is in `.github/workflows/` (`meson-build.yml`, `super-linter.yml`). Run `meson setup` with the cross-file for your OS if not on native Windows (see README).
 

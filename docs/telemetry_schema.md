@@ -100,8 +100,8 @@ ingestion path differ depending on the answer.
 | `target_vertical_speed` | float | ft/min | scenario/autopilot (TBD) | **missing** |
 | `vertical_speed_deviation` | float | ft/min | computed | derived, see §5 |
 | `velocity` (airspeed) | float | kts (indicated) | plugin | exists |
-| `target_velocity` | float | kts | scenario/autopilot (TBD) | **missing** |
-| `velocity_deviation` | float | kts | computed | derived, see §5 |
+| `target_airspeed` | float | kts | scenario/autopilot (TBD) | **missing** |
+| `airspeed_deviation` | float | kts | computed | derived, see §5 |
 | `roll` | float | deg | plugin | exists (extra, not part of deviation set) |
 | `pitch` | float | deg | plugin | exists (extra) |
 | `yaw` | float | deg | plugin | exists (extra); true heading, see §1 |
@@ -141,9 +141,9 @@ each metric, per the client's example (actual 290,000 ft vs. target 300,000 ft
 
 ```
 altitude_deviation         = altitude - target_altitude              (ft)
-heading_deviation          = angular_diff(heading, target_heading)   (deg, range [-180, 180])
+heading_deviation          = angular_diff(heading, target_heading)   (deg, range [-180, 180))
 vertical_speed_deviation   = vertical_speed - target_vertical_speed  (ft/min)
-velocity_deviation         = velocity - target_velocity              (kts)
+airspeed_deviation         = velocity - target_airspeed              (kts)
 ```
 
 `heading_deviation` cannot use plain subtraction because heading wraps at
@@ -159,16 +159,23 @@ behave this way). It does not hold as written in C++ or Rust, where `%`/`fmod`
 return a negative remainder for a negative left-hand side — both the plugin
 and the relay are implemented in those languages, so a direct port of this
 line would be wrong there. The formula's output range is also `[-180, 180)`:
-a difference of exactly +180° maps to -180°. `label_generator.py`'s
-`_calculate_heading_change` computes a related turn-rate quantity and returns
-+180 for the same input, so the two aren't consistent at that boundary. If
-heading deviation ends up computed in more than one place, point every
-implementation at one shared helper rather than re-deriving this formula.
+a difference of exactly +180° maps to -180°. The shared helper is
+`angular_diff` in `inference/angles.py`; both `features.py` and
+`label_generator.py`'s `_calculate_heading_change` (a related turn-rate
+quantity) call it, so they agree at that boundary. Point any new heading
+computation at the helper rather than re-deriving this formula.
 
-For clustering, each deviation should also be available in absolute-value
-and/or normalized (e.g. z-scored per pilot or per metric) form, since raw
-units differ in scale (ft vs. deg vs. kts) — this will be finalized in the
-feature-engineering step, not in this schema doc.
+The airspeed columns are named `airspeed_*` to match the glossary, while the
+raw telemetry column keeps its name, `velocity`.
+
+`inference/features.py` summarises deviation per flight and per pilot in raw
+units: mean absolute deviation (`_mad`), standard deviation of the signed
+deviation (`_std`) and mean signed deviation (`_bias`) for each metric, plus
+the number of samples used (`_rows_used`, per flight). A pilot's features are
+the mean of their flights' features, with a `flights` count. Units differ in
+scale (ft vs. deg vs. kts), so scaling across pilots is done by the clustering
+step, not here; do not z-score per pilot, which would erase the differences
+between pilots.
 
 ## 6. Summary of gaps to flag to the client
 

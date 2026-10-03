@@ -69,6 +69,31 @@ required to train or test the shipped Random Forest model.
 which `test_model.py` reads first (see "Model details" below) — this is a different file from
 `prepare_data.py`'s `dataset/test_processed.csv` and does not depend on step 4 having run.
 
+### Deviation features (clustering input)
+
+`inference/compute_features.py` turns telemetry that carries targets into deviation features per
+flight and per pilot (see `docs/telemetry_schema.md` section 5). The input needs `pilot_id`,
+`flight_id`, the four actual values and `target_altitude`, `target_heading`,
+`target_vertical_speed` and `target_airspeed`, in post-#196 units. The committed CSVs lack these
+columns, and no script in this repo generates them yet, so this step has only been run on
+hand-built test data.
+
+```
+python inference/compute_features.py --input <telemetry_with_targets.csv>
+```
+
+Outputs `inference/Data/flight_features.csv` and `inference/Data/pilot_features.csv`, in raw units.
+
+### Tests
+
+```
+cd inference
+uv sync          # installs pytest from the dev group; the plain-venv install does not
+uv run pytest
+```
+
+Covers the angle helper, the deviation features and the labeler's heading change.
+
 ## Commands (run from the project root)
 
 ```
