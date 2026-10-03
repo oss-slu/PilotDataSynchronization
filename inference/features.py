@@ -12,6 +12,8 @@ Outputs are in raw units (ft, deg, ft/min, kts). Scaling across pilots belongs
 to the clustering step, not here.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -79,8 +81,9 @@ def flight_features(df: pd.DataFrame) -> pd.DataFrame:
         <metric>_bias       mean signed deviation (not meant for clustering by default)
         <metric>_rows_used  samples with a valid deviation
 
-    NaN deviations are skipped. Raises if a flight has no valid sample for a
-    metric, so no flight silently ends up with all-NaN features.
+    NaN deviations are skipped. A flight with no valid sample for a metric gets
+    NaN for that metric (and zero rows used) and a warning, so the gap is
+    visible rather than silent; its other metrics are unaffected.
     """
     deviation_columns = [f"{m}_deviation" for m in METRICS]
     _require_columns(df, ID_COLUMNS + deviation_columns)
@@ -94,13 +97,17 @@ def flight_features(df: pd.DataFrame) -> pd.DataFrame:
         for metric in METRICS:
             deviations = group[f"{metric}_deviation"].dropna()
             if deviations.empty:
-                raise ValueError(
+                warnings.warn(
                     f"Flight {flight_id!r} of pilot {pilot_id!r} has no valid "
-                    f"target for {metric}; cannot compute its deviation features"
+                    f"target for {metric}; its {metric} features are NaN",
+                    UserWarning,
+                    stacklevel=2,
                 )
-            row[f"{metric}_mad"] = deviations.abs().mean()
-            row[f"{metric}_std"] = deviations.std(ddof=0)
-            row[f"{metric}_bias"] = deviations.mean()
+                row.update({f"{metric}_{stat}": np.nan for stat in STATISTICS})
+            else:
+                row[f"{metric}_mad"] = deviations.abs().mean()
+                row[f"{metric}_std"] = deviations.std(ddof=0)
+                row[f"{metric}_bias"] = deviations.mean()
             row[f"{metric}_rows_used"] = len(deviations)
         rows.append(row)
     return pd.DataFrame(rows)
@@ -110,12 +117,24 @@ def pilot_features(flights: pd.DataFrame) -> pd.DataFrame:
     """
     One row per pilot: the mean of their flights' features, so every flight
     counts equally regardless of length, plus a `flights` count.
+
+    A feature averages over the flights that have it. A pilot with no flight
+    that has a metric gets NaN for it and a warning.
     """
     feature_columns = [f"{m}_{suffix}" for m in METRICS for suffix in STATISTICS]
     _require_columns(flights, ID_COLUMNS + feature_columns)
     grouped = flights.groupby("pilot_id", sort=True)
     pilots = grouped[feature_columns].mean()
     pilots["flights"] = grouped.size()
+    for pilot_id, row in pilots.iterrows():
+        for metric in METRICS:
+            if row[[f"{metric}_{stat}" for stat in STATISTICS]].isna().all():
+                warnings.warn(
+                    f"Pilot {pilot_id!r} has no flight with a valid {metric} "
+                    f"deviation; their {metric} features are NaN",
+                    UserWarning,
+                    stacklevel=2,
+                )
     return pilots.reset_index()
 
 

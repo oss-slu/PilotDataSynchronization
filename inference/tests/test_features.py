@@ -94,7 +94,7 @@ def test_flight_features_skips_nan_targets_and_counts_rows_used():
     assert row["heading_rows_used"] == 4
 
 
-def test_flight_with_no_valid_rows_for_a_metric_raises():
+def test_flight_with_no_valid_rows_for_a_metric_is_skipped_with_a_warning():
     df = pd.concat(
         [
             make_flight(flight_id="good"),
@@ -102,8 +102,48 @@ def test_flight_with_no_valid_rows_for_a_metric_raises():
         ],
         ignore_index=True,
     )
-    with pytest.raises(ValueError, match="no_targets.*altitude"):
-        flight_features(compute_deviations(df))
+    with pytest.warns(UserWarning, match="no_targets.*altitude"):
+        flights = flight_features(compute_deviations(df)).set_index("flight_id")
+    bad = flights.loc["no_targets"]
+    assert bad["altitude_rows_used"] == 0
+    assert np.isnan(bad["altitude_mad"])
+    assert np.isnan(bad["altitude_std"])
+    assert np.isnan(bad["altitude_bias"])
+    assert bad["heading_rows_used"] == 4
+    assert bad["heading_mad"] == 0.0
+    assert flights.loc["good", "altitude_rows_used"] == 4
+
+
+def test_pilot_features_average_only_the_flights_that_have_the_metric():
+    df = pd.concat(
+        [
+            make_flight(flight_id="ok1", altitude=5100.0),
+            make_flight(flight_id="ok2", altitude=5300.0),
+            make_flight(flight_id="no_targets", target_altitude=np.nan),
+        ],
+        ignore_index=True,
+    )
+    with pytest.warns(UserWarning, match="no_targets"):
+        flights = flight_features(compute_deviations(df))
+    pilots = pilot_features(flights).set_index("pilot_id")
+    assert pilots.loc["p1", "altitude_mad"] == pytest.approx((100.0 + 300.0) / 2)
+    assert pilots.loc["p1", "flights"] == 3
+
+
+def test_pilot_with_no_valid_flight_for_a_metric_is_nan_with_a_warning():
+    df = pd.concat(
+        [
+            make_flight(pilot_id="a", flight_id="fa"),
+            make_flight(pilot_id="b", flight_id="fb", target_altitude=np.nan),
+        ],
+        ignore_index=True,
+    )
+    with pytest.warns(UserWarning):
+        flights = flight_features(compute_deviations(df))
+    with pytest.warns(UserWarning, match="Pilot 'b'.*altitude"):
+        pilots = pilot_features(flights).set_index("pilot_id")
+    assert np.isnan(pilots.loc["b", "altitude_mad"])
+    assert pilots.loc["a", "altitude_mad"] == 0.0
 
 
 def test_pilot_features_weight_every_flight_equally():
