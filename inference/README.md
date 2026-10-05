@@ -50,7 +50,7 @@ the project root** (`PilotDataSynchronization/`), with the virtual environment a
 
 | Step | Script                                | Purpose                                                                                                                                  | Input                                          | Output                                                                                            |
 | ---- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 1    | `inference/Data/data_logger.py`       | Collects live telemetry from the relay over TCP and appends it to a raw CSV                                                              | Telemetry socket stream                        | `inference/Data/raw_flight_data.csv`                                                              |
+| 1    | `inference/Data/data_logger.py`       | Collects live telemetry from the relay over TCP and appends it to a raw CSV, tagged with `pilot_id` and `flight_id`                      | Telemetry socket stream                        | `inference/Data/raw_flight_data.csv`                                                              |
 | 1b   | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline                                  | none                                           | `inference/Data/synthetic_flight_data.csv`                                                        |
 | 2    | `inference/label_generator.py`        | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row  | `inference/Data/raw_flight_data.csv`           | `inference/Data/labeled_flight_data.csv`                                                          |
 | 3    | `inference/validate_labels.py`        | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution                   | `inference/Data/labeled_flight_data.csv`       | Console report only (exit code 0/1)                                                               |
@@ -73,7 +73,11 @@ which `test_model.py` reads first (see "Model details" below) — this is a diff
 
 ```
 # 1. Collect data from the relay (leave running while flying/simulating)
-python inference/Data/data_logger.py --port 5001
+python inference/Data/data_logger.py --port 5001 --pilot-id pilot-07
+
+#   --pilot-id labels every row so samples can be grouped per pilot and joined
+#   to pilot metadata. Without it the rows are written as "unknown".
+#   --flight-id is optional; a UTC timestamp is generated per relay connection.
 
 #   ...or, without hardware, generate synthetic balanced data instead, then copy/rename
 #   inference/Data/synthetic_flight_data.csv to inference/Data/raw_flight_data.csv:
@@ -169,6 +173,10 @@ held-out split exists and the first candidate is used.
   1b** — `generate_balanced_data.py` writes synthetic data to `inference/Data/synthetic_flight_data.csv`
   rather than overwriting the real collected `raw_flight_data.csv`. Copy or rename it to
   `raw_flight_data.csv` before running `label_generator.py`.
+- **`ValueError: ... has columns [...], but this logger writes [...]` from `data_logger.py`** —
+  the CSV you are appending to was written before `pilot_id` and `flight_id` existed. Appending
+  would misalign every row, so the logger stops. Pass `--csv` with a new path, or move the old
+  file aside. The CSVs committed under `inference/Data/` predate these columns.
 - **`ValueError: Missing required columns` in `label_generator.py`, `validate_labels.py`, or
   `prepare_data.py`** — the input CSV is missing one of `altitude`, `velocity`, `vertical_speed`,
   `heading`, `roll`, `g_force` (and `pitch`/`yaw`/`event_label` for later steps). Check the header
