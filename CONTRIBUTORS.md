@@ -36,4 +36,4 @@ to consolidate their entries and add their preferred name and profile link.
 ## Updating This List
 
 Please add yourself if you are missing. You may update your entry
-with your preferred name and GitHub profile link.# Contributors
+with your preferred name and GitHub profile link.
