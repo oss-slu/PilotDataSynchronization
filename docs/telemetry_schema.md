@@ -21,6 +21,8 @@ Current CSV output (`inference/Data/raw_flight_data.csv`):
 | Field | Type | Units | Source (DataRef) | Notes |
 |---|---|---|---|---|
 | `timestamp` | ISO-8601 string (UTC, ms precision) | — | wall-clock time at CSV write, not sim time | Set by `data_logger.py`, not the plugin |
+| `pilot_id` | string | — | `--pilot-id` on `data_logger.py` | Join key to pilot metadata. Defaults to `unknown` when the argument is omitted |
+| `flight_id` | string | — | `--flight-id` on `data_logger.py` | One flight. Defaults to a UTC timestamp generated per relay connection |
 | `altitude` | float | feet (data collected before #196 is feet × 3.28084, see below) | `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Pilot's barometric altimeter reading |
 | `heading` | float | degrees magnetic | `sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot` | AHARS-sourced |
 | `vertical_speed` | float | feet/min | `sim/cockpit2/gauges/indicators/vvi_fpm_pilot` | Positive = climbing |
@@ -88,8 +90,8 @@ ingestion path differ depending on the answer.
 | Field | Type | Units | Source | Status |
 |---|---|---|---|---|
 | `timestamp` | ISO-8601 string, UTC | — | data_logger.py | exists |
-| `pilot_id` | string | — | pilot metadata join key | **missing — see capture-point note below** |
-| `flight_id` | string | — | generated per session | **missing — see capture-point note below** |
+| `pilot_id` | string | — | `data_logger.py` | exists, see capture-point note below |
+| `flight_id` | string | — | `data_logger.py` | exists, see capture-point note below |
 | `altitude` | float | ft MSL | plugin | exists |
 | `target_altitude` | float | ft MSL | scenario/autopilot (TBD, see §3) | **missing** |
 | `altitude_deviation` | float | ft | computed | derived, see §5 |
@@ -107,14 +109,15 @@ ingestion path differ depending on the answer.
 | `yaw` | float | deg | plugin | exists (extra); true heading, see §1 |
 | `g_force` | float | G | plugin | exists (extra) |
 
-**`pilot_id` / `flight_id` capture point:** these can't be added at the
-plugin/relay layer without a larger change — baton's `send` takes a
-`CxxVector<f32>`, and the relay emits one fixed-format iMotions event per
-value, so there's no slot for a string id in the 20 Hz stream, and both ids
-are constant for a whole session anyway. Capturing them once at the logger —
-e.g. `--pilot-id` / `--flight-id` arguments on `data_logger.py`, written into
-each row or a session sidecar file — avoids touching the plugin, baton, and
-relay.
+**`pilot_id` / `flight_id` capture point:** these are captured at the logger,
+not in the plugin or relay. baton's `send` takes a `CxxVector<f32>`, and the
+relay emits one fixed-format iMotions event per value, so there's no slot for
+a string id in the 20 Hz stream, and both ids are constant for a whole flight
+anyway. `data_logger.py` takes `--pilot-id` and `--flight-id` and writes them
+into every row, which leaves the plugin, baton, and relay untouched. When
+`--flight-id` is omitted, a UTC timestamp is generated for each relay
+connection. When `--pilot-id` is omitted, rows are written as `unknown` and
+cannot be grouped per pilot.
 
 ### 4b. Pilot metadata table (one row per pilot, joined on `pilot_id`)
 
@@ -187,9 +190,10 @@ between pilots.
    hours, and pilot rating are not collected or stored anywhere in the repo.
 3. **`pilot_rating` is ambiguous** — needs clarification from the client on
    whether it's a licensing rating or a performance score.
-4. **No `pilot_id` / `flight_id` fields** in the current send path — needed
-   to support "10-20 pilots" and multiple flights per pilot, and to join
-   telemetry to pilot metadata.
+4. **`pilot_id` / `flight_id` are captured, but only if the logger is told.**
+   `data_logger.py` writes both columns. Runs started without `--pilot-id`
+   record `unknown`, which cannot be grouped per pilot or joined to pilot
+   metadata, so the ids have to be supplied at collection time.
 5. **Timestamp is wall-clock, not simulation time** — fine for a single
    continuous session, but worth noting if flights are paused/resumed.
 6. **The committed `altitude` and `velocity` data is mis-scaled.** It was
