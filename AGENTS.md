@@ -1,6 +1,6 @@
 # Pilot Data Synchronization
 
-Streams pilot telemetry from X-Plane to iMotions and builds ML datasets from it. Vocabulary is defined in `CONTEXT.md`; use those terms. Setup, troubleshooting and the full data flow are in `README.md`, and the telemetry contract is in `docs/telemetry_schema.md`. Don't duplicate them here.
+Streams pilot telemetry from X-Plane to iMotions and builds ML datasets from it. Vocabulary is defined in `GLOSSARY.md`; use those terms. Setup, troubleshooting and the full data flow are in `README.md`, and the telemetry contract is in `docs/telemetry_schema.md`. Don't duplicate them here.
 
 ## Components
 
@@ -43,4 +43,4 @@ Default five triage roles (`needs-triage`, `needs-info`, `ready-for-agent`, `rea
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
