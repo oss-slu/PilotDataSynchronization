@@ -57,6 +57,7 @@ the project root** (`PilotDataSynchronization/`), with the virtual environment a
 | 4    | `inference/prepare_data.py`           | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs — independent of the training step below | `inference/Data/labeled_flight_data.csv`       | `inference/dataset/*.csv`, `label_mapping.json`, `scaler_params.json`                             |
 | 5    | `inference/train_model.py`            | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall                                         | `inference/Data/labeled_flight_data.csv`       | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl`, `inference/dataset/test.csv` |
 | 6    | `inference/test_model.py`             | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it                                             | Trained model + held-out test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json`                           |
+| 7    | `inference/compute_features.py`       | (Optional, clustering) Computes deviation features per flight and per pilot from telemetry that carries targets                          | Telemetry CSV with `pilot_id`, `flight_id` and `target_*` columns (none exist yet)| `inference/Data/flight_features.csv`, `inference/Data/pilot_features.csv`                         |
 
 ### Step 4 and step 5/6 are independent
 
@@ -68,6 +69,38 @@ required to train or test the shipped Random Forest model.
 `train_model.py` does, however, write its own held-out 20% split to `inference/dataset/test.csv`,
 which `test_model.py` reads first (see "Model details" below) — this is a different file from
 `prepare_data.py`'s `dataset/test_processed.csv` and does not depend on step 4 having run.
+
+### Deviation features (clustering input)
+
+`inference/compute_features.py` turns telemetry that carries targets into deviation features per
+flight and per pilot (see `docs/telemetry_schema.md` section 5). The input needs `pilot_id`,
+`flight_id`, the four actual values and `target_altitude`, `target_heading`,
+`target_vertical_speed` and `target_airspeed`, in post-#196 units. The committed CSVs lack these
+columns, and no script in this repo generates them yet, so this step has only been run on
+hand-built test data.
+
+```
+python inference/compute_features.py --input <telemetry_with_targets.csv>
+```
+
+Outputs `inference/Data/flight_features.csv` and `inference/Data/pilot_features.csv`, in raw units.
+Per metric (altitude, heading, vertical speed, airspeed) it gives `_mad` (mean absolute
+deviation), `_std` (standard deviation of the signed deviation) and `_bias` (mean signed
+deviation, not meant for clustering by default). The flight file also has `_rows_used`, the
+samples that had a valid deviation; the pilot file has a `flights` count instead.
+
+A flight with no valid target for a metric gets NaN for it and a warning, and its other
+metrics are kept. A pilot's feature averages over the flights that have it; a pilot with none
+gets NaN and a warning. Rows with a null `pilot_id` or `flight_id` raise an error.
+
+### Tests
+
+```
+uv sync --project inference    # installs pytest from the dev group; the plain-venv install does not
+uv run --project inference pytest inference/tests
+```
+
+Covers the angle helper, the deviation features and the labeler's heading change.
 
 ## Commands (run from the project root)
 
@@ -94,6 +127,9 @@ python inference/train_model.py
 
 # 6. Test the model and generate predictions
 python inference/test_model.py
+
+# 7. (Optional) Compute deviation features from telemetry that carries targets
+python inference/compute_features.py --input <telemetry_with_targets.csv>
 ```
 
 Each script can also be run from inside `inference/` (e.g. `cd inference && python

@@ -48,6 +48,10 @@ _Avoid_: Designated value, setpoint, reference
 Actual minus target for one metric. Heading deviation is the wrapped angular difference.
 _Avoid_: Error, delta, offset
 
+**Deviation features**:
+Summaries of a pilot's **Deviation** over a **Flight**, per **Flight dynamics factor**: how large the deviation is on average and how steady it is. A pilot's deviation features are the average of their flights' deviation features, so every **Flight** counts equally.
+_Avoid_: Performance score, error metrics
+
 **Flight dynamics factors**:
 The four metrics the client cares about: heading, vertical speed, altitude and airspeed.
 _Avoid_: Core metrics, KPIs
