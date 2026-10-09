@@ -57,7 +57,9 @@ the project root** (`PilotDataSynchronization/`), with the virtual environment a
 | 4    | `inference/prepare_data.py`           | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs — independent of the training step below | `inference/Data/labeled_flight_data.csv`       | `inference/dataset/*.csv`, `label_mapping.json`, `scaler_params.json`                             |
 | 5    | `inference/train_model.py`            | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall                                         | `inference/Data/labeled_flight_data.csv`       | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl`, `inference/dataset/test.csv` |
 | 6    | `inference/test_model.py`             | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it                                             | Trained model + held-out test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json`                           |
-| 7    | `inference/compute_features.py`       | (Optional, clustering) Computes deviation features per flight and per pilot from telemetry that carries targets                          | Telemetry CSV with `pilot_id`, `flight_id` and `target_*` columns (none exist yet)| `inference/Data/flight_features.csv`, `inference/Data/pilot_features.csv`                         |
+| 7a   | `inference/generate_synthetic_pilots.py` | (Optional, clustering, no hardware needed) Generates synthetic pilots in 3 hidden skill tiers, with targets                           | none                                           | `inference/Data/synthetic_pilot_telemetry.csv`, `inference/Data/synthetic_pilot_tiers.csv`        |
+| 7    | `inference/compute_features.py`       | (Optional, clustering) Computes deviation features per flight and per pilot from telemetry that carries targets                          | Telemetry CSV with `pilot_id`, `flight_id` and `target_*` columns (only step 7a produces these today)| `inference/Data/flight_features.csv`, `inference/Data/pilot_features.csv`                         |
+| 8    | `inference/cluster_pilots.py`         | (Optional, clustering) Sweeps k, or with `--k` forms performance groups                                                                  | `inference/Data/pilot_features.csv`            | Sweep: console only. `--k`: `inference/Data/pilot_clusters.csv`, `inference/Data/group_centres.csv` |
 
 ### Step 4 and step 5/6 are independent
 
@@ -76,8 +78,7 @@ which `test_model.py` reads first (see "Model details" below) — this is a diff
 flight and per pilot (see `docs/telemetry_schema.md` section 5). The input needs `pilot_id`,
 `flight_id`, the four actual values and `target_altitude`, `target_heading`,
 `target_vertical_speed` and `target_airspeed`, in post-#196 units. The committed CSVs lack these
-columns, and no script in this repo generates them yet, so this step has only been run on
-hand-built test data.
+columns; until real flights carry them, use `generate_synthetic_pilots.py` (step 7a).
 
 ```
 python inference/compute_features.py --input <telemetry_with_targets.csv>
@@ -93,6 +94,30 @@ A flight with no valid target for a metric gets NaN for it and a warning, and it
 metrics are kept. A pilot's feature averages over the flights that have it; a pilot with none
 gets NaN and a warning. Rows with a null `pilot_id` or `flight_id` raise an error.
 
+### Performance groups (clustering)
+
+`inference/cluster_pilots.py` groups pilots with KMeans on `std` and `|bias|` for each metric,
+log-scaled and then standardized over the cohort (`docs/adr/0002`). Pilot metadata is not an
+input; compare it against the groups afterwards (`docs/adr/0001`). Any pilot with a NaN feature
+stops the run with an error naming the pilot and metric.
+
+The script never picks k. Run it once without `--k` to print, for k = 2 to min(6, pilots // 3):
+
+- `silhouette`: how cohesive and separated the groups are, from -1 to 1
+- `stability`: mean adjusted Rand index between the full fit and refits on random 80% subsamples
+  of pilots; 1 means the same groups every time
+
+Then rerun with the chosen `--k`. It writes each pilot's group and each group's centre, as the
+mean of its members in raw units (ft, deg, ft/min, kts). For synthetic pilots, `--truth` also
+prints the adjusted Rand index against the hidden tiers.
+
+```
+python inference/generate_synthetic_pilots.py
+python inference/compute_features.py --input inference/Data/synthetic_pilot_telemetry.csv
+python inference/cluster_pilots.py
+python inference/cluster_pilots.py --k 3 --truth inference/Data/synthetic_pilot_tiers.csv
+```
+
 ### Tests
 
 ```
@@ -100,7 +125,8 @@ uv sync --project inference    # installs pytest from the dev group; the plain-v
 uv run --project inference pytest inference/tests
 ```
 
-Covers the angle helper, the deviation features and the labeler's heading change.
+Covers the angle helper, the deviation features, the labeler's heading change, the synthetic
+pilot generator and performance groups (including recovering the synthetic tiers end to end).
 
 ## Commands (run from the project root)
 
@@ -128,8 +154,15 @@ python inference/train_model.py
 # 6. Test the model and generate predictions
 python inference/test_model.py
 
+# 7a. (Optional) Generate synthetic pilots with targets, no hardware needed
+python inference/generate_synthetic_pilots.py
+
 # 7. (Optional) Compute deviation features from telemetry that carries targets
 python inference/compute_features.py --input <telemetry_with_targets.csv>
+
+# 8. (Optional) Sweep k, then form performance groups with the chosen k
+python inference/cluster_pilots.py
+python inference/cluster_pilots.py --k <k>
 ```
 
 Each script can also be run from inside `inference/` (e.g. `cd inference && python
@@ -229,6 +262,9 @@ held-out split exists and the first candidate is used.
 - `prepare_data.py` — Cleans, standardizes, and splits labeled data into train/test CSVs (optional, not used by `train_model.py`/`test_model.py`)
 - `train_model.py` — Trains and saves a Random Forest classifier
 - `test_model.py` — Loads a trained model, runs inference, evaluates, and saves predictions
+- `generate_synthetic_pilots.py` — Generates synthetic pilots with targets and hidden skill tiers, for clustering without hardware
+- `features.py` / `compute_features.py` — Deviation features per flight and per pilot (module / CLI)
+- `clustering.py` / `cluster_pilots.py` — Performance groups from per-pilot deviation features (module / CLI)
 - `requirements.txt` / `pyproject.toml` / `uv.lock` — Python dependencies
 - `Data/raw_flight_data.csv` — Raw telemetry input (not tracked for new data; a sample file is present in this repo); written by step 1 or renamed from step 1b's output
 - `Data/synthetic_flight_data.csv` — Output of `generate_balanced_data.py` (step 1b); rename to `raw_flight_data.csv` to feed it into step 2
