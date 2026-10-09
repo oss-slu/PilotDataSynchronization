@@ -56,6 +56,10 @@ _Avoid_: Performance score, error metrics
 The four metrics the client cares about: heading, vertical speed, altitude and airspeed.
 _Avoid_: Core metrics, KPIs
 
+**Performance group**:
+A set of pilots whose **Deviation features** resemble each other. Groups are not ranked.
+_Avoid_: Tier, skill level, class
+
 ### Pilots and flights
 
 **Pilot**:
@@ -84,11 +88,17 @@ _Avoid_: Stage, segment
 Generated telemetry, balanced across flight event labels, used when real flights are not available.
 _Avoid_: Fake data, dummy data, mock data
 
+**Synthetic pilot**:
+A generated pilot with generated flights, built to deviate by a known amount, used to check that **Performance groups** find real differences before real pilots are available.
+_Avoid_: Test pilot, fake pilot, mock pilot
+
 ## Relationships
 
 - A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
 - A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
 - A **Sample** receives exactly one **Flight event label**; a **Flight phase** is a kind of flight event label.
+- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
+- **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
 
 ## Flagged ambiguities
 
