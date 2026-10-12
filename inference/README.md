@@ -50,7 +50,7 @@ the project root** (`PilotDataSynchronization/`), with the virtual environment a
 
 | Step | Script                                | Purpose                                                                                                                                  | Input                                          | Output                                                                                            |
 | ---- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 1    | `inference/Data/data_logger.py`       | Collects live telemetry from the relay over TCP and appends it to a raw CSV                                                              | Telemetry socket stream                        | `inference/Data/raw_flight_data.csv`                                                              |
+| 1    | `inference/Data/data_logger.py`       | Collects live telemetry from the relay over TCP and appends it to a session CSV, tagged with `pilot_id` and `flight_id`                  | Telemetry socket stream                        | `inference/Data/session_flight_data.csv`                                                          |
 | 1b   | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline                                  | none                                           | `inference/Data/synthetic_flight_data.csv`                                                        |
 | 2    | `inference/label_generator.py`        | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row  | `inference/Data/raw_flight_data.csv`           | `inference/Data/labeled_flight_data.csv`                                                          |
 | 3    | `inference/validate_labels.py`        | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution                   | `inference/Data/labeled_flight_data.csv`       | Console report only (exit code 0/1)                                                               |
@@ -106,7 +106,15 @@ Covers the angle helper, the deviation features and the labeler's heading change
 
 ```
 # 1. Collect data from the relay (leave running while flying/simulating)
-python inference/Data/data_logger.py --port 5001
+python inference/Data/data_logger.py --port 5001 --pilot-id pilot-07 --flight-id 2026-10-12-leg1
+
+#   --pilot-id labels every row so samples can be grouped per pilot and joined
+#   to pilot metadata. Without it the rows are written as "unknown".
+#   --flight-id is optional, but pass it for a real session: without it each relay
+#   connection gets its own generated id, so a reconnect mid-flight splits one
+#   flight into two.
+#   Writes inference/Data/session_flight_data.csv; copy or rename it to
+#   inference/Data/raw_flight_data.csv to feed it into step 2.
 
 #   ...or, without hardware, generate synthetic balanced data instead, then copy/rename
 #   inference/Data/synthetic_flight_data.csv to inference/Data/raw_flight_data.csv:
@@ -201,10 +209,17 @@ held-out split exists and the first candidate is used.
 
 ## Troubleshooting
 
-- **`FileNotFoundError` for `raw_flight_data.csv` when running `label_generator.py` after step
-  1b** — `generate_balanced_data.py` writes synthetic data to `inference/Data/synthetic_flight_data.csv`
-  rather than overwriting the real collected `raw_flight_data.csv`. Copy or rename it to
+- **`FileNotFoundError` for `raw_flight_data.csv` when running `label_generator.py` after step 1
+  or 1b** — neither step overwrites the committed `raw_flight_data.csv`. Step 1 writes
+  `inference/Data/session_flight_data.csv` and step 1b writes
+  `inference/Data/synthetic_flight_data.csv`. Copy or rename the one you want to
   `raw_flight_data.csv` before running `label_generator.py`.
+- **`ValueError: ... has columns [...], but this logger writes [...]` from `data_logger.py`** —
+  `--csv` points at a CSV written before `pilot_id` and `flight_id` existed, such as the committed
+  `inference/Data/raw_flight_data.csv`. Appending would misalign every row, so the logger stops.
+  Pass a new path, or move the old file aside. This is why step 1 writes its own session file by
+  default: the committed CSVs predate both columns and the #196 unit fix, so appending to one
+  would also mix two scales in a single file.
 - **`ValueError: Missing required columns` in `label_generator.py`, `validate_labels.py`, or
   `prepare_data.py`** — the input CSV is missing one of `altitude`, `velocity`, `vertical_speed`,
   `heading`, `roll`, `g_force` (and `pitch`/`yaw`/`event_label` for later steps). Check the header
@@ -230,7 +245,8 @@ held-out split exists and the first candidate is used.
 - `train_model.py` — Trains and saves a Random Forest classifier
 - `test_model.py` — Loads a trained model, runs inference, evaluates, and saves predictions
 - `requirements.txt` / `pyproject.toml` / `uv.lock` — Python dependencies
-- `Data/raw_flight_data.csv` — Raw telemetry input (not tracked for new data; a sample file is present in this repo); written by step 1 or renamed from step 1b's output
+- `Data/session_flight_data.csv` — Output of step 1 (`data_logger.py`), one file per collection session; not tracked; copy or rename to `raw_flight_data.csv` to feed it into step 2
+- `Data/raw_flight_data.csv` — Raw telemetry input to step 2; the committed sample predates the `pilot_id`/`flight_id` columns and the #196 unit fix; overwrite it with step 1's or step 1b's output
 - `Data/synthetic_flight_data.csv` — Output of `generate_balanced_data.py` (step 1b); rename to `raw_flight_data.csv` to feed it into step 2
 - `Data/labeled_flight_data.csv` — Labeled dataset output of step 2 / input to steps 3-6
 - `dataset/test.csv` — Held-out test split saved by `train_model.py`; read by `test_model.py`
@@ -240,8 +256,8 @@ held-out split exists and the first candidate is used.
 
 ## Verification
 
-Each script's documented input/output paths were checked to chain together correctly (step 1 or
-1b's renamed output → step 2 → step 3 → steps 4-6). The committed `Data/labeled_flight_data.csv`
+Each script's documented input/output paths were checked to chain together correctly (step 1's or
+1b's copied output → step 2 → step 3 → steps 4-6). The committed `Data/labeled_flight_data.csv`
 and the trained models under `Models/` come from a real logged flight, not from
 `generate_balanced_data.py`'s synthetic output — the committed dataset only contains the 9 event
 classes that flight produced, not all 13 the synthetic generator can create.
