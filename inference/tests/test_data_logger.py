@@ -61,6 +61,15 @@ def test_appending_to_an_older_csv_is_refused(tmp_path):
     assert "--csv" in str(err.value)
 
 
+def test_default_output_is_a_session_file_not_a_committed_csv():
+    default = data_logger.build_parser().parse_args([]).csv
+    data_dir = Path(data_logger.__file__).resolve().parent
+    assert default == data_dir / data_logger.DEFAULT_CSV_NAME
+    # The committed CSVs were logged before pilot_id and flight_id existed, so a
+    # default pointing at one makes the documented command fail on a fresh clone.
+    assert default.name not in {"raw_flight_data.csv", "raw_flight_data_updated.csv"}
+
+
 def test_flight_id_is_generated_when_not_supplied():
     generated = data_logger.new_flight_id()
     assert generated.endswith("Z")

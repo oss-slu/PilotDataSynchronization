@@ -42,6 +42,12 @@ CSV_FIELDS = ["timestamp", "pilot_id", "flight_id", *TELEMETRY_FIELDS]
 
 DEFAULT_PILOT_ID = "unknown"
 
+# A session file of its own, not the committed raw_flight_data.csv: that one was
+# logged before these columns existed, and before the #196 unit fix, so appending
+# to it would both misalign the header and mix two scales in one file. Copy this
+# file over raw_flight_data.csv to feed it into label_generator.py.
+DEFAULT_CSV_NAME = "session_flight_data.csv"
+
 
 @dataclass
 class SampleBuffer:
@@ -179,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--csv",
         type=Path,
-        default=Path(__file__).resolve().parent / "raw_flight_data.csv",
+        default=Path(__file__).resolve().parent / DEFAULT_CSV_NAME,
         help="Output CSV path.",
     )
     parser.add_argument(

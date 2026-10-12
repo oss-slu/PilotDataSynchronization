@@ -16,7 +16,9 @@ The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (throttled to one
 send per 50ms) and streams them through Baton → Relay → `data_logger.py`, which
 writes one CSV row per complete sample.
 
-Current CSV output (`inference/Data/raw_flight_data.csv`):
+Current CSV output (`inference/Data/session_flight_data.csv`, one file per
+collection session). The CSVs committed under `inference/Data/` were logged
+before `pilot_id` and `flight_id` existed and do not have those two columns:
 
 | Field | Type | Units | Source (DataRef) | Notes |
 |---|---|---|---|---|
