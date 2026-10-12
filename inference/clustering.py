@@ -72,7 +72,7 @@ def _kmeans_labels(scaled: np.ndarray, k: int, seed: int) -> np.ndarray:
 def candidate_ks(n_pilots: int) -> range:
     """k from 2 to min(6, n // 3), so every group can average 3 or more pilots."""
     if n_pilots < 6:
-        raise ValueError(f"Need at least 6 pilots to sweep k, got {n_pilots}")
+        raise ValueError(f"Need at least 6 pilots to form groups, got {n_pilots}")
     return range(2, min(6, n_pilots // 3) + 1)
 
 
@@ -125,8 +125,16 @@ def fit(pilots: pd.DataFrame, k: int, seed: int = 0):
     centres has one row per group with its pilot count and the mean of each
     feature in raw units (ft, deg, ft/min, kts), so a group can be read
     without undoing the scaling.
+
+    Raises if k is outside candidate_ks, the range the sweep offers. That
+    needs at least 6 pilots.
     """
     features = clustering_features(pilots)
+    allowed = candidate_ks(len(features))
+    if k not in allowed:
+        raise ValueError(
+            f"k must be {allowed.start} to {allowed.stop - 1} for {len(features)} pilots, got {k}"
+        )
     labels = _kmeans_labels(_scaled(features), k, seed)
     assignments = pd.DataFrame({"pilot_id": features.index, "group": labels})
 
@@ -145,7 +153,12 @@ def truth_agreement(assignments: pd.DataFrame, truth: pd.DataFrame) -> float:
 
     For synthetic pilots only: truth has pilot_id and tier. 1 means the groups
     match the tiers exactly, however they are numbered; about 0 is chance.
+
+    Raises if a pilot is missing from truth or appears in it more than once.
     """
+    repeated = truth.loc[truth["pilot_id"].duplicated(), "pilot_id"].unique().tolist()
+    if repeated:
+        raise ValueError(f"Pilot(s) repeated in truth: {', '.join(map(str, repeated))}")
     merged = assignments.merge(truth, on="pilot_id", how="left")
     missing = merged.loc[merged["tier"].isna(), "pilot_id"].tolist()
     if missing:

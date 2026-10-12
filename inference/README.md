@@ -109,9 +109,12 @@ The script never picks k. Run it once without `--k` to print, for k = 2 to min(6
 - `stability`: mean adjusted Rand index between the full fit and refits on random 80% subsamples
   of pilots; 1 means the same groups every time
 
-Then rerun with the chosen `--k`. It writes each pilot's group and each group's centre, as the
+Then rerun with the chosen `--k`, which must be one of the swept values (so at least 6 pilots, and
+3 or more per group on average). It writes each pilot's group and each group's centre, as the
 mean of its members in raw units (ft, deg, ft/min, kts). For synthetic pilots, `--truth` also
-prints the adjusted Rand index against the hidden tiers.
+prints the adjusted Rand index against the hidden tiers; the file must list each pilot once.
+The synthetic tiers overlap, so this is below 1: the default seed gives 0.79, and generator seeds 0
+to 11 range from 0.37 to 1.00.
 
 ```
 python inference/generate_synthetic_pilots.py

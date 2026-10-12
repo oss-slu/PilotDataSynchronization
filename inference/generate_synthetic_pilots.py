@@ -26,9 +26,11 @@ from features import ACTUAL_COLUMN, METRICS
 DATA_DIR = Path(__file__).parent / "Data"
 HZ = 20
 TIERS = (1, 2, 3)
-TIER_SCALE = {1: 1.0, 2: 2.5, 3: 6.0}
-# Per-pilot, per-metric spread around the tier scale.
-METRIC_VARIATION = (0.7, 1.4)
+TIER_SCALE = {1: 1.0, 2: 2.0, 3: 4.0}
+# Per-pilot, per-metric spread around the tier scale. Wide enough that adjacent
+# tiers overlap: with separate bands most clustering options score perfectly
+# and cannot be compared (docs/adr/0002).
+METRIC_VARIATION = (0.5, 2.0)
 # Per-flight spread of the bias size.
 BIAS_VARIATION = (0.7, 1.3)
 # AR(1) coefficient per sample; at 20 Hz a wobble lasts a few seconds.

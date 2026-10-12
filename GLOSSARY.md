@@ -58,7 +58,7 @@ _Avoid_: Core metrics, KPIs
 
 **Performance group**:
 A set of pilots whose **Deviation features** resemble each other. Groups are not ranked.
-_Avoid_: Tier, skill level, class
+_Avoid_: Tier (a **Synthetic pilot**'s known level is its **Hidden tier**, a different thing), skill level, class
 
 ### Pilots and flights
 
@@ -91,6 +91,10 @@ _Avoid_: Fake data, dummy data, mock data
 **Synthetic pilot**:
 A generated pilot with generated flights, built to deviate by a known amount, used to check that **Performance groups** find real differences before real pilots are available.
 _Avoid_: Test pilot, fake pilot, mock pilot
+
+**Hidden tier**:
+The known deviation level a **Synthetic pilot** is generated at, kept apart from its telemetry so **Performance groups** can be compared against it. Real pilots have none.
+_Avoid_: True group, skill level
 
 ## Relationships
 

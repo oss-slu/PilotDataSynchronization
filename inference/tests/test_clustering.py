@@ -107,6 +107,24 @@ def test_sweep_covers_k_from_2_to_min_of_6_and_a_third_of_pilots(n_pilots, expec
     assert sweep(pilots, n_subsamples=5)["k"].tolist() == expected_ks
 
 
+@pytest.mark.parametrize(
+    "k",
+    [
+        pytest.param(1, id="one-group-for-everyone"),
+        pytest.param(6, id="just-over-a-third-of-the-pilots"),
+        pytest.param(15, id="one-pilot-per-group"),
+    ],
+)
+def test_fit_rejects_k_the_sweep_would_not_offer(k):
+    # 15 pilots allow k of 2 to 5, so that groups average 3 or more pilots.
+    rng = np.random.default_rng(0)
+    pilots = make_pilots(
+        [(f"p{i}", {"altitude_std": rng.uniform(1, 100)}) for i in range(15)]
+    )
+    with pytest.raises(ValueError, match=r"2 to 5"):
+        fit(pilots, k=k)
+
+
 def test_sweep_needs_at_least_6_pilots():
     pilots = make_pilots([(f"p{i}", {"altitude_std": float(i)}) for i in range(5)])
     with pytest.raises(ValueError, match="6"):
@@ -132,15 +150,27 @@ def test_truth_agreement_fails_naming_pilots_missing_from_truth():
         truth_agreement(assignments, truth)
 
 
+def test_truth_agreement_fails_naming_pilots_repeated_in_truth():
+    # A repeat would turn 3 pilots into 4 rows and quietly shift the score.
+    assignments = pd.DataFrame({"pilot_id": ["a", "b", "c"], "group": [0, 1, 1]})
+    truth = pd.DataFrame({"pilot_id": ["a", "b", "c", "b"], "tier": [1, 2, 2, 3]})
+    with pytest.raises(ValueError, match="repeated in truth: b"):
+        truth_agreement(assignments, truth)
+
+
 def test_synthetic_pilots_are_grouped_by_their_hidden_tier():
-    # Averaged over cohorts, since 15 pilots make any single cohort noisy.
+    # Averaged over the 12 cohorts of docs/adr/0002, since 15 pilots make any
+    # single cohort noisy. The tiers overlap, so this is well short of 1. The
+    # bar sits above a linear scale and the per-pilot |mean bias| (both about
+    # 0.5 here) and below the chosen features; it does not separate the mad
+    # options, which score about the same.
     scores = []
-    for seed in range(6):
+    for seed in range(12):
         telemetry, truth = generate_pilots(seed=seed)
         _, pilots = compute_features(telemetry)
         assignments, _ = fit(pilots, k=3)
         scores.append(truth_agreement(assignments, truth))
-    assert np.mean(scores) >= 0.8
+    assert np.mean(scores) >= 0.7
 
 
 def test_nan_feature_fails_naming_pilot_and_metric():
