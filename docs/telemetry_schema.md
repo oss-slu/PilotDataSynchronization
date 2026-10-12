@@ -170,9 +170,12 @@ raw telemetry column keeps its name, `velocity`.
 
 `inference/features.py` summarises deviation per flight and per pilot in raw
 units: mean absolute deviation (`_mad`), standard deviation of the signed
-deviation (`_std`) and mean signed deviation (`_bias`) for each metric, plus
-the number of samples used (`_rows_used`, per flight). A pilot's features are
-the mean of their flights' features, with a `flights` count. Units differ in
+deviation (`_std`), mean signed deviation (`_bias`) and the absolute value of
+each flight's `_bias` (`_abs_bias`) for each metric, plus the number of samples
+used (`_rows_used`, per flight). A pilot's features are the mean of their
+flights' features, with a `flights` count. `_abs_bias` is taken per flight
+before the average, so a pilot 50 ft high on one flight and 50 ft low on
+another has `_bias` 0 but `_abs_bias` 50. Units differ in
 scale (ft vs. deg vs. kts), so scaling across pilots is done by the clustering
 step, not here; do not z-score per pilot, which would erase the differences
 between pilots.

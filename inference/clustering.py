@@ -1,8 +1,8 @@
 """
 Performance groups from per-pilot deviation features.
 
-Clusters pilots on the log of std and |bias| for each flight dynamics factor
-(docs/adr/0002). Pilot metadata is not an input (docs/adr/0001). Pure
+Clusters pilots on the log of std and |bias| for each flight dynamics factor,
+where |bias| is the mean of each flight's own |bias| (docs/adr/0002). Pilot metadata is not an input (docs/adr/0001). Pure
 DataFrame-in functions; cluster_pilots.py is the CLI wrapper.
 """
 
@@ -32,10 +32,15 @@ def clustering_features(pilots: pd.DataFrame) -> pd.DataFrame:
     Raises if any pilot has a NaN feature, naming each pilot and metric.
     Dropping or imputing would quietly reshape a cohort of 10 to 20 pilots.
     """
+    missing = [c for c in FEATURE_COLUMNS if c not in pilots.columns]
+    if missing:
+        raise ValueError(
+            f"Missing column(s): {', '.join(missing)}. "
+            "Regenerate the per-pilot features with compute_features.py."
+        )
     features = pd.DataFrame(index=pilots["pilot_id"])
-    for metric in METRICS:
-        features[f"{metric}_std"] = pilots[f"{metric}_std"].to_numpy()
-        features[f"{metric}_abs_bias"] = pilots[f"{metric}_bias"].abs().to_numpy()
+    for column in FEATURE_COLUMNS:
+        features[column] = pilots[column].to_numpy()
 
     gaps = []
     for pilot_id, row in features.iterrows():

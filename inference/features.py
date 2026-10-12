@@ -30,7 +30,7 @@ ACTUAL_COLUMN = {
 }
 TARGET_COLUMN = {metric: f"target_{metric}" for metric in METRICS}
 ID_COLUMNS = ["pilot_id", "flight_id"]
-STATISTICS = ("mad", "std", "bias")
+STATISTICS = ("mad", "std", "bias", "abs_bias")
 REQUIRED_COLUMNS = ID_COLUMNS + list(ACTUAL_COLUMN.values()) + list(TARGET_COLUMN.values())
 
 
@@ -78,7 +78,10 @@ def flight_features(df: pd.DataFrame) -> pd.DataFrame:
 
         <metric>_mad        mean absolute deviation (size of the deviation)
         <metric>_std        standard deviation of signed deviation, ddof=0 (steadiness)
-        <metric>_bias       mean signed deviation (not meant for clustering by default)
+        <metric>_bias       mean signed deviation
+        <metric>_abs_bias   absolute value of this flight's mean signed deviation, so
+                            a pilot's flights on opposite sides of the target do not
+                            cancel when they are averaged per pilot
         <metric>_rows_used  samples with a valid deviation
 
     NaN deviations are skipped. A flight with no valid sample for a metric gets
@@ -108,6 +111,7 @@ def flight_features(df: pd.DataFrame) -> pd.DataFrame:
                 row[f"{metric}_mad"] = deviations.abs().mean()
                 row[f"{metric}_std"] = deviations.std(ddof=0)
                 row[f"{metric}_bias"] = deviations.mean()
+                row[f"{metric}_abs_bias"] = abs(row[f"{metric}_bias"])
             row[f"{metric}_rows_used"] = len(deviations)
         rows.append(row)
     return pd.DataFrame(rows)

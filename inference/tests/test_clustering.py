@@ -33,10 +33,10 @@ def steady_and_wobbly_pilots():
     """Four pilots holding steady 60 ft off target (two high, two low), four wobbling around it."""
     return make_pilots(
         [
-            ("high1", {"altitude_bias": 60.0, "altitude_std": 5.0}),
-            ("low1", {"altitude_bias": -60.0, "altitude_std": 5.0}),
-            ("high2", {"altitude_bias": 60.0, "altitude_std": 5.0}),
-            ("low2", {"altitude_bias": -60.0, "altitude_std": 5.0}),
+            ("high1", {"altitude_abs_bias": 60.0, "altitude_std": 5.0}),
+            ("low1", {"altitude_abs_bias": 60.0, "altitude_std": 5.0}),
+            ("high2", {"altitude_abs_bias": 60.0, "altitude_std": 5.0}),
+            ("low2", {"altitude_abs_bias": 60.0, "altitude_std": 5.0}),
             ("wobbly1", {"altitude_std": 60.0}),
             ("wobbly2", {"altitude_std": 60.0}),
             ("wobbly3", {"altitude_std": 60.0}),
@@ -45,7 +45,7 @@ def steady_and_wobbly_pilots():
     )
 
 
-def test_pilots_off_target_in_opposite_directions_share_a_group():
+def test_pilots_equally_far_off_target_share_a_group():
     assignments, _ = fit(steady_and_wobbly_pilots(), k=2)
 
     steady = {group_of(assignments, p) for p in ("high1", "low1", "high2", "low2")}
@@ -62,13 +62,13 @@ def test_sub_foot_bias_differences_do_not_decide_groups():
     # look as far apart as 5 vs 50 ft and split the groups the wrong way.
     pilots = make_pilots(
         [
-            (f"{size}{i}", {"altitude_std": std, "altitude_bias": bias})
+            (f"{size}{i}", {"altitude_std": std, "altitude_abs_bias": bias})
             for size, std in (("tight", 8.0), ("loose", 12.0))
             for i, bias in enumerate((0.01, 0.1, 0.01, 0.1))
         ]
         + [
-            (f"off{i}", {"altitude_std": 60.0, "altitude_bias": bias})
-            for i, bias in enumerate((50.0, -50.0, 50.0, -50.0))
+            (f"off{i}", {"altitude_std": 60.0, "altitude_abs_bias": bias})
+            for i, bias in enumerate((50.0, 50.0, 50.0, 50.0))
         ]
     )
     assignments, _ = fit(pilots, k=3)
@@ -147,9 +147,9 @@ def test_nan_feature_fails_naming_pilot_and_metric():
     pilots = make_pilots(
         [
             ("p1", {}),
-            ("p2", {"heading_std": float("nan"), "heading_bias": float("nan")}),
+            ("p2", {"heading_std": float("nan"), "heading_abs_bias": float("nan")}),
             ("p3", {}),
-            ("p4", {"airspeed_bias": float("nan")}),
+            ("p4", {"airspeed_abs_bias": float("nan")}),
         ]
     )
     with pytest.raises(ValueError) as error:
@@ -158,3 +158,45 @@ def test_nan_feature_fails_naming_pilot_and_metric():
     assert "p2" in message and "heading" in message
     assert "p4" in message and "airspeed" in message
     assert "p1" not in message and "p3" not in message
+
+
+def _telemetry_with_altitude_offsets(offsets_by_pilot, seed=0):
+    """Two-flight telemetry; each pilot's altitude sits at target + that flight's offset."""
+    rng = np.random.default_rng(seed)
+    frames = []
+    for pilot_id, offsets in offsets_by_pilot.items():
+        for flight, offset in enumerate(offsets):
+            n = 60
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "pilot_id": pilot_id,
+                        "flight_id": f"{pilot_id}-{flight}",
+                        "altitude": 5000.0 + offset + rng.normal(0, 5.0, n),
+                        "heading": 90.0,
+                        "vertical_speed": 0.0,
+                        "velocity": 120.0,
+                        "target_altitude": 5000.0,
+                        "target_heading": 90.0,
+                        "target_vertical_speed": 0.0,
+                        "target_airspeed": 120.0,
+                    }
+                )
+            )
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_pilot_off_target_in_opposite_directions_on_different_flights_is_not_on_target():
+    # Averaging signed bias across flights first would make the alternating
+    # pilots look exactly like the on-target ones.
+    offsets = {f"alt{i}": (60.0, -60.0) for i in range(4)}
+    offsets.update({f"ontarget{i}": (0.0, 0.0) for i in range(4)})
+    _, pilots = compute_features(_telemetry_with_altitude_offsets(offsets))
+
+    assignments, _ = fit(pilots, k=2)
+
+    alternating = {group_of(assignments, f"alt{i}") for i in range(4)}
+    on_target = {group_of(assignments, f"ontarget{i}") for i in range(4)}
+    assert len(alternating) == 1
+    assert len(on_target) == 1
+    assert alternating != on_target

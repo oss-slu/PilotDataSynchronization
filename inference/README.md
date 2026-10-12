@@ -86,9 +86,11 @@ python inference/compute_features.py --input <telemetry_with_targets.csv>
 
 Outputs `inference/Data/flight_features.csv` and `inference/Data/pilot_features.csv`, in raw units.
 Per metric (altitude, heading, vertical speed, airspeed) it gives `_mad` (mean absolute
-deviation), `_std` (standard deviation of the signed deviation) and `_bias` (mean signed
-deviation, not meant for clustering by default). The flight file also has `_rows_used`, the
-samples that had a valid deviation; the pilot file has a `flights` count instead.
+deviation), `_std` (standard deviation of the signed deviation), `_bias` (mean signed
+deviation) and `_abs_bias` (the absolute value of each flight's `_bias`, averaged per pilot,
+so flights on opposite sides of the target do not cancel). Clustering uses `_std` and
+`_abs_bias`. The flight file also has `_rows_used`, the samples that had a valid deviation;
+the pilot file has a `flights` count instead.
 
 A flight with no valid target for a metric gets NaN for it and a warning, and its other
 metrics are kept. A pilot's feature averages over the flights that have it; a pilot with none
