@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 import logging
 
+from angles import angular_diff
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -167,17 +169,9 @@ class FlightEventLabeler:
             curr_heading: Current heading in degrees
         
         Returns:
-            Heading change in degrees (-180 to 180)
+            Heading change in degrees, in [-180, 180)
         """
-        change = curr_heading - prev_heading
-        
-        # Normalize to -180 to 180 range
-        if change > 180:
-            change -= 360
-        elif change < -180:
-            change += 360
-        
-        return change
+        return float(angular_diff(curr_heading, prev_heading))
     
     def label_dataset(self, input_path: Path, output_path: Path) -> pd.DataFrame:
         """

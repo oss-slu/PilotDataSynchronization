@@ -1,6 +1,10 @@
-# Contributing to Pilot Training Data Synchronization Project
+# Contributing to Pilot Data Synchronization
 
-Thank you for your interest in contributing to Pilot Training Data Synchronization! We welcome contributions from the community to help improve and enhance the project. This document outlines the guidelines, steps, and rules for contributing to the project.
+Thank you for your interest in contributing to Pilot Data Synchronization! We welcome contributions from the community to help improve and enhance the project. This document outlines the guidelines, steps, and rules for contributing to the project.
+
+New here? Read [New Contributor? Start Here](README.md#new-contributor-start-here) in the README first. It tells you which parts of the toolchain you actually need for the area you want to work on.
+
+All contributors are expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Contribution Rules
 
