@@ -93,7 +93,7 @@ Then, in order:
 5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
 6. Start X-Plane. Flight data now flows automatically.
 
-> The `Send Packet` button sends one test packet, `E;1;PilotDataSync;;;;;AltitudeSync;0;0`, and shows the time it was sent next to the button. It is a connection check and needs TCP connected, not X-Plane. Avoid pressing it during a recording, since iMotions receives the zeros as a real altitude sample. The live data stream is automatic and does not need this button.
+> The `Send Packet` button sends one test packet of zeros, for example `E;1;PilotDataSync;;;;;AltitudeSync;0;0`, and shows the time it was sent next to the button. The sample is the first dataref toggle that is enabled, so the packet always matches a `<Sample>` in the generated `iMotions.xml`. It is a connection check and needs TCP connected, not X-Plane. Avoid pressing it during a recording, since iMotions receives the zeros as a real sample. The live data stream is automatic and does not need this button.
 
 Two more behaviors that catch people out:
 
@@ -144,7 +144,7 @@ In the relay's terminal, you should see roughly this sequence:
 
 ```
 [RELAY] listening on socket: "baton.sock"
-✓ Successfully created named pipe listener
+[OK] Successfully created named pipe listener
 [...] TCP - Successfully connected to iMotions server.
 [...] TX - packet len=50 text="E;1;PilotDataSync;;;;;AltitudeSync;1250.5;1250.5\r\n"
 ```
@@ -160,7 +160,7 @@ In the relay's window:
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| `Connect TCP` appears to do nothing and the status stays `false` | The connection failed. No error is displayed, and pressing `Connect TCP` again fails silently because the previous thread still exists. | Press `Disconnect TCP` first, then `Connect TCP`. This is the most common first-time snag. |
+| `Connect TCP` fails and the status stays `false` | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect TCP` again. `Disconnect TCP` first is no longer needed |
 | `:( No Baton Connection` | The plugin is not loaded, or its window is closed | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
 | Data stops part-way through a flight | The "Positional Flight Data" window was closed or hidden (Windows/Linux only) | Reopen it |
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |

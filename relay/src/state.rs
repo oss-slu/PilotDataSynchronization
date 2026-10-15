@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use chrono::Local;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::BufRead;
@@ -147,10 +148,31 @@ fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
     packet
 }
 
-// Dummy packet for the Send Packet button. AltitudeSync is used because
-// iMotions only accepts sample ids that appear in the generated iMotions.xml.
-pub(crate) fn build_test_packet() -> String {
-    build_imotions_packet("AltitudeSync", &["0".to_string(), "0".to_string()])
+// Dummy packet for the Send Packet button. iMotions only accepts sample ids
+// that appear in the generated iMotions.xml, so the sample has to be one of
+// the enabled toggles. Returns None when every toggle is off.
+pub(crate) fn build_test_packet(state: &State) -> Option<String> {
+    let sample = test_packet_sample(state)?;
+    Some(build_imotions_packet(
+        sample,
+        &["0".to_string(), "0".to_string()],
+    ))
+}
+
+// The first enabled toggle, in the order create_xml_file writes the samples.
+fn test_packet_sample(state: &State) -> Option<&'static str> {
+    [
+        (state.altitude_toggle, "AltitudeSync"),
+        (state.airspeed_toggle, "AirspeedSync"),
+        (state.vertical_airspeed_toggle, "VerticalVelocitySync"),
+        (state.heading_toggle, "HeadingSync"),
+        (state.roll_toggle, "RollSync"),
+        (state.pitch_toggle, "PitchSync"),
+        (state.yaw_toggle, "YawSync"),
+        (state.gforce_toggle, "GForceSync"),
+    ]
+    .into_iter()
+    .find_map(|(enabled, sample)| enabled.then_some(sample))
 }
 
 fn now_epoch_millis() -> String {
@@ -159,6 +181,15 @@ fn now_epoch_millis() -> String {
         .unwrap_or_else(|_| StdDuration::from_secs(0));
     format!("{}.{:03}", now.as_secs(), now.subsec_millis())
 } 
+
+/// Wall-clock timestamp for entries shown in the GUI.
+///
+/// `now_epoch_millis` is kept for `human_log`, where epoch values are fine for a
+/// machine-read stderr log; on screen they are unreadable. Milliseconds are kept
+/// because the relay streams at 20 Hz and events can arrive several per second.
+fn now_local_time() -> String {
+    Local::now().format("%H:%M:%S%.3f").to_string()
+}
 
 // -- Buffered human logger --------------------------------------------------
 const LOG_FLUSH_INTERVAL_MS: u64 = 2000;
@@ -241,7 +272,7 @@ fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
 // --- State impl -------------------------------------------------------------
 impl State {
     pub fn log_event(&mut self, event: String) {
-        let entry = format!("[{}] {}", now_epoch_millis(), event);
+        let entry = format!("[{}] {}", now_local_time(), event);
         self.event_log.push(entry);
     }
 
@@ -330,7 +361,6 @@ impl State {
         self.sent_packet_times.push_back(now);
         self.sent_samples.push_back((now, bytes));
         self.refresh_metrics(now);
-        self.log_event(format!("Sent packet ({} bytes)", bytes));
     }
 
     fn refresh_metrics(&mut self, now: Instant) {
@@ -467,7 +497,7 @@ impl State {
                             continue;
                         }
                         Ok(_s) => {
-                            println!("[RELAY] IPC raw line: {:?}", buffer);
+                            human_log("RX", &format!("baton line={:?}", buffer));
                             let _ = buffer.pop();
                             let _ = child_bichannel.send_to_parent(FromIpcThreadMessage::BatonData(buffer.clone()));
                             buffer.clear();
@@ -541,8 +571,14 @@ impl State {
                     stream
                 }
                 Err(e) => {
-                    human_log("TCP", &format!("Connection failed: {}", e));
-                    bail!("Failed to connect to TCP");
+                    let reason = format!("TCP connection failed: {}", e);
+                    human_log("TCP", &reason);
+                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                    // Report it so the GUI can show the failure and drop this
+                    // thread, instead of the error only reaching stderr.
+                    let _ = child_bichannel
+                        .send_to_parent(FromTcpThreadMessage::Disconnected(reason.clone()));
+                    bail!(reason);
                 }
             };
             
@@ -641,6 +677,9 @@ impl State {
         });
         
         self.tcp_thread_handle = Some(tcp_thread_handle);
+        // Clear any banner left by an earlier failure, so a successful retry
+        // does not keep showing the old error.
+        self.error_message = None;
         Ok(())
     }
 
@@ -667,6 +706,19 @@ impl State {
         Ok(res?)
     }
 
+    // Drops a TCP thread that has already exited, so tcp_connect is allowed
+    // to start a new one. The join runs detached because the thread returned
+    // an error and its Result is of no use here.
+    pub fn reap_tcp_thread(&mut self) {
+        if let Some(handle) = self.tcp_thread_handle.take() {
+            spawn(move || {
+                let _ = handle.join();
+            });
+        }
+        self.tcp_bichannel = None;
+        self.tcp_connected = false;
+    }
+
     pub fn is_tcp_connected(&self) -> bool {
         if let Some(status) = self
             .tcp_bichannel
@@ -686,9 +738,37 @@ mod tests {
 
     #[test]
     fn test_packet_matches_imotions_format() {
+        let state = State::default();
         assert_eq!(
-            build_test_packet(),
-            "E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n"
+            build_test_packet(&state).as_deref(),
+            Some("E;1;PilotDataSync;;;;;AltitudeSync;0;0\r\n")
         );
+    }
+
+    #[test]
+    fn test_packet_uses_the_first_enabled_toggle() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+
+        assert_eq!(
+            build_test_packet(&state).as_deref(),
+            Some("E;1;PilotDataSync;;;;;VerticalVelocitySync;0;0\r\n")
+        );
+    }
+
+    #[test]
+    fn test_packet_is_none_when_every_toggle_is_off() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+        state.vertical_airspeed_toggle = false;
+        state.heading_toggle = false;
+        state.roll_toggle = false;
+        state.pitch_toggle = false;
+        state.yaw_toggle = false;
+        state.gforce_toggle = false;
+
+        assert_eq!(build_test_packet(&state), None);
     }
 }

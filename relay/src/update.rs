@@ -54,7 +54,6 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                             if let Some(tcp_bi) = state.tcp_bichannel.as_mut() {
                                 let _ = tcp_bi.send_to_child(ToTcpThreadMessage::Send(data.clone()));
                             }
-                            state.log_event(format!("Baton packet: {}", data));
                             state.latest_baton_send = Some(data);
                             state.last_baton_instant = Some(Instant::now());
                             state.active_baton_connection = true;
@@ -68,23 +67,30 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             }
 
             // process TCP messages
-            if let Some(tcp_bichannel) = &state.tcp_bichannel {
-                for msg in tcp_bichannel.received_messages() {
-                    match msg {
-                        FromTcpThreadMessage::Connected => {
-                            state.log_event("TCP connected to iMotions".into());
-                            state.tcp_connected = true;
-                        }
-                        FromTcpThreadMessage::Disconnected(reason) => {
-                            state.log_event(format!("TCP disconnected: {}", reason));
-                            state.tcp_connected = false;
-                        }
-                        FromTcpThreadMessage::Sent(bytes) => {
-                            state.on_tcp_packet_sent(bytes);
-                        }
-                        FromTcpThreadMessage::SendError(err) => {
-                            state.log_event(format!("TCP send error: {}", err));
-                        }
+            let tcp_messages = state
+                .tcp_bichannel
+                .as_ref()
+                .map(|bichannel| bichannel.received_messages())
+                .unwrap_or_default();
+            for msg in tcp_messages {
+                match msg {
+                    FromTcpThreadMessage::Connected => {
+                        state.log_event("TCP connected to iMotions".into());
+                        state.tcp_connected = true;
+                    }
+                    FromTcpThreadMessage::Disconnected(reason) => {
+                        state.log_event(format!("TCP disconnected: {}", reason));
+                        state.error_message = Some(reason);
+                        state.tcp_connected = false;
+                        // The thread has exited. Clear it so Connect TCP works
+                        // again without pressing Disconnect TCP first.
+                        state.reap_tcp_thread();
+                    }
+                    FromTcpThreadMessage::Sent(bytes) => {
+                        state.on_tcp_packet_sent(bytes);
+                    }
+                    FromTcpThreadMessage::SendError(err) => {
+                        state.log_event(format!("TCP send error: {}", err));
                     }
                 }
             }
@@ -185,12 +191,26 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         M::SendPacket => {
             let connected = state.is_tcp_connected();
-            match state.tcp_bichannel.as_mut() {
-                Some(tcp_bi) if connected => {
-                    let _ = tcp_bi.send_to_child(ToTcpThreadMessage::SendRaw(build_test_packet()));
-                    state.error_message = None;
-                    state.last_send_timestamp = Some(Local::now().format("%H:%M:%S").to_string());
-                    state.log_event("Test packet queued".into());
+            let packet = build_test_packet(state);
+            match (packet, state.tcp_bichannel.as_mut()) {
+                (Some(packet), Some(tcp_bi)) if connected => {
+                    match tcp_bi.send_to_child(ToTcpThreadMessage::SendRaw(packet)) {
+                        Ok(()) => {
+                            state.error_message = None;
+                            state.last_send_timestamp =
+                                Some(Local::now().format("%H:%M:%S").to_string());
+                            state.log_event("Test packet queued".into());
+                        }
+                        Err(e) => {
+                            let msg = format!("Sending the test packet failed: {}", e);
+                            state.error_message = Some(msg.clone());
+                            state.log_event(msg);
+                        }
+                    }
+                }
+                (None, _) => {
+                    state.error_message =
+                        Some("Enable at least one dataref toggle to send a test packet".into());
                 }
                 _ => {
                     state.error_message = Some("Connect TCP before sending a test packet".into());
@@ -334,8 +354,12 @@ mod tests {
         let (stream, _) = listener.accept().expect("accept failed");
         assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
 
-        update(&mut state, Message::SendPacket);
+        let _ = update(&mut state, Message::SendPacket);
 
+        // Bounded so a delivery regression fails the test instead of hanging
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(5)))
+            .expect("set_read_timeout failed");
         let mut reader = BufReader::new(stream);
         let mut line = String::new();
         reader.read_line(&mut line).expect("read failed");
@@ -347,11 +371,87 @@ mod tests {
         let _ = state.tcp_disconnect();
     }
 
+    // Pumps the Update message the GUI subscription would send, so queued
+    // thread messages are processed.
+    fn pump_update(state: &mut State, ticks: usize) {
+        for _ in 0..ticks {
+            let _ = update(state, Message::Update);
+            sleep(StdDuration::from_millis(10));
+        }
+    }
+
+    // A port nothing listens on, obtained by binding and then dropping.
+    fn closed_port_addr() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        drop(listener);
+        addr
+    }
+
+    #[test]
+    fn failed_connect_surfaces_an_error_and_allows_a_retry() {
+        let mut state = State::default();
+        state
+            .tcp_connect(closed_port_addr())
+            .expect("tcp_connect should spawn a thread");
+
+        pump_update(&mut state, 200);
+
+        let error = state.error_message.clone().expect("no error surfaced");
+        assert!(
+            error.starts_with("TCP connection failed:"),
+            "unexpected error: {error}"
+        );
+        assert!(!state.tcp_connected);
+        assert!(state.tcp_thread_handle.is_none(), "dead thread was kept");
+        assert!(
+            state.event_log.iter().any(|e| e.contains("TCP disconnected")),
+            "failure missing from the event log: {:?}",
+            state.event_log
+        );
+
+        // The retry is the point: this used to fail with "TCP thread already
+        // exists" until Disconnect TCP was pressed.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        state.tcp_connect(addr).expect("retry was rejected");
+        let _ = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "retry never connected");
+        assert!(
+            state.error_message.is_none(),
+            "stale failure banner after a successful retry: {:?}",
+            state.error_message
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn send_packet_with_every_toggle_off_reports_an_error() {
+        let mut state = State::default();
+        state.altitude_toggle = false;
+        state.airspeed_toggle = false;
+        state.vertical_airspeed_toggle = false;
+        state.heading_toggle = false;
+        state.roll_toggle = false;
+        state.pitch_toggle = false;
+        state.yaw_toggle = false;
+        state.gforce_toggle = false;
+
+        let _ = update(&mut state, Message::SendPacket);
+
+        assert_eq!(
+            state.error_message.as_deref(),
+            Some("Enable at least one dataref toggle to send a test packet")
+        );
+        assert!(state.last_send_timestamp.is_none());
+    }
+
     #[test]
     fn send_packet_without_tcp_reports_an_error() {
         let mut state = State::default();
 
-        update(&mut state, Message::SendPacket);
+        let _ = update(&mut state, Message::SendPacket);
 
         assert_eq!(
             state.error_message.as_deref(),

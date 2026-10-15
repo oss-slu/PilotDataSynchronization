@@ -29,13 +29,11 @@ fn main() -> iced::Result {
             };
 
             if let Err(e) = state.load_saved_tcp_addrs() {
-                state
-                    .event_log
-                    .push(format!("Could not load IP, did it change?: {e:?}"));
+                state.log_event(format!("Could not load IP, did it change?: {e:?}"));
             }
 
             if let Err(e) = state.ipc_connect() {
-                state.event_log.push(format!(
+                state.log_event(format!(
                     "Error connecting to IPC during GUI initialization: {e:?}"
                 ));
             };
