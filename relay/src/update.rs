@@ -427,6 +427,49 @@ mod tests {
     }
 
     #[test]
+    fn connecting_reports_status_without_a_manual_check() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let (_stream, _) = listener.accept().expect("accept failed");
+
+        pump_update(&mut state, 50);
+
+        // Before #181 the TCP thread never sent Connected, so this stayed false
+        // until Check TCP Connection Status was pressed.
+        assert!(
+            state.tcp_connected,
+            "status never flipped on its own: {:?}",
+            state.event_log
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn sent_packets_make_the_throughput_block_appear() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let (_stream, _) = listener.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
+
+        let _ = update(&mut state, Message::SendPacket);
+        pump_update(&mut state, 50);
+
+        // show_metrics gates metrics_block in view.rs. Nothing ever set it
+        // before #181, so the throughput indicator could never render.
+        assert!(state.packets_last_60s > 0, "no packets counted");
+        assert!(state.show_metrics, "throughput block still hidden");
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
     fn send_packet_with_every_toggle_off_reports_an_error() {
         let mut state = State::default();
         state.altitude_toggle = false;

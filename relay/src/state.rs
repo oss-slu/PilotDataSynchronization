@@ -580,6 +580,9 @@ impl State {
                 Ok(stream) => {
                     human_log("TCP", "Successfully connected to iMotions server.");
                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                    // Report it so the status line follows the real socket instead
+                    // of waiting for a manual Check TCP Connection Status press.
+                    let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Connected);
                     stream
                 }
                 Err(e) => {
@@ -609,76 +612,116 @@ impl State {
                                 continue;
                             }
 
-                            let mut try_send = |pkt: String| -> Result<()> {
-                                let res = send_packet_and_debug(&mut stream, &pkt);
-                                if res.is_err() {
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                } else {
-                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                            // A write failure means the socket is gone, so stop at the
+                            // first one and report it as a disconnect. Reporting each
+                            // failed packet instead would write ~120 entries/sec to the
+                            // event log and bury everything else in the GUI panel.
+                            let send_outcome = (|| -> Result<()> {
+                                let mut try_send = |pkt: String| -> Result<()> {
+                                    let bytes = pkt.len();
+                                    match send_packet_and_debug(&mut stream, &pkt) {
+                                        Ok(()) => {
+                                            let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                            // Report the write so the throughput block has
+                                            // something to count.
+                                            let _ = child_bichannel
+                                                .send_to_parent(FromTcpThreadMessage::Sent(bytes));
+                                            Ok(())
+                                        }
+                                        Err(e) => {
+                                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                            Err(e)
+                                        }
+                                    }
+                                };
+
+                                if fields.len() == 4 {
+                                    let alt = fields[0].clone();
+                                    let air = fields[1].clone();
+                                    let head = fields[2].clone();
+                                    let vv = fields[3].clone();
+
+                                    try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]))?;
+                                    try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]))?;
+                                    try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]))?;
+                                    try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]))?;
+                                    return Ok(());
                                 }
-                                res
-                            };
 
-                            if fields.len() == 4 {
-                                let alt = fields[0].clone();
-                                let air = fields[1].clone();
-                                let head = fields[2].clone();
-                                let vv = fields[3].clone();
+                                if fields.len() == 8 {
+                                    let alt = fields[0].clone();
+                                    let air = fields[1].clone();
+                                    let head = fields[2].clone();
+                                    let vv = fields[3].clone();
+                                    let roll = fields[4].clone();
+                                    let pitch = fields[5].clone();
+                                    let yaw = fields[6].clone();
+                                    let gforce = fields[7].clone();
 
-                                let _ = try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]));
-                                let _ = try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]));
-                                let _ = try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]));
-                                let _ = try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]));
-                                continue;
-                            }
-
-                            if fields.len() == 8 {
-                                let alt = fields[0].clone();
-                                let air = fields[1].clone();
-                                let head = fields[2].clone();
-                                let vv = fields[3].clone();
-                                let roll = fields[4].clone();
-                                let pitch = fields[5].clone();
-                                let yaw = fields[6].clone();
-                                let gforce = fields[7].clone();
-
-                                let _ = try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]));
-                                let _ = try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]));
-                                let _ = try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]));
-                                let _ = try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]));
-                                let _ = try_send(build_imotions_packet("RollSync", &[roll.clone(), roll.clone()]));
-                                let _ = try_send(build_imotions_packet("PitchSync", &[pitch.clone(), pitch.clone()]));
-                                let _ = try_send(build_imotions_packet("YawSync", &[yaw.clone(), yaw.clone()]));
-                                let _ = try_send(build_imotions_packet("GForceSync", &[gforce.clone(), gforce.clone()]));
-                                continue;
-                            }
-
-                            // Paired mapping
-                            let mut idx = 0usize;
-                            let mut send_pair_if_present = |name: &str, idx: &mut usize| -> Result<()> {
-                                if *idx + 1 < fields.len() {
-                                    let payload = vec![fields[*idx].clone(), fields[*idx + 1].clone()];
-                                    let pkt = build_imotions_packet(name, &payload);
-                                    *idx += 2;
-                                    try_send(pkt)?;
+                                    try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]))?;
+                                    try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]))?;
+                                    try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]))?;
+                                    try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]))?;
+                                    try_send(build_imotions_packet("RollSync", &[roll.clone(), roll.clone()]))?;
+                                    try_send(build_imotions_packet("PitchSync", &[pitch.clone(), pitch.clone()]))?;
+                                    try_send(build_imotions_packet("YawSync", &[yaw.clone(), yaw.clone()]))?;
+                                    try_send(build_imotions_packet("GForceSync", &[gforce.clone(), gforce.clone()]))?;
+                                    return Ok(());
                                 }
+
+                                // Paired mapping
+                                let mut idx = 0usize;
+                                let mut send_pair_if_present = |name: &str, idx: &mut usize| -> Result<()> {
+                                    if *idx + 1 < fields.len() {
+                                        let payload = vec![fields[*idx].clone(), fields[*idx + 1].clone()];
+                                        let pkt = build_imotions_packet(name, &payload);
+                                        *idx += 2;
+                                        try_send(pkt)?;
+                                    }
+                                    Ok(())
+                                };
+
+                                send_pair_if_present("AltitudeSync", &mut idx)?;
+                                send_pair_if_present("AirspeedSync", &mut idx)?;
+                                send_pair_if_present("VerticalVelocitySync", &mut idx)?;
+                                send_pair_if_present("HeadingSync", &mut idx)?;
+                                send_pair_if_present("RollSync", &mut idx)?;
+                                send_pair_if_present("PitchSync", &mut idx)?;
+                                send_pair_if_present("YawSync", &mut idx)?;
+                                send_pair_if_present("GForceSync", &mut idx)?;
                                 Ok(())
-                            };
+                            })();
 
-                            let _ = send_pair_if_present("AltitudeSync", &mut idx);
-                            let _ = send_pair_if_present("AirspeedSync", &mut idx);
-                            let _ = send_pair_if_present("VerticalVelocitySync", &mut idx);
-                            let _ = send_pair_if_present("HeadingSync", &mut idx);
-                            let _ = send_pair_if_present("RollSync", &mut idx);
-                            let _ = send_pair_if_present("PitchSync", &mut idx);
-                            let _ = send_pair_if_present("YawSync", &mut idx);
-                            let _ = send_pair_if_present("GForceSync", &mut idx);
+                            if let Err(e) = send_outcome {
+                                let reason = format!("TCP send failed: {}", e);
+                                human_log("TCP", &reason);
+                                // Same path #179 established for a failed connect: the
+                                // GUI shows it and reap_tcp_thread clears the handle, so
+                                // Connect TCP works again without Disconnect TCP first.
+                                let _ = child_bichannel
+                                    .send_to_parent(FromTcpThreadMessage::Disconnected(reason.clone()));
+                                bail!(reason);
+                            }
                         }
                         ToTcpThreadMessage::SendRaw(packet) => {
-                            let res = send_packet_and_debug(&mut stream, &packet);
-                            let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
-                            if let Err(e) = res {
-                                human_log("TCP", &format!("Test packet failed: {}", e));
+                            match send_packet_and_debug(&mut stream, &packet) {
+                                Ok(()) => {
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                    // A test packet is still a packet on the wire, so it
+                                    // counts toward throughput like any other.
+                                    let _ = child_bichannel.send_to_parent(
+                                        FromTcpThreadMessage::Sent(packet.len()),
+                                    );
+                                }
+                                Err(e) => {
+                                    let reason = format!("Test packet failed: {}", e);
+                                    human_log("TCP", &reason);
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    let _ = child_bichannel.send_to_parent(
+                                        FromTcpThreadMessage::Disconnected(reason.clone()),
+                                    );
+                                    bail!(reason);
+                                }
                             }
                         }
                     }
