@@ -52,6 +52,9 @@ inference/Data/flight_features.csv
 inference/Data/pilot_features.csv
 inference/Data/pilot_clusters.csv
 inference/Data/group_centres.csv
+inference/Data/client/*
+# Collected telemetry (one file per collection session, written by data_logger.py)
+inference/Data/session_flight_data.csv
 
 # Local build archives
 /xplane_plugin.zip

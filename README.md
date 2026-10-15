@@ -6,6 +6,23 @@
 Additional Components:
 - `inference`: Python-based module for logging, labeling, and training a machine learning model using the collected flight data
 
+# New Contributor? Start Here
+
+Pilot Data Synchronization spans three languages (C++, Rust, Python) and two external programs (X-Plane, iMotions). You do **not** need all of them to contribute. Pick the path that matches the part you want to work on:
+
+| You want to work on | You need | Start with |
+|---|---|---|
+| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/Data/` |
+| Relay GUI (`relay/`) | Rust | [Setup → Relay](#2-relay), then test against the [mock iMotions server](#no-imotions-use-the-mock-server) |
+| X-Plane plugin / baton | Meson, Ninja, mingw-w64, Rust | [Setup → X-Plane plugin](#1-x-plane-plugin) |
+| Docs / data schema | Nothing to install | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) and [`GLOSSARY.md`](GLOSSARY.md) |
+
+Then:
+1. Read [`GLOSSARY.md`](GLOSSARY.md). The project uses precise terms (*telemetry*, *sample*, *relay*, *baton*), and issues and PRs are written with them.
+2. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for branching and PR rules, and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+3. Pick an open issue filtered by area label (`area:ml`, `area:relay`, `area:xplane-plugin`, `area:docs`). See [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md) for what each label means. Comment on the issue before starting.
+4. Stuck on setup? Check [Troubleshooting](#troubleshooting) first, then ask in the team Slack channel linked in CONTRIBUTING.md. If you hit a problem the docs didn't cover, adding it to the Troubleshooting table is a great first PR.
+
 # Setup
 
 Start the components in this order: iMotions (or the mock server) → relay → X-Plane. The relay is a TCP client, and any flight data that arrives before its TCP connection is up is discarded.
@@ -201,7 +218,7 @@ However, this limitation only extends to what language the communication is comp
 
 A secondary benefit to using Rust over C++ for `baton` is that we can leverage Rust's superior concurrency and safety guarantees. By managing the threading and communication in the Rust library and providing the plugin only a very limited interface by which it can pass in values to be sent to `relay`, we make a worthwhile exchange. We trade up-front complexity for vastly reduced need for debugging further down the line, as our code is more likely to be sound. This is an important consideration, as the project will be passed on to new students for next iteration. It is a much better use of developer time to work on developing features instead of being mired in deeply complex concurrency concerns similar to the ones that appeared during the first iteration of this project when we began.
 
-#Additional Note:
+### Recent Changes
 Recent updates include non-blocking IPC handling in `baton`, improved shutdown handling (killswitch flags), and more stable relay connection management to prevent repeated connection bugs.
 
 ## Visual Overview 
@@ -213,22 +230,17 @@ https://docs.google.com/document/d/1KRa0qkovk8kHhXT9Z3p66wXcQFLISTJb8F0M-sINLZ8/
 For total understanding of how the data is actually being sent and where it works here is a flow diagram that shows how the data is being sent. 
 https://docs.google.com/document/d/1KRa0qkovk8kHhXT9Z3p66wXcQFLISTJb8F0M-sINLZ8/edit?usp=sharing 
 
-## Low-Level View
-Work in progress.
+## Where to Go Next
+Component-level detail lives next to the code it describes, so it stays in sync:
 
-### `xplane_plugin`
-
-### `relay`
-
-#### `iced`
-
-#### `iceoryx2`
-
-#### iMotions
-
-### `baton`
-
-#### `iceoryx2`
+| Topic | Document |
+|---|---|
+| Project vocabulary | [`GLOSSARY.md`](GLOSSARY.md) |
+| Telemetry fields, units and deviation metrics (the data contract) | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) |
+| ML pipeline: logging, labeling, training | [`inference/README.md`](inference/README.md) |
+| X-Plane DataRefs used by the plugin | [`xplane_plugin/docs/key_datarefs.md`](xplane_plugin/docs/key_datarefs.md) |
+| Issue labels and triage | [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md) |
+| Product roadmap framework | [`Documents/PRODUCT_ROADMAP_FRAMEWORK.md`](Documents/PRODUCT_ROADMAP_FRAMEWORK.md) |
 
 ## Supported versions (CI + Local)
 
@@ -258,9 +270,19 @@ A quick way to confirm your toolchain is healthy. For the full walkthrough, see 
    - `meson test -C build`
    - `cd ../relay && cargo test`
    - `cd ../xplane_plugin/subprojects/baton && cargo test`
-#Additional Validation Notes:
+
+## Validation Status
 - Data logging has been tested with hundreds of samples with no missing values  
 - Labeling pipeline successfully processed over 16k rows, though some flight phase labels are still missing  
 - Final validation still requires a full real-time flight session with X-Plane + iMotions connected  
 
 Note: the file `toml .rust-toolchain.toml` at the repository root is not currently in effect. `rustup` only reads `rust-toolchain.toml` (or `rust-toolchain`), so the leading `toml ` in the filename means the toolchain is not pinned locally or in CI. Both use the default stable toolchain. Renaming the file would activate the `channel = "1.80.0"` pin inside it, which has not been tested against the current dependencies.
+
+# Team
+
+Pilot Data Synchronization is developed by students in Saint Louis University's [Open Source with SLU](https://oss-slu.github.io/) program for Dr. Gajapriya's aviation research lab.
+
+**Fall 2026:** Sanjana Siddani (Tech Lead), with three developers who joined this semester. See the [contributor graph](https://github.com/oss-slu/PilotDataSynchronization/graphs/contributors).
+
+**Previous tech lead:** Vamsi Bramhadevi.
+

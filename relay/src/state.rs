@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use chrono::Local;
 use std::collections::BTreeSet;
+use std::collections::VecDeque;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -28,11 +29,16 @@ use interprocess::local_socket::{
 use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
 use std::sync::{OnceLock, Mutex};
 
+/// How many `event_log` entries to keep. The GUI renders only the newest few,
+/// so this is scrollback headroom. The cap keeps the log O(1) in memory even if
+/// a future `log_event` call lands on a hot path, as happened before #203.
+pub(crate) const EVENT_LOG_CAPACITY: usize = 200;
+
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
-    pub event_log: Vec<String>,
+    pub event_log: VecDeque<String>,
     pub ipc_thread_handle: Option<JoinHandle<Result<()>>>,
     pub tcp_thread_handle: Option<JoinHandle<Result<()>>>,
     pub tcp_connected: bool,
@@ -77,7 +83,7 @@ impl Default for State {
     fn default() -> State {
         State {
             elapsed_time: Duration::ZERO,
-            event_log: Vec::new(),
+            event_log: VecDeque::new(),
             ipc_thread_handle: None,
             tcp_thread_handle: None,
             tcp_connected: false,
@@ -273,7 +279,10 @@ fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
 impl State {
     pub fn log_event(&mut self, event: String) {
         let entry = format!("[{}] {}", now_local_time(), event);
-        self.event_log.push(entry);
+        self.event_log.push_back(entry);
+        while self.event_log.len() > EVENT_LOG_CAPACITY {
+            self.event_log.pop_front();
+        }
     }
 
     fn saved_tcp_addrs_path() -> Result<PathBuf> {
@@ -738,6 +747,23 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn event_log_stops_growing_at_the_cap() {
+        let mut state = State::default();
+        for i in 0..(EVENT_LOG_CAPACITY + 50) {
+            state.log_event(format!("event {i}"));
+        }
+
+        assert_eq!(state.event_log.len(), EVENT_LOG_CAPACITY);
+        // The newest entries are the ones worth keeping.
+        assert!(state.event_log.back().unwrap().contains(&format!(
+            "event {}",
+            EVENT_LOG_CAPACITY + 49
+        )));
+        assert!(state.event_log.front().unwrap().contains("event 50"));
+        assert!(!state.event_log.iter().any(|e| e.ends_with("event 0")));
+    }
 
     #[test]
     fn test_packet_matches_imotions_format() {
