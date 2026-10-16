@@ -132,11 +132,17 @@ alongside the telemetry data) and joined in at feature-engineering time.
 | `pilot_id` | string | — | join key to telemetry table |
 | `certification_level` | string (categorical) | — | e.g. Student, Private, Commercial, ATP — exact category set TBD with client |
 | `flight_hours` | float | hours | total logged flight hours |
-| `pilot_rating` | string or numeric | — | client mentioned "pilot rating" as distinct from certification; needs clarification on whether this is a licensing rating (e.g. instrument rating) or a performance score |
+| `pilot_rating` | string or numeric | — | client mentioned "pilot rating" as distinct from certification; the client says it is the type of certification, not a performance score (see below) |
 
-**Open question for the client:** clarify whether `pilot_rating` is a
-licensing qualification (instrument, multi-engine, etc.) or an evaluative
-score, since that changes its type and how it factors into clustering.
+**Answered by the client:** `pilot_rating` is the type of certification, not an
+evaluative score (see [client_meeting_notes.md](client_meeting_notes.md)). It
+is still unclear whether it differs from `certification_level`. The client
+prioritizes `flight_hours` over certification, and agreed it is used after
+clustering, not as a feature.
+
+**Heading reference:** the client says the scenario's route headings are
+**true** headings, but `heading` above is magnetic. Resolve this before
+targets are populated.
 
 ## 5. Deviation formulas
 

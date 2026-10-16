@@ -106,5 +106,5 @@ _Avoid_: True group, skill level
 
 ## Flagged ambiguities
 
-- **Pilot rating** is unresolved: the client may mean a licensing rating (instrument, multi-engine) or a performance score. Do not use it as a precise term until clarified.
-- **Target** source is undecided: instructor-assigned, or taken from the autopilot. No targets are captured yet.
+- **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
+- **Target** source is most likely instructor-assigned: the client gives standardized, timestamped instructions during the flight. No targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.

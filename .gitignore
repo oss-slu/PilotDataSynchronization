@@ -59,3 +59,6 @@ inference/Data/session_flight_data.csv
 # Local build archives
 /xplane_plugin.zip
 /src.zip
+
+## Client Data
+inference/data/Client/*
