@@ -132,11 +132,17 @@ alongside the telemetry data) and joined in at feature-engineering time.
 | `pilot_id` | string | — | join key to telemetry table |
 | `certification_level` | string (categorical) | — | e.g. Student, Private, Commercial, ATP — exact category set TBD with client |
 | `flight_hours` | float | hours | total logged flight hours |
-| `pilot_rating` | string or numeric | — | client mentioned "pilot rating" as distinct from certification; needs clarification on whether this is a licensing rating (e.g. instrument rating) or a performance score |
+| `pilot_rating` | string or numeric | — | client mentioned "pilot rating" as distinct from certification; the client says it is the type of certification, not a performance score (see below) |
 
-**Open question for the client:** clarify whether `pilot_rating` is a
-licensing qualification (instrument, multi-engine, etc.) or an evaluative
-score, since that changes its type and how it factors into clustering.
+**Answered by the client:** `pilot_rating` is the type of certification, not an
+evaluative score (see [client_meeting_notes.md](client_meeting_notes.md)). It
+is still unclear whether it differs from `certification_level`. The client
+prioritizes `flight_hours` over certification, and agreed it is used after
+clustering, not as a feature.
+
+**Heading reference:** the client says the scenario's route headings are
+**true** headings, but `heading` above is magnetic. Resolve this before
+targets are populated.
 
 ## 5. Deviation formulas
 
@@ -175,9 +181,12 @@ raw telemetry column keeps its name, `velocity`.
 
 `inference/features.py` summarises deviation per flight and per pilot in raw
 units: mean absolute deviation (`_mad`), standard deviation of the signed
-deviation (`_std`) and mean signed deviation (`_bias`) for each metric, plus
-the number of samples used (`_rows_used`, per flight). A pilot's features are
-the mean of their flights' features, with a `flights` count. Units differ in
+deviation (`_std`), mean signed deviation (`_bias`) and the absolute value of
+each flight's `_bias` (`_abs_bias`) for each metric, plus the number of samples
+used (`_rows_used`, per flight). A pilot's features are the mean of their
+flights' features, with a `flights` count. `_abs_bias` is taken per flight
+before the average, so a pilot 50 ft high on one flight and 50 ft low on
+another has `_bias` 0 but `_abs_bias` 50. Units differ in
 scale (ft vs. deg vs. kts), so scaling across pilots is done by the clustering
 step, not here; do not z-score per pilot, which would erase the differences
 between pilots.
