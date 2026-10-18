@@ -29,7 +29,7 @@ CI is in `.github/workflows/` (`meson-build.yml`, `super-linter.yml`). Run `meso
 - `yaw` is true heading, effectively a duplicate of `heading`.
 - The 20 Hz send on Windows and Linux lives in the plugin window's draw callback.
 - Heading deviation needs wrapped angular difference, and floored modulo is Python-only; do not port the formula to C++ or Rust as written.
-- `toml .rust-toolchain.toml` is misnamed and not in effect.
+- `rust-toolchain.toml` pins the toolchain to 1.80.0, so `cargo` in a fresh clone downloads it rather than using your default stable.
 
 ## Agent skills
 
