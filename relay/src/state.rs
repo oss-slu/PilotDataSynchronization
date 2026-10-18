@@ -343,8 +343,14 @@ impl State {
     }
 
     pub fn validate_tcp_addr(address: &str) -> Result<()> {
-        let _parsed = address
-            .trim()
+        let trimmed = address.trim();
+        // An empty field is its own mistake. Reporting it as "invalid" reads as
+        // though something was typed wrong, when the greyed 127.0.0.1:9999 is
+        // placeholder text and nothing was typed at all.
+        if trimmed.is_empty() {
+            bail!("No address entered. Type one, for example 127.0.0.1:9999");
+        }
+        let _parsed = trimmed
             .parse::<SocketAddr>()
             .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:9999"))?;
         Ok(())

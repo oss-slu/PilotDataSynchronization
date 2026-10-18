@@ -24,7 +24,13 @@ fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
             }
         }
         Err(e) => {
-            state.tcp_addr_validation_error = Some(e.to_string());
+            let msg = e.to_string();
+            // Record it like every other connection failure. This path returns
+            // before tcp_connect, so without this the event log never hears that
+            // the press did anything, and the inline hint under the field is easy
+            // to miss.
+            state.log_event(format!("TCP connect failed: {}", msg));
+            state.tcp_addr_validation_error = Some(msg);
         }
     }
 }
@@ -424,6 +430,51 @@ mod tests {
         );
 
         let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn empty_address_is_reported_in_the_event_log() {
+        let mut state = State::default();
+        assert!(state.tcp_addr_field.is_empty(), "field should start empty");
+
+        let _ = update(&mut state, Message::ConnectTcp);
+
+        // The inline hint alone is easy to miss, so the panel has to show it too.
+        assert!(
+            state
+                .event_log
+                .iter()
+                .any(|e| e.contains("TCP connect failed") && e.contains("No address entered")),
+            "empty address missing from the event log: {:?}",
+            state.event_log
+        );
+        // An empty field is not the same mistake as a typo.
+        let inline = state
+            .tcp_addr_validation_error
+            .clone()
+            .expect("no inline validation error");
+        assert!(inline.starts_with("No address entered"), "unexpected: {inline}");
+        assert!(state.tcp_thread_handle.is_none(), "should not have connected");
+    }
+
+    #[test]
+    fn malformed_address_is_reported_in_the_event_log() {
+        let mut state = State::default();
+        // Deliberately not a host name: #240 may start accepting those, and this
+        // test is about reporting, not about which forms are valid.
+        state.tcp_addr_field = "127.0.0.1".to_string();
+
+        let _ = update(&mut state, Message::ConnectTcp);
+
+        assert!(
+            state
+                .event_log
+                .iter()
+                .any(|e| e.contains("TCP connect failed") && e.contains("Invalid IP address")),
+            "malformed address missing from the event log: {:?}",
+            state.event_log
+        );
+        assert!(state.tcp_thread_handle.is_none(), "should not have connected");
     }
 
     #[test]
