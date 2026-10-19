@@ -2,15 +2,12 @@
 
 import csv
 import socket
-import sys
 import threading
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Data"))
-
-import data_logger  # noqa: E402
+from pilot_inference.capture import data_logger
+from pilot_inference.paths import DATA_DIR
 
 
 EVENT_ORDER = [
@@ -63,8 +60,7 @@ def test_appending_to_an_older_csv_is_refused(tmp_path):
 
 def test_default_output_is_a_session_file_not_a_committed_csv():
     default = data_logger.build_parser().parse_args([]).csv
-    data_dir = Path(data_logger.__file__).resolve().parent
-    assert default == data_dir / data_logger.DEFAULT_CSV_NAME
+    assert default == DATA_DIR / data_logger.DEFAULT_CSV_NAME
     # The committed CSVs were logged before pilot_id and flight_id existed, so a
     # default pointing at one makes the documented command fail on a fresh clone.
     assert default.name not in {"raw_flight_data.csv", "raw_flight_data_updated.csv"}

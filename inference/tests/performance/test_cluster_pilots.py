@@ -1,9 +1,9 @@
 import pandas as pd
 import pytest
 
-from cluster_pilots import main
-from features import compute_features
-from generate_synthetic_pilots import generate_pilots
+from pilot_inference.performance.cluster_pilots import main
+from pilot_inference.performance.features import compute_features
+from pilot_inference.performance.generate_synthetic_pilots import generate_pilots
 
 
 @pytest.fixture

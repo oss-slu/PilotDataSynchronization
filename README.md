@@ -12,7 +12,7 @@ Pilot Data Synchronization spans three languages (C++, Rust, Python) and two ext
 
 | You want to work on | You need | Start with |
 |---|---|---|
-| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/Data/` |
+| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/data/` |
 | Relay GUI (`relay/`) | Rust | [Setup → Relay](#2-relay), then test against the [mock iMotions server](#no-imotions-use-the-mock-server) |
 | X-Plane plugin / baton | Meson, Ninja, mingw-w64, Rust | [Setup → X-Plane plugin](#1-x-plane-plugin) |
 | Docs / data schema | Nothing to install | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) and [`GLOSSARY.md`](GLOSSARY.md) |
@@ -237,7 +237,7 @@ Component-level detail lives next to the code it describes, so it stays in sync:
 |---|---|
 | Project vocabulary | [`GLOSSARY.md`](GLOSSARY.md) |
 | Telemetry fields, units and deviation metrics (the data contract) | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) |
-| ML pipeline: logging, labeling, training | [`inference/README.md`](inference/README.md) |
+| ML: logging, performance groups | [`inference/README.md`](inference/README.md) |
 | X-Plane DataRefs used by the plugin | [`xplane_plugin/docs/key_datarefs.md`](xplane_plugin/docs/key_datarefs.md) |
 | Issue labels and triage | [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md) |
 | Product roadmap framework | [`Documents/PRODUCT_ROADMAP_FRAMEWORK.md`](Documents/PRODUCT_ROADMAP_FRAMEWORK.md) |

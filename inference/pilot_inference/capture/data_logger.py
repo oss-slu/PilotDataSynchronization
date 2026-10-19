@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pilot_inference.paths import DATA_DIR
+
 
 EVENT_TO_COLUMN = {
     "AltitudeSync": "altitude",
@@ -185,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--csv",
         type=Path,
-        default=Path(__file__).resolve().parent / DEFAULT_CSV_NAME,
+        default=DATA_DIR / DEFAULT_CSV_NAME,
         help="Output CSV path.",
     )
     parser.add_argument(

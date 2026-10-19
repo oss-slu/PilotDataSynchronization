@@ -12,7 +12,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from features import METRICS
+from pilot_inference.performance.features import METRICS
 
 FEATURE_PARTS = ("std", "abs_bias")
 FEATURE_COLUMNS = [f"{metric}_{part}" for metric in METRICS for part in FEATURE_PARTS]

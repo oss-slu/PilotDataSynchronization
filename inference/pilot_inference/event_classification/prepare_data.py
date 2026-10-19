@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from pilot_inference.paths import DATA_DIR, INFERENCE_DIR, PREPARED_DIR
 
 FEATURE_COLUMNS = [
     "altitude",
@@ -21,16 +22,16 @@ TEST_SIZE = 0.2
 RANDOM_STATE = 42
 
 
-def resolve_input_file(inference_dir: Path) -> Path:
+def resolve_input_file() -> Path:
     candidates = [
-        inference_dir / "labeled_flight_data.csv",
-        inference_dir / "Data" / "labeled_flight_data.csv",
+        INFERENCE_DIR / "labeled_flight_data.csv",
+        DATA_DIR / "labeled_flight_data.csv",
     ]
     for path in candidates:
         if path.exists():
             return path
     raise FileNotFoundError(
-        "Could not find labeled_flight_data.csv in inference/ or inference/Data/."
+        "Could not find labeled_flight_data.csv in inference/ or inference/data/."
     )
 
 
@@ -72,9 +73,8 @@ def write_csv(path: Path, fieldnames: List[str], rows: List[Dict[str, object]]) 
 
 
 def main() -> None:
-    inference_dir = Path(__file__).resolve().parent
-    input_file = resolve_input_file(inference_dir)
-    output_dir = inference_dir / "dataset"
+    input_file = resolve_input_file()
+    output_dir = PREPARED_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with input_file.open(newline="", encoding="utf-8") as file:

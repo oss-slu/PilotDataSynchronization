@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from clustering import fit, sweep, truth_agreement
-from features import METRICS, STATISTICS, compute_features
-from generate_synthetic_pilots import generate_pilots
+from pilot_inference.performance.clustering import fit, sweep, truth_agreement
+from pilot_inference.performance.features import METRICS, STATISTICS, compute_features
+from pilot_inference.performance.generate_synthetic_pilots import generate_pilots
 
 
 def make_pilots(rows):

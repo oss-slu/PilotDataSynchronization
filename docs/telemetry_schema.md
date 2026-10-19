@@ -16,8 +16,8 @@ The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (throttled to one
 send per 50ms) and streams them through Baton → Relay → `data_logger.py`, which
 writes one CSV row per complete sample.
 
-Current CSV output (`inference/Data/session_flight_data.csv`, one file per
-collection session). The CSVs committed under `inference/Data/` were logged
+Current CSV output (`inference/data/session_flight_data.csv`, one file per
+collection session). The CSVs committed under `inference/data/` were logged
 before `pilot_id` and `flight_id` existed and do not have those two columns:
 
 | Field | Type | Units | Source (DataRef) | Notes |
@@ -43,7 +43,7 @@ error), not the aircraft's raw physical state — see note 2 in
 #196, the plugin multiplied `altitude_ft_pilot` (already feet) by 3.28084 and
 `airspeed_kts_pilot` (already knots) by 1.94384 before sending. Data collected
 with the fixed plugin is in feet and knots. The CSVs committed under
-`inference/Data/` were collected before the fix, so their `altitude` and
+`inference/data/` were collected before the fix, so their `altitude` and
 `velocity` columns, and the labels derived from them, are still scaled by
 those factors. Divide `altitude` by 3.28084 and `velocity` by 1.94384, or
 re-collect the data, before using it.
@@ -171,7 +171,7 @@ return a negative remainder for a negative left-hand side — both the plugin
 and the relay are implemented in those languages, so a direct port of this
 line would be wrong there. The formula's output range is also `[-180, 180)`:
 a difference of exactly +180° maps to -180°. The shared helper is
-`angular_diff` in `inference/angles.py`; both `features.py` and
+`angular_diff` in `inference/pilot_inference/angles.py`; both `features.py` and
 `label_generator.py`'s `_calculate_heading_change` (a related turn-rate
 quantity) call it, so they agree at that boundary. Point any new heading
 computation at the helper rather than re-deriving this formula.
@@ -179,7 +179,7 @@ computation at the helper rather than re-deriving this formula.
 The airspeed columns are named `airspeed_*` to match the glossary, while the
 raw telemetry column keeps its name, `velocity`.
 
-`inference/features.py` summarises deviation per flight and per pilot in raw
+`inference/pilot_inference/performance/features.py` summarises deviation per flight and per pilot in raw
 units: mean absolute deviation (`_mad`), standard deviation of the signed
 deviation (`_std`), mean signed deviation (`_bias`) and the absolute value of
 each flight's `_bias` (`_abs_bias`) for each metric, plus the number of samples

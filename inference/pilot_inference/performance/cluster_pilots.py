@@ -5,9 +5,9 @@ Without --k, prints silhouette and subsample stability for each candidate k
 and writes nothing; a person picks k from that report. With --k, fits once and
 writes each pilot's group and each group's centre in raw units.
 
-Usage (from the project root):
-    python inference/cluster_pilots.py
-    python inference/cluster_pilots.py --k 3 --truth inference/Data/synthetic_pilot_tiers.csv
+Usage (from inference/, after uv sync):
+    uv run python -m pilot_inference.performance.cluster_pilots
+    uv run python -m pilot_inference.performance.cluster_pilots --k 3 --truth data/synthetic_pilot_tiers.csv
 """
 
 import argparse
@@ -15,9 +15,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from clustering import fit, sweep, truth_agreement
-
-DATA_DIR = Path(__file__).parent / "Data"
+from pilot_inference.paths import DATA_DIR
+from pilot_inference.performance.clustering import fit, sweep, truth_agreement
 
 
 def main(argv=None) -> None:
