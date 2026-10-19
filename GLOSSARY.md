@@ -61,8 +61,8 @@ A set of pilots whose **Deviation features** resemble each other. Groups are not
 _Avoid_: Tier (a **Synthetic pilot**'s known level is its **Hidden tier**, a different thing), skill level, class
 
 **Segment**:
-One of the seven phases of a **Flight**, from takeoff through landing, that the client marks by hand from the iMotions audio and video.
-_Avoid_: Phase, stage, section (the five-value **Flight phase** in the out-of-scope section is a different thing)
+One of the seven phases of a **Flight**, from takeoff through landing.
+_Avoid_: Phase, section (the five-value **Flight phase** in the out-of-scope section is a different thing)
 
 **Instruction**:
 The timestamped moment a pilot is told a new **Target**, such as "change heading to 20". Instructions are standardized across pilots.
@@ -92,23 +92,9 @@ _Avoid_: Test pilot, fake pilot, mock pilot
 The known deviation level a **Synthetic pilot** is generated at, kept apart from its telemetry so **Performance groups** can be compared against it. Real pilots have none.
 _Avoid_: True group, skill level
 
-## Relationships
+### Out of scope: event classification
 
-- A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
-- A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
-- A **Flight** is divided into **Segments**. An **Instruction** sets a new **Target** from that moment on.
-- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
-- **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
-
-## Flagged ambiguities
-
-- **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
-- **Target** source is the **Instruction**: the client gives standardized, timestamped instructions during the flight, and iMotions holds the timestamps. None have been shared and no targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.
-- **Segment** names and boundaries are unknown until the client shares her seven-phase segmentation. Detecting **Instructions** automatically, for example from the eye tracker's audio, is later work; today the client segments by hand.
-
-## Out of scope: event classification
-
-A rule-based labeler and a Random Forest assign a label to every **Sample**. The client has not asked for this, so it is kept apart (`event_classification/`) and its vocabulary stays out of the main model above.
+The client has not asked for these terms; they are kept apart from the model above.
 
 **Flight event label**:
 One of the 13 classes assigned to a **Sample**, naming what the aircraft is doing at that moment.
@@ -122,4 +108,17 @@ _Avoid_: Stage, segment
 Generated telemetry, balanced across **Flight event labels**, used when real flights are not available.
 _Avoid_: Fake data, dummy data, mock data
 
-- A **Sample** receives exactly one **Flight event label**; a **Flight phase** is a kind of flight event label.
+## Relationships
+
+- A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
+- A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
+- A **Flight** is divided into **Segments**. An **Instruction** sets a new **Target** from that moment on.
+- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
+- **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
+- Out of scope: a **Sample** receives exactly one **Flight event label**, and a **Flight phase** is a kind of **Flight event label**.
+
+## Flagged ambiguities
+
+- **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
+- **Target** source is the **Instruction**: the client gives standardized, timestamped instructions during the flight, and iMotions holds the timestamps. None have been shared and no targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.
+- **Segment** names and boundaries are unknown until the client shares her seven-phase segmentation, which she marks by hand from the iMotions audio and video. Detecting **Instructions** automatically, for example from the eye tracker's audio, is later work; today the client segments by hand.

@@ -61,5 +61,6 @@ inference/data/session_flight_data.csv
 /src.zip
 
 ## Client Data (restricted, never commit)
+# Both spellings, because the folder name is case-sensitive on Linux and macOS
 inference/data/Client/*
 inference/data/client/*

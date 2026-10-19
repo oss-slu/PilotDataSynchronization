@@ -13,6 +13,7 @@ import sys
 
 from pilot_inference.paths import DATA_DIR
 
+
 def validate_labeled_dataset(file_path: Path) -> bool:
     """
     Validate the labeled dataset and perform quality checks.
@@ -151,7 +152,7 @@ def main():
 
     if not labeled_file.exists():
         print(f"Error: {labeled_file} not found")
-        print("Please run pilot_inference.event_classification.label_generator first")
+        print("Please run first: python -m pilot_inference.event_classification.label_generator")
         sys.exit(1)
     
     success = validate_labeled_dataset(labeled_file)

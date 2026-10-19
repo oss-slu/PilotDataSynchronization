@@ -25,9 +25,7 @@ inference/
 
 ## Prerequisites
 
-**Supported Python version: 3.11 or newer** (matches `.python-version`; the Random Forest models
-were pickled with a scikit-learn version that only installs on 3.11+, and earlier versions can't
-load them)
+**Supported Python version: 3.11 or newer** (matches `.python-version`)
 
 Using [uv](https://docs.astral.sh/uv/) (recommended):
 

@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 from pilot_inference.paths import DATA_DIR, INFERENCE_DIR, PREPARED_DIR
 
+
 FEATURE_COLUMNS = [
     "altitude",
     "heading",

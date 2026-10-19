@@ -1,7 +1,7 @@
 ﻿"""
-Flight Event Prediction - Model Testing Script
+Flight Event Prediction - Model Evaluation Script
 
-This script tests trained Random Forest models for flight event prediction.
+This script evaluates trained Random Forest models for flight event prediction.
 It loads saved models, runs inference on test data, and evaluates performance.
 
 Outputs:
@@ -249,7 +249,7 @@ def main():
     output_metrics = INFERENCE_DIR / 'evaluation_metrics.json'
 
     logger.info("="*60)
-    logger.info("Flight Event Prediction - Model Testing")
+    logger.info("Flight Event Prediction - Model Evaluation")
     logger.info("="*60)
 
     try:
@@ -267,7 +267,7 @@ def main():
         if not model_loaded:
             raise FileNotFoundError(
                 f"No model files found. Searched: {', '.join(str(p) for p in model_paths)}\n"
-                "Please train a model first using pilot_inference.event_classification.train_model"
+                "Please train a model first: python -m pilot_inference.event_classification.train_model"
             )
 
         # Load test data (try available data files)

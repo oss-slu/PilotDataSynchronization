@@ -9,7 +9,8 @@ pilot and metric so a pilot can be better at altitude than at heading.
 
 Writes telemetry in post-#196 units (ft, kts) that compute_features.py
 accepts, and the true tiers to a separate file that clustering may compare
-against. event_classification/generate_balanced_data.py is separate and serves the labeler.
+against. event_classification/generate_balanced_data.py is separate and serves
+the labeler.
 
 Usage (from inference/, after uv sync):
     uv run python -m pilot_inference.performance.generate_synthetic_pilots

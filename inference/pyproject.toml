@@ -1,5 +1,5 @@
 [project]
-name = "flight-event-inference"
+name = "pilot-inference"
 version = "0.1.0"
 description = "Pilot performance groups from flight telemetry, plus an out-of-scope event classification pipeline"
 requires-python = ">=3.9,<3.13"

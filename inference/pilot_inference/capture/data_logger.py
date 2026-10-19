@@ -47,7 +47,7 @@ DEFAULT_PILOT_ID = "unknown"
 # A session file of its own, not the committed raw_flight_data.csv: that one was
 # logged before these columns existed, and before the #196 unit fix, so appending
 # to it would both misalign the header and mix two scales in one file. Copy this
-# file over raw_flight_data.csv to feed it into label_generator.py.
+# file over raw_flight_data.csv to feed it into pilot_inference.event_classification.label_generator.
 DEFAULT_CSV_NAME = "session_flight_data.csv"
 
 
