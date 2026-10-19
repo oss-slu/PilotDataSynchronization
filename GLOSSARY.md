@@ -56,6 +56,10 @@ _Avoid_: Performance score, error metrics
 The four metrics the client cares about: heading, vertical speed, altitude and airspeed.
 _Avoid_: Core metrics, KPIs
 
+**Performance group**:
+A set of pilots whose **Deviation features** resemble each other. Groups are not ranked.
+_Avoid_: Tier (a **Synthetic pilot**'s known level is its **Hidden tier**, a different thing), skill level, class
+
 ### Pilots and flights
 
 **Pilot**:
@@ -84,13 +88,23 @@ _Avoid_: Stage, segment
 Generated telemetry, balanced across flight event labels, used when real flights are not available.
 _Avoid_: Fake data, dummy data, mock data
 
+**Synthetic pilot**:
+A generated pilot with generated flights, built to deviate by a known amount, used to check that **Performance groups** find real differences before real pilots are available.
+_Avoid_: Test pilot, fake pilot, mock pilot
+
+**Hidden tier**:
+The known deviation level a **Synthetic pilot** is generated at, kept apart from its telemetry so **Performance groups** can be compared against it. Real pilots have none.
+_Avoid_: True group, skill level
+
 ## Relationships
 
 - A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
 - A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
 - A **Sample** receives exactly one **Flight event label**; a **Flight phase** is a kind of flight event label.
+- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
+- **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
 
 ## Flagged ambiguities
 
-- **Pilot rating** is unresolved: the client may mean a licensing rating (instrument, multi-engine) or a performance score. Do not use it as a precise term until clarified.
-- **Target** source is undecided: instructor-assigned, or taken from the autopilot. No targets are captured yet.
+- **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
+- **Target** source is most likely instructor-assigned: the client gives standardized, timestamped instructions during the flight. No targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.
