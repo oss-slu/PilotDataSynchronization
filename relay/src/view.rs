@@ -12,6 +12,9 @@ use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
 
+/// Placeholder for the mirror address. Matches the capture logger's default port.
+const DEFAULT_MIRROR_PLACEHOLDER: &str = "127.0.0.1:5001";
+
 /// How many of the most recent `event_log` entries the GUI renders.
 const EVENT_LOG_VISIBLE: usize = 5;
 
@@ -43,6 +46,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     // TCP connect/disconnect row
     elements.push(tcp_connect_button(state));
     elements.push(tcp_disconnect_button());
+
+    // Second destination, read by the Python side
+    elements.push(mirror_row(state));
 
     // Metrics (if enabled)
     elements.push(metrics_block(state));
@@ -214,6 +220,29 @@ fn tcp_disconnect_button() -> UIElement<'static> {
     button("Disconnect TCP")
         .on_press(Message::DisconnectTcp)
         .into()
+}
+
+/// Mirror controls: a second destination that receives a copy of every packet,
+/// so the Python side can read the stream while iMotions keeps recording.
+fn mirror_row(state: &State) -> UIElement {
+    let status = if state.mirror_connected {
+        "Python stream: connected"
+    } else {
+        "Python stream: not connected"
+    };
+
+    column![
+        text(status),
+        row![
+            button("Connect Python").on_press(Message::ConnectMirror),
+            text_input(DEFAULT_MIRROR_PLACEHOLDER, &state.mirror_addr_field)
+                .on_input(Message::MirrorAddrFieldUpdate),
+            button("Disconnect Python").on_press(Message::DisconnectMirror),
+        ]
+        .spacing(5),
+    ]
+    .spacing(5)
+    .into()
 }
 
 /// XML download card or opener button depending on `state.card_open`

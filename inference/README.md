@@ -80,6 +80,11 @@ Without it the rows are written as "unknown". `--flight-id` is optional, but pas
 session: without it each relay connection gets its own generated id, so a reconnect mid-flight
 splits one flight into two. The logger writes `data/session_flight_data.csv`.
 
+Point the relay at this listener with `Connect TCP`, or, when iMotions is recording the same
+flight, with `Connect mirror` so both receive the stream (see the root README). A mirror reader
+must keep reading: if it stops while it does slow work it loses copies, and then the mirror
+itself, which does not reconnect on its own.
+
 ## Performance groups
 
 | Step | Module                                            | Purpose                                                                                      | Input                                                                               | Output                                                                                  |
