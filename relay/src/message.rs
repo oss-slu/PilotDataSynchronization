@@ -35,6 +35,11 @@ pub(crate) enum Message {
     TcpAddrFieldUpdate(String),
     SavedTcpAddrSelected(String),
 
+    // Second destination for the same packets, read by the Python side
+    MirrorAddrFieldUpdate(String),
+    ConnectMirror,
+    DisconnectMirror,
+
     SendPacket,
 }
 
@@ -55,6 +60,10 @@ pub(crate) enum ToTcpThreadMessage {
 
     // a fully built packet to write as-is, used by the Send Packet button
     SendRaw(String),
+
+    /// Point the mirror at an address, or `None` to drop it. The mirror gets a
+    /// copy of every packet iMotions receives.
+    SetMirror(Option<String>),
 }
 
 pub(crate) enum FromTcpThreadMessage {
@@ -64,6 +73,10 @@ pub(crate) enum FromTcpThreadMessage {
     Disconnected(String),
     /// A packet was sent to remote (In bytes)
     Sent(usize),
-    /// Error reported 
+    /// Error reported
     SendError(String),
+    /// Mirror destination accepted the connection
+    MirrorConnected(String),
+    /// Mirror was dropped, by the user or by a failed connect or write
+    MirrorDisconnected(String),
 }
