@@ -62,7 +62,11 @@ _Avoid_: Tier (a **Synthetic pilot**'s known level is its **Hidden tier**, a dif
 
 **Segment**:
 One of the seven phases of a **Flight**, from takeoff through landing.
-_Avoid_: Phase, section (the five-value **Flight phase** in the out-of-scope section is a different thing)
+_Avoid_: Phase, section, leg (the five-value **Flight phase** in the out-of-scope section and a **Leg** are different things)
+
+**Leg**:
+A stretch of the route flown on one heading, such as the 190° climb or the 220° approach.
+_Avoid_: Segment (the client's seven phases), phase
 
 **Instruction**:
 The timestamped moment a pilot is told a new **Target**, such as "change heading to 20". Instructions are standardized across pilots.
@@ -112,7 +116,7 @@ _Avoid_: Fake data, dummy data, mock data
 
 - A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
 - A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
-- A **Flight** is divided into **Segments**. An **Instruction** sets a new **Target** from that moment on.
+- A **Flight** is divided into **Segments**, and is also flown as a sequence of **Legs**. An **Instruction** sets a new **Target** from that moment on.
 - A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
 - **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
 - Out of scope: a **Sample** receives exactly one **Flight event label**, and a **Flight phase** is a kind of **Flight event label**.
@@ -121,4 +125,5 @@ _Avoid_: Fake data, dummy data, mock data
 
 - **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
 - **Target** source is the **Instruction**: the client gives standardized, timestamped instructions during the flight, and iMotions holds the timestamps. None have been shared and no targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.
+- **Leg** and **Segment** may or may not line up. The client's seven **Segments** are unknown until she shares them, so how they map to our **Legs** is open.
 - **Segment** names and boundaries are unknown until the client shares her seven-phase segmentation, which she marks by hand from the iMotions audio and video. Detecting **Instructions** automatically, for example from the eye tracker's audio, is later work; today the client segments by hand.
