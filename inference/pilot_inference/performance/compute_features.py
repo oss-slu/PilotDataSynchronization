@@ -5,8 +5,8 @@ Reads a CSV with pilot_id, flight_id, the four actual values and the four
 target_* columns (see docs/telemetry_schema.md section 4a), and writes a
 per-flight and a per-pilot feature CSV.
 
-Usage (from the project root):
-    python inference/compute_features.py --input <telemetry.csv>
+Usage (from inference/, after uv sync):
+    uv run python -m pilot_inference.performance.compute_features --input <telemetry.csv>
 """
 
 import argparse
@@ -14,9 +14,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from features import compute_features
-
-DATA_DIR = Path(__file__).parent / "Data"
+from pilot_inference.paths import DATA_DIR
+from pilot_inference.performance.features import compute_features
 
 
 def main() -> None:

@@ -1,15 +1,31 @@
-# Flight Event ML Pipeline
+# Inference
 
-This directory contains the complete machine learning pipeline for flight telemetry: collecting
-raw data, generating rule-based labels, preparing datasets, and training/testing a Random Forest
-classifier that predicts flight events (`TAXI`, `TAKEOFF`, `CRUISE`, `APPROACH`, `LANDING`, turns,
-speed/altitude extremes, high-g events, and normal flight).
+This directory holds the Python side of the project: collecting telemetry from the relay, and
+forming **performance groups** of pilots from how far they deviate from their targets (see
+`GLOSSARY.md`). The older flight event classification pipeline (a rule-based labeler and a Random
+Forest) is kept in its own folder, **out of scope** for the client's request; see
+[Out of scope: event classification](#out-of-scope-event-classification).
+
+## Layout
+
+```
+inference/
+  pyproject.toml, uv.lock
+  data/                         input and output CSVs (not code)
+    prepared/                   train/test splits written by event_classification
+  models/                       trained models (not tracked; train_model.py writes them)
+  pilot_inference/              the package
+    angles.py                   wrapped angular difference, shared
+    paths.py                    where data/ and models/ are
+    capture/                    data_logger.py
+    performance/                features, clustering, synthetic pilots and their CLIs
+    event_classification/       OUT OF SCOPE: labeler, Random Forest, evaluation
+  tests/                        mirrors pilot_inference/
+```
 
 ## Prerequisites
 
-**Supported Python version: 3.11 or newer** (matches `.python-version`; the committed models were
-pickled with a scikit-learn version that only installs on 3.11+, and earlier versions can't load
-them)
+**Supported Python version: 3.11 or newer** (matches `.python-version`)
 
 Using [uv](https://docs.astral.sh/uv/) (recommended):
 
@@ -18,15 +34,15 @@ cd inference
 uv sync
 ```
 
-`uv sync` reads `inference/pyproject.toml` / `inference/uv.lock` and creates `inference/.venv`
-automatically. Prefix commands with `uv run` (e.g., from the project root, `uv run --project
-inference python inference/label_generator.py`), or activate `inference/.venv` and run `python`
-directly.
+`uv sync` reads `pyproject.toml` / `uv.lock`, creates `inference/.venv` and installs the
+`pilot_inference` package into it in editable mode, so `python -m pilot_inference...` works from
+any directory. Prefix commands with `uv run` (from the project root, add `--project inference`),
+or activate `inference/.venv` and run `python` directly.
 
 Or with a plain virtual environment, from the project root:
 
 ```
-python3 -m venv .venv
+python -m venv .venv
 
 # Windows
 .venv\Scripts\activate
@@ -34,74 +50,75 @@ python3 -m venv .venv
 # macOS/Linux
 source .venv/bin/activate
 
-python -m pip install -r inference/requirements.txt
+python -m pip install -e inference
 ```
 
-`python3` is omitted deliberately: a Windows venv only contains `python.exe` (no `python3.exe`), so
-`python3 -m pip` would fall through to a system Python instead of the activated venv. `python -m
-pip` resolves to the venv's interpreter on all platforms once activated.
+The plain-venv install does not include pytest; add it with `python -m pip install pytest`.
 
-No other manual package installation is required.
+Use `python`, not `python3`: a Windows venv only contains `python.exe` (no `python3.exe`), so
+`python3 -m pip` would fall through to a system Python instead of the activated venv.
 
-## Pipeline overview
+## Commands
 
-The scripts are meant to be run in this order. Every command below is written to be run **from
-the project root** (`PilotDataSynchronization/`), with the virtual environment activated.
+Run every command from `inference/` with `uv run` (or with the virtual environment activated).
+Relative paths such as `--input` resolve against the current directory; the defaults always
+resolve against `inference/data/`, wherever you run from.
 
-| Step | Script                                | Purpose                                                                                                                                  | Input                                          | Output                                                                                            |
-| ---- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 1    | `inference/Data/data_logger.py`       | Collects live telemetry from the relay over TCP and appends it to a session CSV, tagged with `pilot_id` and `flight_id`                  | Telemetry socket stream                        | `inference/Data/session_flight_data.csv`                                                          |
-| 1b   | `inference/generate_balanced_data.py` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data for testing the pipeline                                  | none                                           | `inference/Data/synthetic_flight_data.csv`                                                        |
-| 2    | `inference/label_generator.py`        | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 event labels per row  | `inference/Data/raw_flight_data.csv`           | `inference/Data/labeled_flight_data.csv`                                                          |
-| 3    | `inference/validate_labels.py`        | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution                   | `inference/Data/labeled_flight_data.csv`       | Console report only (exit code 0/1)                                                               |
-| 4    | `inference/prepare_data.py`           | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs — independent of the training step below | `inference/Data/labeled_flight_data.csv`       | `inference/dataset/*.csv`, `label_mapping.json`, `scaler_params.json`                             |
-| 5    | `inference/train_model.py`            | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall                                         | `inference/Data/labeled_flight_data.csv`       | `inference/Models/bestModel.pkl`, `inference/Models/finalModel.pkl`, `inference/dataset/test.csv` |
-| 6    | `inference/test_model.py`             | Loads a trained model, runs inference, and (if ground-truth labels are present) evaluates it                                             | Trained model + held-out test data (see below) | `inference/predictions_output.csv`, `inference/evaluation_metrics.json`                           |
-| 7a   | `inference/generate_synthetic_pilots.py` | (Optional, clustering, no hardware needed) Generates synthetic pilots in 3 hidden skill tiers, with targets                           | none                                           | `inference/Data/synthetic_pilot_telemetry.csv`, `inference/Data/synthetic_pilot_tiers.csv`        |
-| 7    | `inference/compute_features.py`       | (Optional, clustering) Computes deviation features per flight and per pilot from telemetry that carries targets                          | Telemetry CSV with `pilot_id`, `flight_id` and `target_*` columns (only step 7a produces these today)| `inference/Data/flight_features.csv`, `inference/Data/pilot_features.csv`                         |
-| 8    | `inference/cluster_pilots.py`         | (Optional, clustering) Sweeps k, or with `--k` forms performance groups                                                                  | `inference/Data/pilot_features.csv`            | Sweep: console only. `--k`: `inference/Data/pilot_clusters.csv`, `inference/Data/group_centres.csv` |
+```
+# Capture: collect data from the relay (leave running while flying/simulating)
+uv run python -m pilot_inference.capture.data_logger --port 5001 --pilot-id pilot-07 --flight-id 2026-10-12-leg1
 
-### Step 4 and step 5/6 are independent
+# Performance groups, without hardware
+uv run python -m pilot_inference.performance.generate_synthetic_pilots
+uv run python -m pilot_inference.performance.compute_features --input data/synthetic_pilot_telemetry.csv
+uv run python -m pilot_inference.performance.cluster_pilots
+uv run python -m pilot_inference.performance.cluster_pilots --k 3 --truth data/synthetic_pilot_tiers.csv
+```
 
-`train_model.py` reads directly from `inference/Data/labeled_flight_data.csv` — it does **not**
-consume `prepare_data.py`'s output in `inference/dataset/`. Run `prepare_data.py` only if you need
-a separately scaled/split copy of the data (e.g. for a different model or notebook); it is not
-required to train or test the shipped Random Forest model.
+`--pilot-id` labels every row so samples can be grouped per pilot and joined to pilot metadata.
+Without it the rows are written as "unknown". `--flight-id` is optional, but pass it for a real
+session: without it each relay connection gets its own generated id, so a reconnect mid-flight
+splits one flight into two. The logger writes `data/session_flight_data.csv`.
 
-`train_model.py` does, however, write its own held-out 20% split to `inference/dataset/test.csv`,
-which `test_model.py` reads first (see "Model details" below) — this is a different file from
-`prepare_data.py`'s `dataset/test_processed.csv` and does not depend on step 4 having run.
+## Performance groups
 
-### Deviation features (clustering input)
+| Step | Module                                            | Purpose                                                                                      | Input                                                                               | Output                                                                                  |
+| ---- | ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | `pilot_inference.capture.data_logger`             | Collects live telemetry from the relay over TCP, tagged with `pilot_id` and `flight_id`      | Telemetry socket stream                                                             | `data/session_flight_data.csv`                                                          |
+| 2a   | `pilot_inference.performance.generate_synthetic_pilots` | (Optional, no hardware needed) Generates synthetic pilots in 3 hidden skill tiers, with targets | none                                                                                | `data/synthetic_pilot_telemetry.csv`, `data/synthetic_pilot_tiers.csv`                  |
+| 2    | `pilot_inference.performance.compute_features`    | Computes deviation features per flight and per pilot from telemetry that carries targets      | Telemetry CSV with `pilot_id`, `flight_id` and `target_*` columns (only 2a produces these today) | `data/flight_features.csv`, `data/pilot_features.csv`                                   |
+| 3    | `pilot_inference.performance.cluster_pilots`      | Sweeps k, or with `--k` forms performance groups                                              | `data/pilot_features.csv`                                                           | Sweep: console only. `--k`: `data/pilot_clusters.csv`, `data/group_centres.csv`          |
 
-`inference/compute_features.py` turns telemetry that carries targets into deviation features per
-flight and per pilot (see `docs/telemetry_schema.md` section 5). The input needs `pilot_id`,
-`flight_id`, the four actual values and `target_altitude`, `target_heading`,
+### Deviation features
+
+`pilot_inference.performance.compute_features` turns telemetry that carries targets into deviation
+features per flight and per pilot (see `docs/telemetry_schema.md` section 5). The input needs
+`pilot_id`, `flight_id`, the four actual values and `target_altitude`, `target_heading`,
 `target_vertical_speed` and `target_airspeed`, in post-#196 units. The committed CSVs lack these
-columns; until real flights carry them, use `generate_synthetic_pilots.py` (step 7a).
+columns; until real flights carry them, use `generate_synthetic_pilots` (step 2a).
 
 ```
-python inference/compute_features.py --input <telemetry_with_targets.csv>
+uv run python -m pilot_inference.performance.compute_features --input <telemetry_with_targets.csv>
 ```
 
-Outputs `inference/Data/flight_features.csv` and `inference/Data/pilot_features.csv`, in raw units.
-Per metric (altitude, heading, vertical speed, airspeed) it gives `_mad` (mean absolute
-deviation), `_std` (standard deviation of the signed deviation), `_bias` (mean signed
-deviation) and `_abs_bias` (the absolute value of each flight's `_bias`, averaged per pilot,
-so flights on opposite sides of the target do not cancel). Clustering uses `_std` and
-`_abs_bias`. The flight file also has `_rows_used`, the samples that had a valid deviation;
-the pilot file has a `flights` count instead.
+Outputs `data/flight_features.csv` and `data/pilot_features.csv`, in raw units. Per metric
+(altitude, heading, vertical speed, airspeed) it gives `_mad` (mean absolute deviation), `_std`
+(standard deviation of the signed deviation), `_bias` (mean signed deviation) and `_abs_bias` (the
+absolute value of each flight's `_bias`, averaged per pilot, so flights on opposite sides of the
+target do not cancel). Clustering uses `_std` and `_abs_bias`. The flight file also has
+`_rows_used`, the samples that had a valid deviation; the pilot file has a `flights` count
+instead.
 
-A flight with no valid target for a metric gets NaN for it and a warning, and its other
-metrics are kept. A pilot's feature averages over the flights that have it; a pilot with none
-gets NaN and a warning. Rows with a null `pilot_id` or `flight_id` raise an error.
+A flight with no valid target for a metric gets NaN for it and a warning, and its other metrics
+are kept. A pilot's feature averages over the flights that have it; a pilot with none gets NaN and
+a warning. Rows with a null `pilot_id` or `flight_id` raise an error.
 
-### Performance groups (clustering)
+### Forming the groups
 
-`inference/cluster_pilots.py` groups pilots with KMeans on `std` and `|bias|` for each metric,
-log-scaled and then standardized over the cohort (`docs/adr/0002`). Pilot metadata is not an
-input; compare it against the groups afterwards (`docs/adr/0001`). Any pilot with a NaN feature
-stops the run with an error naming the pilot and metric.
+`pilot_inference.performance.cluster_pilots` groups pilots with KMeans on `std` and `|bias|` for
+each metric, log-scaled and then standardized over the cohort (`docs/adr/0002`). Pilot metadata is
+not an input; compare it against the groups afterwards (`docs/adr/0001`). Any pilot with a NaN
+feature stops the run with an error naming the pilot and metric.
 
 The script never picks k. Run it once without `--k` to print, for k = 2 to min(6, pilots // 3):
 
@@ -110,120 +127,112 @@ The script never picks k. Run it once without `--k` to print, for k = 2 to min(6
   of pilots; 1 means the same groups every time
 
 Then rerun with the chosen `--k`, which must be one of the swept values (so at least 6 pilots, and
-3 or more per group on average). It writes each pilot's group and each group's centre, as the
-mean of its members in raw units (ft, deg, ft/min, kts). For synthetic pilots, `--truth` also
-prints the adjusted Rand index against the hidden tiers; the file must list each pilot once.
-The synthetic tiers overlap, so this is below 1: the default seed gives 0.79, and generator seeds 0
-to 11 range from 0.37 to 1.00.
+3 or more per group on average). It writes each pilot's group and each group's centre, as the mean
+of its members in raw units (ft, deg, ft/min, kts). For synthetic pilots, `--truth` also prints
+the adjusted Rand index against the hidden tiers; the file must list each pilot once. The
+synthetic tiers overlap, so this is below 1: the default seed gives 0.79, and generator seeds 0 to
+11 range from 0.37 to 1.00.
+
+## Tests
 
 ```
-python inference/generate_synthetic_pilots.py
-python inference/compute_features.py --input inference/Data/synthetic_pilot_telemetry.csv
-python inference/cluster_pilots.py
-python inference/cluster_pilots.py --k 3 --truth inference/Data/synthetic_pilot_tiers.csv
+uv sync              # installs pytest from the dev group
+uv run pytest
 ```
 
-### Tests
+`tests/` mirrors the package: `tests/capture/`, `tests/performance/` (deviation features, the
+synthetic pilot generator and performance groups, including recovering the synthetic tiers end to
+end), `tests/event_classification/` (the labeler's heading change), and `tests/test_angles.py`
+for the angle helper.
+
+## Out of scope: event classification
+
+`pilot_inference/event_classification/` holds a rule-based labeler and a Random Forest that predict
+one of 13 flight event labels (`TAXI`, `TAKEOFF`, `CRUISE`, `APPROACH`, `LANDING`, turns,
+speed/altitude extremes, high-g events, and normal flight) for every sample. The client has not
+asked for this; it is kept apart so it does not get in the way of the performance groups. Flight
+segmentation is later work: the client segments flights by hand today, and detecting
+instructions automatically (for example from audio) would replace that.
+
+| Step | Module                                                   | Purpose                                                                                                                                 | Input                                          | Output                                                                       |
+| ---- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1    | `pilot_inference.event_classification.generate_balanced_data` | (Optional, no hardware needed) Generates synthetic, class-balanced flight data                                                    | none                                           | `data/synthetic_flight_data.csv`                                             |
+| 2    | `pilot_inference.event_classification.label_generator`   | Applies rule-based thresholds (altitude, speed, vertical speed, roll, g-force, heading change) to assign one of 13 labels per row        | `data/raw_flight_data.csv`                     | `data/labeled_flight_data.csv`                                               |
+| 3    | `pilot_inference.event_classification.validate_labels`   | Sanity-checks the labeled dataset: required columns, valid label set, data ranges, spot-checks, and label distribution                  | `data/labeled_flight_data.csv`                 | Console report only (exit code 0/1)                                          |
+| 4    | `pilot_inference.event_classification.prepare_data`      | (Optional) Cleans, median-fills, standardizes, and splits the labeled data into train/test CSVs, independent of training               | `data/labeled_flight_data.csv`                 | `data/prepared/*.csv`, `label_mapping.json`, `scaler_params.json`            |
+| 5    | `pilot_inference.event_classification.train_model`       | Trains a Random Forest classifier (80/20 stratified split) and reports accuracy/precision/recall                                        | `data/labeled_flight_data.csv`                 | `models/bestModel.pkl`, `data/prepared/test.csv`                             |
+| 6    | `pilot_inference.event_classification.evaluate_model`    | Loads the trained model, runs inference, and (if ground-truth labels are present) evaluates it                                          | Trained model + held-out test data (see below) | `predictions_output.csv`, `evaluation_metrics.json` (in `inference/`)        |
 
 ```
-uv sync --project inference    # installs pytest from the dev group; the plain-venv install does not
-uv run --project inference pytest inference/tests
+uv run python -m pilot_inference.event_classification.generate_balanced_data  # optional
+uv run python -m pilot_inference.event_classification.label_generator
+uv run python -m pilot_inference.event_classification.validate_labels
+uv run python -m pilot_inference.event_classification.prepare_data            # optional
+uv run python -m pilot_inference.event_classification.train_model
+uv run python -m pilot_inference.event_classification.evaluate_model
 ```
 
-Covers the angle helper, the deviation features, the labeler's heading change, the synthetic
-pilot generator and performance groups (including recovering the synthetic tiers end to end).
+### Which data the committed files come from
 
-## Commands (run from the project root)
+The committed `data/labeled_flight_data.csv` has 16,604 rows across 9 event classes and was
+labeled from **`data/raw_flight_data_updated.csv`**. `label_generator` reads
+`data/raw_flight_data.csv` (597 rows, 2 classes), so running it as documented **overwrites the
+committed labeled file** with a much smaller one. Restore it with
+`git checkout -- data/labeled_flight_data.csv`, or copy `raw_flight_data_updated.csv` over
+`raw_flight_data.csv` first. Both raw files, and the labeled one, predate the `pilot_id` /
+`flight_id` columns and the #196 unit fix (see `docs/telemetry_schema.md`).
 
-```
-# 1. Collect data from the relay (leave running while flying/simulating)
-python inference/Data/data_logger.py --port 5001 --pilot-id pilot-07 --flight-id 2026-10-12-leg1
+`data/synthetic_flight_data.csv` (step 1) and `data/session_flight_data.csv` (capture) are not
+read automatically: copy or rename the one you want to `data/raw_flight_data.csv` first.
 
-#   --pilot-id labels every row so samples can be grouped per pilot and joined
-#   to pilot metadata. Without it the rows are written as "unknown".
-#   --flight-id is optional, but pass it for a real session: without it each relay
-#   connection gets its own generated id, so a reconnect mid-flight splits one
-#   flight into two.
-#   Writes inference/Data/session_flight_data.csv; copy or rename it to
-#   inference/Data/raw_flight_data.csv to feed it into step 2.
+### Step 4 and steps 5/6 are independent
 
-#   ...or, without hardware, generate synthetic balanced data instead, then copy/rename
-#   inference/Data/synthetic_flight_data.csv to inference/Data/raw_flight_data.csv:
-python inference/generate_balanced_data.py
+`train_model` reads directly from `data/labeled_flight_data.csv`; it does **not** consume
+`prepare_data`'s output. Run `prepare_data` only if you need a separately scaled/split copy of the
+data (e.g. for a different model or notebook). `train_model` does write its own held-out 20% split
+to `data/prepared/test.csv`, which `evaluate_model` reads first. This is a different file from
+`prepare_data`'s `data/prepared/test_processed.csv`.
 
-# 2. Generate labels
-#    label_generator.py reads inference/Data/raw_flight_data.csv by default.
-python inference/label_generator.py
-
-# 3. Validate the labeled dataset
-python inference/validate_labels.py
-
-# 4. (Optional) Prepare a scaled train/test split in inference/dataset/
-python inference/prepare_data.py
-
-# 5. Train the model
-python inference/train_model.py
-
-# 6. Test the model and generate predictions
-python inference/test_model.py
-
-# 7a. (Optional) Generate synthetic pilots with targets, no hardware needed
-python inference/generate_synthetic_pilots.py
-
-# 7. (Optional) Compute deviation features from telemetry that carries targets
-python inference/compute_features.py --input <telemetry_with_targets.csv>
-
-# 8. (Optional) Sweep k, then form performance groups with the chosen k
-python inference/cluster_pilots.py
-python inference/cluster_pilots.py --k <k>
-```
-
-Each script can also be run from inside `inference/` (e.g. `cd inference && python
-label_generator.py`); the scripts resolve their own input/output paths relative to the
-`inference/` directory, not the current working directory.
-
-## Event labels
-
-The system labels data with 13 event types:
+### Event labels
 
 **Flight phases**
 
-- `TAXI` — Ground operations (altitude < 50ft, speed < 30 knots)
-- `TAKEOFF` — Transition from ground to air (low altitude, climbing, 50-100 knots)
-- `CRUISE` — Steady flight at altitude (altitude > 3000ft, stable vertical speed)
-- `APPROACH` — Descending for landing (500-3000ft, descending)
-- `LANDING` — Final approach and touchdown (altitude < 500ft, descending)
+- `TAXI`: Ground operations (altitude < 50ft, speed < 30 knots)
+- `TAKEOFF`: Transition from ground to air (low altitude, climbing, 50-100 knots)
+- `CRUISE`: Steady flight at altitude (altitude > 3000ft, stable vertical speed)
+- `APPROACH`: Descending for landing (500-3000ft, descending)
+- `LANDING`: Final approach and touchdown (altitude < 500ft, descending)
 
 **Maneuver events**
 
-- `TURN_LEFT` — Left turn (roll < -5° or heading change < -3°/s)
-- `TURN_RIGHT` — Right turn (roll > 5° or heading change > 3°/s)
+- `TURN_LEFT`: Left turn (roll < -5° or heading change < -3°/s)
+- `TURN_RIGHT`: Right turn (roll > 5° or heading change > 3°/s)
 
 **Speed events**
 
-- `HIGH_SPEED` — Velocity > 200 knots
-- `LOW_SPEED` — Velocity < 60 knots (while airborne)
+- `HIGH_SPEED`: Velocity > 200 knots
+- `LOW_SPEED`: Velocity < 60 knots (while airborne)
 
 **Altitude events**
 
-- `HIGH_ALTITUDE` — Altitude > 10,000 feet
-- `LOW_ALTITUDE` — Altitude < 1,000 feet (while airborne)
+- `HIGH_ALTITUDE`: Altitude > 10,000 feet
+- `LOW_ALTITUDE`: Altitude < 1,000 feet (while airborne)
 
 **Special events**
 
-- `HIGH_G_FORCE` — G-force > 1.5g
-- `NORMAL_FLIGHT` — Default steady flight (none of the above conditions)
+- `HIGH_G_FORCE`: G-force > 1.5g
+- `NORMAL_FLIGHT`: Default steady flight (none of the above conditions)
 
 See `FlightEventLabeler.label_row()` in `label_generator.py` for the exact priority order and
 thresholds.
 
-## Model details
+### Model details
 
-`train_model.py` trains a `RandomForestClassifier` on 8 input features (`altitude`, `heading`,
+`train_model` trains a `RandomForestClassifier` on 8 input features (`altitude`, `heading`,
 `vertical_speed`, `velocity`, `roll`, `pitch`, `yaw`, `g_force`) against the `event_label` target,
-with an 80/20 stratified train/test split. When run, it: loads the labeled dataset, displays the
+with an 80/20 stratified train/test split. When run, it loads the labeled dataset, displays the
 class distribution, splits into train/test sets, saves the held-out test split to
-`inference/dataset/test.csv`, trains the model, displays feature importance, evaluates on the test
+`data/prepared/test.csv`, trains the model, displays feature importance, evaluates on the test
 set, prints accuracy/precision/recall, and saves the trained model.
 
 Model parameters:
@@ -234,71 +243,41 @@ Model parameters:
 - `min_samples_leaf`: 1
 - `random_state`: 42 (for reproducibility, both for the model and the train/test split)
 
-`bestModel.pkl` and `finalModel.pkl` are identical copies of the same trained model, loadable with
-`joblib.load()`.
+`models/bestModel.pkl` is generated, so it is not tracked in git; run `train_model` to create it,
+and load it with `joblib.load()`. The altitude and velocity it learns from are mis-scaled (see
+`docs/telemetry_schema.md`), so it will not be right on current telemetry.
 
-`test_model.py` looks for a model in this order: `inference/Models/bestModel.pkl`, then
-`inference/Models/finalModel.pkl`. It looks for test data in this order:
-`inference/dataset/test.csv` (the held-out split `train_model.py` saves — the model never trained
-on these rows), then `inference/Data/labeled_flight_data.csv` (fallback; this is the full dataset
-the model _did_ train on, so metrics from this fallback measure memorization, not generalization),
-then `inference/labeled_flight_data.csv`. Run `train_model.py` before `test_model.py` so the
-held-out split exists and the first candidate is used.
+`evaluate_model` loads `models/bestModel.pkl`. It looks for test data in this order:
+`data/prepared/test.csv` (the held-out split `train_model` saves, which the model never trained
+on), then `data/labeled_flight_data.csv` (fallback; this is the full dataset the model _did_ train
+on, so metrics from this fallback measure memorization, not generalization), then
+`inference/labeled_flight_data.csv`. Run `train_model` before `evaluate_model` so the held-out
+split exists and the first candidate is used.
 
 ## Troubleshooting
 
-- **`FileNotFoundError` for `raw_flight_data.csv` when running `label_generator.py` after step 1
-  or 1b** — neither step overwrites the committed `raw_flight_data.csv`. Step 1 writes
-  `inference/Data/session_flight_data.csv` and step 1b writes
-  `inference/Data/synthetic_flight_data.csv`. Copy or rename the one you want to
-  `raw_flight_data.csv` before running `label_generator.py`.
-- **`ValueError: ... has columns [...], but this logger writes [...]` from `data_logger.py`** —
-  `--csv` points at a CSV written before `pilot_id` and `flight_id` existed, such as the committed
-  `inference/Data/raw_flight_data.csv`. Appending would misalign every row, so the logger stops.
-  Pass a new path, or move the old file aside. This is why step 1 writes its own session file by
-  default: the committed CSVs predate both columns and the #196 unit fix, so appending to one
-  would also mix two scales in a single file.
-- **`ValueError: Missing required columns` in `label_generator.py`, `validate_labels.py`, or
-  `prepare_data.py`** — the input CSV is missing one of `altitude`, `velocity`, `vertical_speed`,
+- **`ModuleNotFoundError: No module named 'pilot_inference'`**: the package is not installed in
+  the environment you are running. Run `uv sync` in `inference/`, or `python -m pip install -e
+  inference` in a plain venv. Check you are using that environment's `python`.
+- **`ValueError: ... has columns [...], but this logger writes [...]` from `data_logger`**: `--csv`
+  points at a CSV written before `pilot_id` and `flight_id` existed, such as the committed
+  `data/raw_flight_data.csv`. Appending would misalign every row, so the logger stops. Pass a new
+  path, or move the old file aside. This is why the logger writes its own session file by default:
+  the committed CSVs predate both columns and the #196 unit fix, so appending to one would also
+  mix two scales in a single file.
+- **`FileNotFoundError` for `raw_flight_data.csv` in `label_generator`**: neither capture nor
+  `generate_balanced_data` overwrites the committed `raw_flight_data.csv`. Copy or rename the file
+  you want (see "Which data the committed files come from") before running the labeler.
+- **`ValueError: Missing required columns` in `label_generator`, `validate_labels`, or
+  `prepare_data`**: the input CSV is missing one of `altitude`, `velocity`, `vertical_speed`,
   `heading`, `roll`, `g_force` (and `pitch`/`yaw`/`event_label` for later steps). Check the header
-  row of your CSV against `CSV_FIELDS` in `Data/data_logger.py`.
-- **`validate_labels.py` reports "Negative velocity values found" or missing label categories** —
-  this is expected with small or synthetic datasets that don't exercise every flight phase (e.g.
-  `TAKEOFF`, `APPROACH`, `LANDING`, `LOW_ALTITUDE` require specific altitude/speed/vertical-speed
-  combinations that a short synthetic run may not produce). It's a warning, not a hard failure;
-  `validate_labels.py` still exits 0 as long as required columns and label formatting are valid.
-- **`FileNotFoundError: No model files found` in `test_model.py`** — run `train_model.py` first to
-  produce `inference/Models/bestModel.pkl`.
-- **`inference/.venv` not picked up / `uv run` uses the wrong Python** — make sure you're running
-  `uv` commands from inside `inference/` (where `pyproject.toml` lives), or pass `--project
-  inference` from the repository root.
-
-## Files
-
-- `Data/data_logger.py` — TCP listener that parses relay telemetry packets and appends rows to a raw CSV
-- `generate_balanced_data.py` — Generates synthetic, class-balanced flight data for testing the pipeline without hardware
-- `label_generator.py` — Rule-based labeling: assigns `event_label` to each row of raw telemetry
-- `validate_labels.py` — Validates a labeled dataset's structure, label set, and value ranges
-- `prepare_data.py` — Cleans, standardizes, and splits labeled data into train/test CSVs (optional, not used by `train_model.py`/`test_model.py`)
-- `train_model.py` — Trains and saves a Random Forest classifier
-- `test_model.py` — Loads a trained model, runs inference, evaluates, and saves predictions
-- `generate_synthetic_pilots.py` — Generates synthetic pilots with targets and hidden skill tiers, for clustering without hardware
-- `features.py` / `compute_features.py` — Deviation features per flight and per pilot (module / CLI)
-- `clustering.py` / `cluster_pilots.py` — Performance groups from per-pilot deviation features (module / CLI)
-- `requirements.txt` / `pyproject.toml` / `uv.lock` — Python dependencies
-- `Data/session_flight_data.csv` — Output of step 1 (`data_logger.py`), one file per collection session; not tracked; copy or rename to `raw_flight_data.csv` to feed it into step 2
-- `Data/raw_flight_data.csv` — Raw telemetry input to step 2; the committed sample predates the `pilot_id`/`flight_id` columns and the #196 unit fix; overwrite it with step 1's or step 1b's output
-- `Data/synthetic_flight_data.csv` — Output of `generate_balanced_data.py` (step 1b); rename to `raw_flight_data.csv` to feed it into step 2
-- `Data/labeled_flight_data.csv` — Labeled dataset output of step 2 / input to steps 3-6
-- `dataset/test.csv` — Held-out test split saved by `train_model.py`; read by `test_model.py`
-- `dataset/` (other files) — Output of `prepare_data.py` (optional)
-- `Models/` — Trained model files (`bestModel.pkl`, `finalModel.pkl`)
-- `predictions_output.csv`, `evaluation_metrics.json` — Output of `test_model.py`
-
-## Verification
-
-Each script's documented input/output paths were checked to chain together correctly (step 1's or
-1b's copied output → step 2 → step 3 → steps 4-6). The committed `Data/labeled_flight_data.csv`
-and the trained models under `Models/` come from a real logged flight, not from
-`generate_balanced_data.py`'s synthetic output — the committed dataset only contains the 9 event
-classes that flight produced, not all 13 the synthetic generator can create.
+  row of your CSV against `CSV_FIELDS` in `pilot_inference/capture/data_logger.py`.
+- **`validate_labels` reports "Negative velocity values found" or missing label categories**: this
+  is expected with small or synthetic datasets that don't exercise every flight phase. It's a
+  warning, not a hard failure; `validate_labels` still exits 0 as long as required columns and
+  label formatting are valid.
+- **`FileNotFoundError: No model files found` in `evaluate_model`**: run `train_model` first to
+  produce `models/bestModel.pkl`.
+- **`uv run` uses the wrong Python or the wrong project**: run `uv` commands from inside
+  `inference/` (where `pyproject.toml` lives), or pass `--project inference` from the repository
+  root.

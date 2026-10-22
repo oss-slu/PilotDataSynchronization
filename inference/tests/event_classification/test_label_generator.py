@@ -1,6 +1,6 @@
 import pytest
 
-from label_generator import FlightEventLabeler
+from pilot_inference.event_classification.label_generator import FlightEventLabeler
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,8 @@ Generate balanced synthetic flight data for testing ML pipeline
 
 import pandas as pd
 import numpy as np
-from pathlib import Path
+
+from pilot_inference.paths import DATA_DIR
 
 def generate_balanced_dataset(samples_per_class: int = 100):
     """
@@ -208,8 +209,7 @@ def generate_balanced_dataset(samples_per_class: int = 100):
 
 
 def main():
-    inference_dir = Path(__file__).parent
-    output_file = inference_dir / 'Data' / 'synthetic_flight_data.csv'
+    output_file = DATA_DIR / 'synthetic_flight_data.csv'
 
     print("Generating balanced synthetic flight data...")
     df = generate_balanced_dataset(samples_per_class=100)
@@ -217,7 +217,7 @@ def main():
     df.to_csv(output_file, index=False)
     print(f"[OK] Generated {len(df)} samples (100 per class)")
     print(f"[OK] Saved to: {output_file}")
-    print(f"\nTo label this data, copy/rename it to raw_flight_data.csv, then run: py label_generator.py")
+    print(f"\nTo label this data, copy/rename it to raw_flight_data.csv, then run: python -m pilot_inference.event_classification.label_generator")
 
 
 if __name__ == '__main__':

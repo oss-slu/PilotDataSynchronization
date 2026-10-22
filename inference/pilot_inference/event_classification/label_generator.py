@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 import logging
 
-from angles import angular_diff
+from pilot_inference.angles import angular_diff
+from pilot_inference.paths import DATA_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -296,10 +297,8 @@ class FlightEventLabeler:
 
 def main():
     """Main execution function."""
-    # Define paths relative to inference folder
-    inference_dir = Path(__file__).parent
-    input_file = inference_dir / 'Data' / 'raw_flight_data.csv'  # input file
-    output_file = inference_dir / 'Data' / 'labeled_flight_data.csv'  # output file
+    input_file = DATA_DIR / 'raw_flight_data.csv'  # input file
+    output_file = DATA_DIR / 'labeled_flight_data.csv'  # output file
     
     logger.info("="*60)
     logger.info("Flight Event Labeling System")

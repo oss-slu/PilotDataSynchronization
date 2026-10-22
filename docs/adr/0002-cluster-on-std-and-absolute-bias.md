@@ -1,6 +1,6 @@
 # Cluster on the log of std and |bias|, not mad or signed bias
 
-`inference/features.py` emits `mad`, `std`, signed `bias` and `abs_bias` per flight dynamics factor. Pilot clustering (#216) uses only `std` (how much the pilot wobbles) and `|bias|` (how far the pilot sits off target), 8 features in total. `|bias|` is the mean of each flight's own `|bias|`, not the absolute value of the mean signed bias, which would cancel a pilot's flights on opposite sides of the target. These are the two independent parts of deviation: mean squared deviation is exactly `std² + bias²`. Each feature is clustered on a log scale, `log(x + floor)`, and then standardized over the cohort. The floors are 1 ft, 0.1°, 2 ft/min and 0.1 kt.
+`inference/pilot_inference/performance/features.py` emits `mad`, `std`, signed `bias` and `abs_bias` per flight dynamics factor. Pilot clustering (#216) uses only `std` (how much the pilot wobbles) and `|bias|` (how far the pilot sits off target), 8 features in total. `|bias|` is the mean of each flight's own `|bias|`, not the absolute value of the mean signed bias, which would cancel a pilot's flights on opposite sides of the target. These are the two independent parts of deviation: mean squared deviation is exactly `std² + bias²`. Each feature is clustered on a log scale, `log(x + floor)`, and then standardized over the cohort. The floors are 1 ft, 0.1°, 2 ft/min and 0.1 kt.
 
 ## Considered Options
 

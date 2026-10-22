@@ -6,7 +6,7 @@ deviation features per flight and per pilot. Pure DataFrame-in, DataFrame-out
 functions; compute_features.py is the CLI wrapper.
 
 Input units must be post-#196 (altitude in feet, airspeed in knots). The
-committed CSVs under Data/ are not, see docs/telemetry_schema.md section 1.
+committed CSVs under data/ are not, see docs/telemetry_schema.md section 1.
 
 Outputs are in raw units (ft, deg, ft/min, kts). Scaling across pilots belongs
 to the clustering step, not here.
@@ -17,7 +17,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from angles import angular_diff
+from pilot_inference.angles import angular_diff
 
 METRICS = ("altitude", "heading", "vertical_speed", "airspeed")
 

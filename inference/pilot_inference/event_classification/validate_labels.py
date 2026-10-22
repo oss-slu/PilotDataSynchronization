@@ -11,6 +11,8 @@ import numpy as np
 from pathlib import Path
 import sys
 
+from pilot_inference.paths import DATA_DIR
+
 
 def validate_labeled_dataset(file_path: Path) -> bool:
     """
@@ -146,12 +148,11 @@ def validate_labeled_dataset(file_path: Path) -> bool:
 
 def main():
     """Main execution function."""
-    inference_dir = Path(__file__).parent
-    labeled_file = inference_dir / 'Data' / 'labeled_flight_data.csv'
-    
+    labeled_file = DATA_DIR / 'labeled_flight_data.csv'
+
     if not labeled_file.exists():
         print(f"Error: {labeled_file} not found")
-        print("Please run label_generator.py first")
+        print("Please run first: python -m pilot_inference.event_classification.label_generator")
         sys.exit(1)
     
     success = validate_labeled_dataset(labeled_file)
