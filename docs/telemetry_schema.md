@@ -13,7 +13,7 @@ and the DataRef reference in [xplane_plugin/docs/key_datarefs.md](../xplane_plug
 ## 1. What the plugin outputs today
 
 The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (throttled to one
-send per 50ms) and streams them through Baton → Relay → `data_logger.py`, which
+send per 50ms) and streams them through Baton → Relay → `inference/pilot_inference/capture/data_logger.py`, which
 writes one CSV row per complete sample.
 
 Current CSV output (`inference/data/session_flight_data.csv`, one file per
@@ -171,8 +171,8 @@ return a negative remainder for a negative left-hand side — both the plugin
 and the relay are implemented in those languages, so a direct port of this
 line would be wrong there. The formula's output range is also `[-180, 180)`:
 a difference of exactly +180° maps to -180°. The shared helper is
-`angular_diff` in `inference/pilot_inference/angles.py`; both `features.py` and
-`label_generator.py`'s `_calculate_heading_change` (a related turn-rate
+`angular_diff` in `inference/pilot_inference/angles.py`; both `performance/features.py` and
+`event_classification/label_generator.py`'s `_calculate_heading_change` (a related turn-rate
 quantity) call it, so they agree at that boundary. Point any new heading
 computation at the helper rather than re-deriving this formula.
 

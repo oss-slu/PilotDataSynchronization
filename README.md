@@ -4,7 +4,7 @@
 - `baton`: C++ library for communicating with `relay`. Provides an object that handles inter-process communication (IPC) and abstracts over it for ease-of-use. Currently located in `xplane_plugin/subprojects`
 
 Additional Components:
-- `inference`: Python-based module for logging, labeling, and training a machine learning model using the collected flight data
+- `inference`: Python package for logging telemetry and forming pilot performance groups from the collected flight data
 
 # New Contributor? Start Here
 
@@ -191,7 +191,7 @@ The data flow is as follows:
 - `xplane_plugin` extracts the data
 - `xplane_plugin` uses the `baton` library to send the data to the `relay` program
 - `relay` sends the data to iMotions
-- *(optional)* `inference` can log the same TCP data stream for dataset creation and model training
+- *(optional)* `inference` can log the same TCP data stream and form pilot performance groups from it
 
 `relay` and `baton` are developed by this team and are not external programs/libraries.
 
