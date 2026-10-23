@@ -146,6 +146,8 @@ python inference/Data/data_logger.py --port 5001 --pilot-id pilot-07 --flight-id
 #   flight into two.
 #   Writes inference/Data/session_flight_data.csv; copy or rename it to
 #   inference/Data/raw_flight_data.csv to feed it into step 2.
+#   Point the relay here with Connect TCP, or, when iMotions is also recording,
+#   with Connect Python so both receive the stream (see the root README).
 
 #   ...or, without hardware, generate synthetic balanced data instead, then copy/rename
 #   inference/Data/synthetic_flight_data.csv to inference/Data/raw_flight_data.csv:
