@@ -11,7 +11,12 @@ use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
 
-const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:9999";
+/// Where iMotions listens, read off the lab machine: Global Settings, API tab,
+/// Event Receiving, with TCP enabled. It is a setting rather than a fixed
+/// default, so other installs can differ and this stays a hint, not a value the
+/// relay assumes. 9999 used to sit here and was only ever the mock server's
+/// port.
+const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:5050";
 
 /// How many of the most recent `event_log` entries the GUI renders.
 const EVENT_LOG_VISIBLE: usize = 5;

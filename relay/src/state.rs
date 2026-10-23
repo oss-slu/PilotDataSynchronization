@@ -346,7 +346,7 @@ impl State {
         let _parsed = address
             .trim()
             .parse::<SocketAddr>()
-            .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:9999"))?;
+            .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:5050"))?;
         Ok(())
     }
 

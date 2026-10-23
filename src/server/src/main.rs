@@ -4,7 +4,9 @@ use std::net::{TcpListener, TcpStream};
 use std::process;
 use std::thread;
 
-// Matches the relay's placeholder address, 127.0.0.1:9999
+// A local testing port, not iMotions'. iMotions listens on whatever its Event
+// Receiving setting says, 5050 on the lab machine. Keeping this one distinct
+// means running the mock can never be mistaken for talking to iMotions.
 const DEFAULT_PORT: u16 = 9999;
 
 // Reads newline-terminated packets until the peer closes the connection,
