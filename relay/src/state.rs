@@ -42,6 +42,11 @@ pub(crate) const EVENT_LOG_CAPACITY: usize = 200;
 /// The placeholder text and the validation message both come from here.
 pub(crate) const IMOTIONS_ADDR_HINT: &str = "<iMotions IP>:5050";
 
+/// What to type into the mirror's address box. Unlike the iMotions hint this is
+/// a working example, because the Python listener usually runs on the same
+/// machine as the relay, and 5001 is the capture logger's default port.
+pub(crate) const MIRROR_ADDR_HINT: &str = "127.0.0.1:5001";
+
 /// Bounds on the mirror destination that feeds the Python side (#245).
 ///
 /// Connecting and writing both run on the mirror's own thread, so these never
@@ -547,7 +552,7 @@ impl State {
         };
         for address in addresses {
             let candidate = address.trim();
-            if Self::validate_tcp_addr(candidate).is_ok() {
+            if Self::validate_tcp_addr(candidate, IMOTIONS_ADDR_HINT).is_ok() {
                 uniq.insert(candidate.to_string());
             }
         }
@@ -574,12 +579,14 @@ impl State {
         Ok(())
     }
 
-    pub fn validate_tcp_addr(address: &str) -> Result<()> {
+    /// `example` is the address hint for whichever box is being validated, so
+    /// the mirror does not tell people to type an iMotions address.
+    pub fn validate_tcp_addr(address: &str, example: &str) -> Result<()> {
         let _parsed = address
             .trim()
             .parse::<SocketAddr>()
             .map_err(|_| {
-                anyhow!("Invalid address. Enter a literal IP and port, for example {IMOTIONS_ADDR_HINT}")
+                anyhow!("Invalid address. Enter a literal IP and port, for example {example}")
             })?;
         Ok(())
     }
@@ -903,7 +910,7 @@ impl State {
     /// first. With no iMotions to talk to, point Connect TCP straight at the
     /// Python listener instead and leave the mirror unused.
     pub fn mirror_connect(&mut self, address: String) -> Result<()> {
-        Self::validate_tcp_addr(&address)?;
+        Self::validate_tcp_addr(&address, MIRROR_ADDR_HINT)?;
         // validate_tcp_addr trims before parsing, so trim here too. Otherwise a
         // pasted address with a stray space passes validation and then fails to
         // parse inside the thread.

@@ -7,13 +7,10 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input, 
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
-use crate::state::IMOTIONS_ADDR_HINT;
+use crate::state::{IMOTIONS_ADDR_HINT, MIRROR_ADDR_HINT};
 use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
-
-/// Placeholder for the mirror address. Matches the capture logger's default port.
-const DEFAULT_MIRROR_PLACEHOLDER: &str = "127.0.0.1:5001";
 
 /// How many of the most recent `event_log` entries the GUI renders.
 const EVENT_LOG_VISIBLE: usize = 5;
@@ -224,7 +221,7 @@ fn tcp_disconnect_button() -> UIElement<'static> {
 
 /// Build the mirror address input, wired to `Message::MirrorAddrFieldUpdate`.
 fn mirror_addr_input(state: &State) -> UIElement {
-    text_input(DEFAULT_MIRROR_PLACEHOLDER, &state.mirror_addr_field)
+    text_input(MIRROR_ADDR_HINT, &state.mirror_addr_field)
         .on_input(Message::MirrorAddrFieldUpdate)
         .into()
 }

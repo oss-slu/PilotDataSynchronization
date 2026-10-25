@@ -7,12 +7,12 @@ use chrono::Local;
 
 use crate::{
     message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage,
-    state::build_test_packet, Message, State,
+    state::build_test_packet, state::IMOTIONS_ADDR_HINT, Message, State,
 };
 
 fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
     let trimmed = address.trim().to_string();
-    match State::validate_tcp_addr(&trimmed) {
+    match State::validate_tcp_addr(&trimmed, IMOTIONS_ADDR_HINT) {
         Ok(()) => {
             state.tcp_addr_validation_error = None;
             state.tcp_addr_field = trimmed.clone();
@@ -978,9 +978,20 @@ mod tests {
         let error = state
             .mirror_connect("localhost:5001".to_string())
             .expect_err("host names are not supported");
+        let message = error.to_string();
         assert!(
-            error.to_string().contains("literal IP and port"),
-            "unexpected error: {error}"
+            message.contains("literal IP and port"),
+            "unexpected error: {message}"
+        );
+        // The mirror box must offer its own example. Borrowing the iMotions one
+        // would tell people to point Python at the recorder.
+        assert!(
+            message.contains("127.0.0.1:5001"),
+            "mirror error should name the mirror's example: {message}"
+        );
+        assert!(
+            !message.contains("iMotions"),
+            "mirror error leaked the iMotions hint: {message}"
         );
         assert!(!state.mirror_connected);
 
