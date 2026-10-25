@@ -44,12 +44,19 @@ pub(crate) const IMOTIONS_ADDR_HINT: &str = "<iMotions IP>:5050";
 
 /// Bounds on the mirror destination that feeds the Python side (#245).
 ///
-/// Both are short on purpose. The mirror is a copy of the stream, so a Python
-/// process that is slow, wedged or gone must never hold up the 20 Hz feed to
-/// iMotions. On a timeout the mirror is dropped and the iMotions stream carries
-/// on untouched.
+/// Connecting and writing both run on the mirror's own thread, so these never
+/// cost the iMotions stream anything. They exist so a Python process that is
+/// gone or wedged is given up on rather than held open forever.
 const MIRROR_CONNECT_TIMEOUT: StdDuration = StdDuration::from_millis(500);
 const MIRROR_WRITE_TIMEOUT: StdDuration = StdDuration::from_millis(100);
+
+/// How many packets may wait for the mirror's writer thread.
+///
+/// The stream is 8 packets per sample at 20 Hz, so 160 a second. This holds
+/// about a second and a half, enough to ride out a clustering refit without
+/// losing anything. Past that the oldest behaviour is to drop new packets
+/// rather than make iMotions wait.
+const MIRROR_QUEUE_CAPACITY: usize = 256;
 
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
@@ -200,9 +207,10 @@ fn packets_for_fields(fields: &[String]) -> Vec<String> {
         ];
     }
 
-    // Anything else: take the fields two at a time, in sample order, and stop
-    // when they run out.
-    const PAIRED_SAMPLES: [&str; 8] = [
+    // Anything else: take the fields two at a time, in event order, and stop
+    // when they run out. "Event" here is one iMotions entry, not a Sample in
+    // the GLOSSARY sense, which is a whole set of telemetry values.
+    const IMOTIONS_EVENTS: [&str; 8] = [
         "AltitudeSync",
         "AirspeedSync",
         "VerticalVelocitySync",
@@ -214,7 +222,7 @@ fn packets_for_fields(fields: &[String]) -> Vec<String> {
     ];
     let mut packets = Vec::new();
     let mut idx = 0usize;
-    for name in PAIRED_SAMPLES {
+    for name in IMOTIONS_EVENTS {
         if idx + 1 >= fields.len() {
             break;
         }
@@ -339,38 +347,145 @@ fn human_log(level: &str, msg: &str) {
     }
 }
 
-/// Open the mirror connection, with a bounded wait so a wrong address cannot
-/// stall the TCP thread while iMotions is streaming.
+/// What the mirror's writer thread reports back to the TCP thread.
+enum MirrorEvent {
+    Connected(String),
+    Disconnected(String),
+}
+
+/// The TCP thread's handle on the mirror: a queue into the writer thread, and
+/// the writer thread's reports coming back.
+struct Mirror {
+    packets: crossbeam::channel::Sender<String>,
+    events: crossbeam::channel::Receiver<MirrorEvent>,
+    dropped: usize,
+    /// Whether we are in a run of drops, so the log gets one line when the
+    /// mirror falls behind and one when it recovers, not one per packet.
+    lagging: bool,
+}
+
+/// Start the mirror's writer thread and hand back a queue into it.
+///
+/// Connecting and writing both happen on that thread, so neither can delay the
+/// iMotions stream. The TCP thread only ever pushes into a bounded queue, which
+/// either takes the packet immediately or refuses it.
+fn spawn_mirror(address: String) -> Mirror {
+    let (packets_tx, packets_rx) = crossbeam::channel::bounded::<String>(MIRROR_QUEUE_CAPACITY);
+    let (events_tx, events_rx) = crossbeam::channel::unbounded();
+
+    spawn(move || {
+        let mut stream = match connect_mirror(&address) {
+            Ok(stream) => {
+                human_log("TCP", &format!("Python mirror connected to {}", address));
+                let _ = events_tx.send(MirrorEvent::Connected(address.clone()));
+                stream
+            }
+            Err(e) => {
+                let reason = format!("Python mirror connection failed: {}", e);
+                human_log("TCP", &reason);
+                let _ = events_tx.send(MirrorEvent::Disconnected(reason));
+                return;
+            }
+        };
+
+        // Ends when the TCP thread drops its sender, which is how the mirror is
+        // closed and how it goes away with the connection it belongs to.
+        for packet in packets_rx {
+            let write = stream
+                .write_all(packet.as_bytes())
+                .and_then(|()| stream.flush());
+            if let Err(e) = write {
+                let reason = format!("Python mirror dropped: {}", e);
+                human_log("TCP", &reason);
+                let _ = events_tx.send(MirrorEvent::Disconnected(reason));
+                return;
+            }
+        }
+    });
+
+    Mirror {
+        packets: packets_tx,
+        events: events_rx,
+        dropped: 0,
+        lagging: false,
+    }
+}
+
+/// Open the mirror connection. Runs on the writer thread, so the timeout here
+/// costs the iMotions stream nothing.
 fn connect_mirror(address: &str) -> Result<TcpStream> {
     let addr: SocketAddr = address
         .parse()
-        .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:5001"))?;
+        .map_err(|_| anyhow!("Mirror address is not a literal IP and port: {address}"))?;
     let stream = TcpStream::connect_timeout(&addr, MIRROR_CONNECT_TIMEOUT)?;
     stream.set_write_timeout(Some(MIRROR_WRITE_TIMEOUT))?;
     stream.set_nodelay(true)?;
     Ok(stream)
 }
 
-/// Write one packet to the mirror, if it is connected.
+/// Hand one packet to the mirror's writer thread, if there is one.
 ///
-/// Failure drops the mirror and is reported, never propagated: the iMotions
-/// stream is the one that matters and must not be affected by the copy.
+/// Never waits. A full queue means the reader is behind, so the packet is
+/// dropped and counted. Losing copies is the right trade: the mirror is for
+/// analysis that can tolerate gaps, and the iMotions recording cannot be redone.
 fn mirror_send(
-    mirror: &mut Option<TcpStream>,
+    mirror: &mut Option<Mirror>,
     packet: &str,
     child_bichannel: &mut ChildBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>,
 ) {
-    let Some(stream) = mirror.as_mut() else {
+    let Some(active) = mirror.as_mut() else {
         return;
     };
-    let write = stream
-        .write_all(packet.as_bytes())
-        .and_then(|()| stream.flush());
-    if let Err(e) = write {
-        let reason = format!("Python mirror dropped: {}", e);
-        human_log("TCP", &reason);
-        let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorDisconnected(reason));
-        *mirror = None;
+    match active.packets.try_send(packet.to_string()) {
+        Ok(()) => {
+            if active.lagging {
+                let note = format!(
+                    "Python mirror caught up, {} copies dropped while it was behind",
+                    active.dropped
+                );
+                human_log("TCP", &note);
+                let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorLagging(note));
+                active.lagging = false;
+                active.dropped = 0;
+            }
+        }
+        Err(_) => {
+            active.dropped += 1;
+            // One line per episode. At 160 packets a second, reporting each
+            // drop would push everything else out of the capped event log.
+            if !active.lagging {
+                active.lagging = true;
+                let note =
+                    "Python mirror is behind, dropping copies. iMotions is unaffected".to_string();
+                human_log("TCP", &note);
+                let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorLagging(note));
+            }
+        }
+    }
+}
+
+/// Forward anything the writer thread has reported, and clear the mirror if it
+/// has gone away.
+fn drain_mirror_events(
+    mirror: &mut Option<Mirror>,
+    child_bichannel: &mut ChildBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>,
+) {
+    let events: Vec<MirrorEvent> = match mirror.as_ref() {
+        Some(active) => active.events.try_iter().collect(),
+        None => return,
+    };
+    for event in events {
+        match event {
+            MirrorEvent::Connected(address) => {
+                let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorConnected(address));
+            }
+            MirrorEvent::Disconnected(reason) => {
+                let _ = child_bichannel
+                    .send_to_parent(FromTcpThreadMessage::MirrorDisconnected(reason));
+                *mirror = None;
+                return;
+            }
+        }
     }
 }
 
@@ -713,11 +828,13 @@ impl State {
                 }
             };
 
-            // Second destination for the same packets, set by SetMirror. Lives
-            // in this thread so both sinks are written from one packet list.
-            let mut mirror: Option<TcpStream> = None;
+            // Second destination for the same packets, set by SetMirror. Its
+            // socket is owned by a writer thread; this is only the queue into
+            // it, so nothing here can be slowed by the Python side.
+            let mut mirror: Option<Mirror> = None;
 
             while !child_bichannel.is_killswitch_engaged() {
+                drain_mirror_events(&mut mirror, &mut child_bichannel);
                 for message in child_bichannel.received_messages() {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
@@ -748,6 +865,8 @@ impl State {
                             mirror_send(&mut mirror, &packet, &mut child_bichannel);
                         }
                         ToTcpThreadMessage::SetMirror(target) => {
+                            // Dropping the old handle closes its queue, which
+                            // ends that writer thread and its socket with it.
                             mirror = None;
                             match target {
                                 None => {
@@ -757,26 +876,10 @@ impl State {
                                         ),
                                     );
                                 }
-                                Some(address) => match connect_mirror(&address) {
-                                    Ok(stream) => {
-                                        human_log(
-                                            "TCP",
-                                            &format!("Python mirror connected to {}", address),
-                                        );
-                                        mirror = Some(stream);
-                                        let _ = child_bichannel.send_to_parent(
-                                            FromTcpThreadMessage::MirrorConnected(address),
-                                        );
-                                    }
-                                    Err(e) => {
-                                        let reason =
-                                            format!("Python mirror connection failed: {}", e);
-                                        human_log("TCP", &reason);
-                                        let _ = child_bichannel.send_to_parent(
-                                            FromTcpThreadMessage::MirrorDisconnected(reason),
-                                        );
-                                    }
-                                },
+                                // Connecting happens on the writer thread, so
+                                // this returns immediately and the result
+                                // arrives as a MirrorEvent.
+                                Some(address) => mirror = Some(spawn_mirror(address)),
                             }
                         }
                     }
@@ -831,7 +934,7 @@ impl State {
         let was_connected = bichannel.is_conn_to_endpoint().unwrap_or(false);
         bichannel.killswitch_engage()?;
         // The mirror lives in that thread, so it goes down with it. Without
-        // this the GUI keeps claiming the Python stream is connected.
+        // this the GUI keeps claiming the mirror is connected.
         self.mirror_connected = false;
         
         if !was_connected {
@@ -899,7 +1002,7 @@ mod tests {
     }
 
     #[test]
-    fn eight_fields_become_one_packet_per_sample_in_order() {
+    fn eight_fields_become_one_packet_per_event_in_order() {
         let packets = packets_for_fields(&fields(&[
             "1000", "120", "90", "500", "2", "3", "91", "1.0",
         ]));

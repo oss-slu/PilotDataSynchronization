@@ -124,12 +124,14 @@ Two more behaviors that catch people out:
 `Connect TCP` has one destination. To feed iMotions and the Python side from the same flight, use the mirror:
 
 1. Connect TCP to iMotions as above.
-2. Start `inference/Data/data_logger.py`, which listens on port 5001 by default.
-3. Type its address, for example `127.0.0.1:5001`, into the second box and press `Connect Python`.
+2. Start the logger, which listens on port 5001 by default: `uv run python -m pilot_inference.capture.data_logger` from `inference/`.
+3. Type its address, for example `127.0.0.1:5001`, into the second box and press `Connect mirror`.
 
-Both then receive the same packets, byte for byte. The mirror is a copy and never affects the iMotions stream: if the Python process is missing, slow or killed, the mirror is dropped, a line appears in the event log, and iMotions keeps recording. Reconnect it with `Connect Python` once Python is listening again.
+Both then receive the same packets, byte for byte. The mirror's socket is written from its own thread, so the iMotions stream never waits on it: if the Python process is missing, slow or killed, copies are dropped or the mirror is closed, a line appears in the event log, and iMotions keeps recording at full rate. Reconnect it with `Connect mirror` once Python is listening again.
 
-Reconnecting opens a new connection, and `data_logger.py` starts a new `flight_id` for each one unless you passed `--flight-id`. Pass it for a real session, or one flight will be split across two ids in the CSV.
+What the mirror does not promise is every packet. A reader that falls behind loses copies, which suits statistics over a stream and does not suit anything needing a complete record. Whatever reads this socket should keep reading it, on its own thread if it also does slow work.
+
+Reconnecting opens a new connection, and the logger starts a new `flight_id` for each one unless you passed `--flight-id`. Pass it for a real session, or one flight will be split across two ids in the CSV.
 
 With no iMotions to record to, skip the mirror and point `Connect TCP` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
 

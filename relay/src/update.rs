@@ -93,12 +93,15 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.log_event(format!("TCP send error: {}", err));
                     }
                     FromTcpThreadMessage::MirrorConnected(address) => {
-                        state.log_event(format!("Python stream connected to {}", address));
+                        state.log_event(format!("Python mirror connected to {}", address));
                         state.mirror_connected = true;
                     }
                     FromTcpThreadMessage::MirrorDisconnected(reason) => {
-                        state.log_event(format!("Python stream stopped: {}", reason));
+                        state.log_event(format!("Python mirror stopped: {}", reason));
                         state.mirror_connected = false;
+                    }
+                    FromTcpThreadMessage::MirrorLagging(reason) => {
+                        state.log_event(reason);
                     }
                 }
             }
@@ -204,7 +207,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         M::ConnectMirror => {
             let address = state.mirror_addr_field.clone();
             if let Err(e) = state.mirror_connect(address) {
-                let msg = format!("Python stream: {}", e);
+                let msg = format!("Python mirror: {}", e);
                 state.error_message = Some(msg.clone());
                 state.log_event(msg);
             }
@@ -212,7 +215,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         M::DisconnectMirror => {
             if let Err(e) = state.mirror_disconnect() {
-                state.log_event(format!("Python stream disconnect failed: {}", e));
+                state.log_event(format!("Python mirror disconnect failed: {}", e));
             }
             Task::none()
         }
@@ -407,6 +410,20 @@ mod tests {
         }
     }
 
+    // Pumps until the state satisfies `condition`, returning as soon as it
+    // does. A fixed tick count turns a busy machine into a failing test, since
+    // these are all waits on a background thread rather than on elapsed time.
+    fn pump_until(state: &mut State, mut condition: impl FnMut(&State) -> bool) -> bool {
+        for _ in 0..1000 {
+            let _ = update(state, Message::Update);
+            if condition(state) {
+                return true;
+            }
+            sleep(StdDuration::from_millis(10));
+        }
+        false
+    }
+
     // A port nothing listens on, obtained by binding and then dropping.
     fn closed_port_addr() -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
@@ -422,7 +439,10 @@ mod tests {
             .tcp_connect(closed_port_addr())
             .expect("tcp_connect should spawn a thread");
 
-        pump_update(&mut state, 200);
+        assert!(
+            pump_until(&mut state, |s| s.error_message.is_some()),
+            "no error surfaced"
+        );
 
         let error = state.error_message.clone().expect("no error surfaced");
         assert!(
@@ -490,8 +510,10 @@ mod tests {
             .mirror_connect(python_addr)
             .expect("mirror_connect failed");
         let (python_stream, _) = python.accept().expect("mirror accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected, "mirror never reported connected");
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
 
         // One eight-value sample, the shape the plugin sends.
         state
@@ -527,8 +549,10 @@ mod tests {
         state
             .mirror_connect(closed_port_addr())
             .expect("the request itself should be accepted");
-        pump_update(&mut state, 100);
-        assert!(!state.mirror_connected, "mirror claimed to be connected");
+        assert!(
+            pump_until(&mut state, |s| !s.mirror_connected),
+            "mirror claimed to be connected"
+        );
 
         let _ = update(&mut state, Message::SendPacket);
         let lines = read_lines(&imotions_stream, 1);
@@ -564,8 +588,10 @@ mod tests {
 
         state.mirror_connect(python_addr).expect("mirror_connect failed");
         let (python_stream, _) = python.accept().expect("mirror accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected);
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
 
         send_sample(&mut state, "1000");
         assert_eq!(read_lines(&python_stream, 8).len(), 8);
@@ -590,7 +616,7 @@ mod tests {
         );
         assert!(state.is_tcp_connected(), "iMotions went down with the mirror");
         assert!(
-            state.event_log.iter().any(|e| e.contains("Python stream stopped")),
+            state.event_log.iter().any(|e| e.contains("Python mirror stopped")),
             "nothing in the event log: {:?}",
             state.event_log
         );
@@ -604,6 +630,151 @@ mod tests {
             lines[0]
         );
 
+        let _ = state.tcp_disconnect();
+    }
+
+    // Counts lines off a socket on its own thread, the way a real recorder
+    // would. The counter is readable while it runs, so a test can wait for
+    // delivery instead of closing the socket to find out.
+    fn drain_in_background(stream: TcpStream) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = counter.clone();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                line.clear();
+                seen.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        counter
+    }
+
+    // Connecting the mirror used to happen on the TCP thread, where a 500ms
+    // connect timeout stalled the iMotions stream. It now runs on the mirror's
+    // own thread, so streaming continues while the attempt is in flight.
+    #[test]
+    fn connecting_the_mirror_does_not_pause_the_imotions_stream() {
+        // RFC 5737 TEST-NET-1: routed nowhere, so the connect attempt runs to
+        // its timeout rather than being refused.
+        const BLACKHOLE: &str = "192.0.2.1:5001";
+
+        let (imotions, imotions_addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(imotions_addr).expect("tcp_connect failed");
+        let (imotions_stream, _) = imotions.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
+        let delivered = drain_in_background(imotions_stream);
+
+        state
+            .mirror_connect(BLACKHOLE.to_string())
+            .expect("mirror_connect failed");
+
+        // Immediately, while the connect is still being attempted.
+        let started = std::time::Instant::now();
+        for i in 0..20 {
+            send_sample(&mut state, &format!("{}", 1000 + i));
+        }
+        assert!(
+            wait_until(|| delivered.load(std::sync::atomic::Ordering::Relaxed) >= 160),
+            "iMotions got {} of 160 packets while the mirror was connecting",
+            delivered.load(std::sync::atomic::Ordering::Relaxed)
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < StdDuration::from_millis(400),
+            "iMotions waited {elapsed:?} for the mirror's connect attempt"
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // A Python process that reads, but slower than the relay writes. iMotions
+    // must still receive every packet, and the relay must say the copy is
+    // falling behind rather than quietly coping.
+    #[test]
+    fn a_slow_python_reader_does_not_pace_imotions() {
+        // Enough to exceed the socket buffers, which absorb a surprising amount:
+        // at 500 samples the slow reader never creates any backpressure at all.
+        const SAMPLES: usize = 1500;
+        const PACKETS: usize = SAMPLES * 8;
+
+        let (imotions, imotions_addr) = listener_on_free_port();
+        let (python, python_addr) = listener_on_free_port();
+
+        let mut state = State::default();
+        state.tcp_connect(imotions_addr).expect("tcp_connect failed");
+        let (imotions_stream, _) = imotions.accept().expect("accept failed");
+        assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
+        let imotions_count = drain_in_background(imotions_stream);
+
+        state.mirror_connect(python_addr).expect("mirror_connect failed");
+        let (slow, _) = python.accept().expect("accept failed");
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
+
+        // Reads steadily but slower than the relay writes: about 1000 lines a
+        // second against 12000 queued. Fast enough that writes keep succeeding,
+        // so the mirror stays up and the queue is what fills, which is the case
+        // that used to pace iMotions.
+        let slow_reader = std::thread::spawn(move || {
+            let mut reader = BufReader::new(slow);
+            let mut line = String::new();
+            let mut count = 0usize;
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                line.clear();
+                count += 1;
+                sleep(StdDuration::from_millis(1));
+            }
+            count
+        });
+
+        let started = std::time::Instant::now();
+        for i in 0..SAMPLES {
+            send_sample(&mut state, &format!("{}", 1000 + i % 100));
+        }
+        let queued = started.elapsed();
+        assert!(
+            queued < StdDuration::from_secs(3),
+            "queueing {SAMPLES} samples took {queued:?}, the slow reader is holding the thread"
+        );
+
+        // Everything reaches iMotions long before the slow reader could have
+        // consumed it: pacing to 20ms a line would take about 80 seconds.
+        let delivered = |count: &std::sync::atomic::AtomicUsize| {
+            count.load(std::sync::atomic::Ordering::Relaxed)
+        };
+        assert!(
+            wait_until(|| delivered(&imotions_count) >= PACKETS),
+            "iMotions only got {} of {PACKETS} packets",
+            delivered(&imotions_count)
+        );
+        let full_delivery = started.elapsed();
+        assert!(
+            full_delivery < StdDuration::from_secs(10),
+            "iMotions took {full_delivery:?}, it is being paced by the mirror"
+        );
+
+        // The relay says something about it rather than quietly coping: either
+        // copies are being dropped, or the writer gave up on the write timeout.
+        // Which one depends on how much the socket buffers absorb.
+        assert!(
+            wait_until(|| {
+                let _ = update(&mut state, Message::Update);
+                !state.mirror_connected
+                    || state.event_log.iter().any(|e| e.contains("behind"))
+            }),
+            "a slow mirror was never reported: {:?}",
+            state.event_log
+        );
+        assert!(
+            state.is_tcp_connected(),
+            "iMotions was dropped along with the slow mirror"
+        );
+
+        drop(slow_reader);
         let _ = state.tcp_disconnect();
     }
 
@@ -635,8 +806,10 @@ mod tests {
         // Python accepts, then never reads a byte.
         state.mirror_connect(python_addr).expect("mirror_connect failed");
         let (stalled, _) = python.accept().expect("accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected);
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
 
         let started = std::time::Instant::now();
         for i in 0..3000 {
@@ -682,8 +855,10 @@ mod tests {
             .mirror_connect(python_addr.clone())
             .expect("mirror_connect failed");
         let (first, _) = python.accept().expect("accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected);
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
         drop(first);
         drop(python);
 
@@ -691,8 +866,10 @@ mod tests {
         let listener = TcpListener::bind(&python_addr).expect("rebind failed");
         state.mirror_connect(python_addr).expect("reconnect rejected");
         let (second, _) = listener.accept().expect("accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected, "mirror did not come back");
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror did not come back"
+        );
 
         send_sample(&mut state, "1234");
         let lines = read_lines(&second, 8);
@@ -702,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn disconnecting_tcp_also_clears_the_python_stream_status() {
+    fn disconnecting_tcp_also_clears_the_mirror_status() {
         let (imotions, imotions_addr) = listener_on_free_port();
         let (python, python_addr) = listener_on_free_port();
 
@@ -712,14 +889,16 @@ mod tests {
         assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
         state.mirror_connect(python_addr).expect("mirror_connect failed");
         let (_python_stream, _) = python.accept().expect("accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected);
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
 
         let _ = state.tcp_disconnect();
 
         assert!(
             !state.mirror_connected,
-            "GUI still claims the Python stream is up after Disconnect TCP"
+            "GUI still claims the mirror is up after Disconnect TCP"
         );
     }
 
@@ -736,8 +915,10 @@ mod tests {
         assert!(wait_until(|| state.is_tcp_connected()), "TCP never connected");
         state.mirror_connect(python_addr).expect("mirror_connect failed");
         let (python_stream, _) = python.accept().expect("accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected);
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never reported connected"
+        );
 
         const SAMPLES: usize = 100;
         for i in 0..SAMPLES {
@@ -779,8 +960,10 @@ mod tests {
             .mirror_connect(format!("  {}  ", python_addr))
             .expect("padded address was rejected");
         let (_python_stream, _) = python.accept().expect("accept failed");
-        pump_update(&mut state, 50);
-        assert!(state.mirror_connected, "padded address never connected");
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "padded address never connected"
+        );
 
         let _ = state.tcp_disconnect();
     }
@@ -795,7 +978,10 @@ mod tests {
         let error = state
             .mirror_connect("localhost:5001".to_string())
             .expect_err("host names are not supported");
-        assert!(error.to_string().contains("Invalid IP address"));
+        assert!(
+            error.to_string().contains("literal IP and port"),
+            "unexpected error: {error}"
+        );
         assert!(!state.mirror_connected);
 
         let _ = state.tcp_disconnect();

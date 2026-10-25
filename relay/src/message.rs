@@ -79,4 +79,7 @@ pub(crate) enum FromTcpThreadMessage {
     MirrorConnected(String),
     /// Mirror was dropped, by the user or by a failed connect or write
     MirrorDisconnected(String),
+    /// Mirror is not keeping up, so copies are being dropped. The iMotions
+    /// stream is unaffected.
+    MirrorLagging(String),
 }

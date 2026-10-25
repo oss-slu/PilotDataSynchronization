@@ -222,22 +222,41 @@ fn tcp_disconnect_button() -> UIElement<'static> {
         .into()
 }
 
+/// Build the mirror address input, wired to `Message::MirrorAddrFieldUpdate`.
+fn mirror_addr_input(state: &State) -> UIElement {
+    text_input(DEFAULT_MIRROR_PLACEHOLDER, &state.mirror_addr_field)
+        .on_input(Message::MirrorAddrFieldUpdate)
+        .into()
+}
+
+fn mirror_status_element(state: &State) -> UIElement {
+    let status = if state.mirror_connected {
+        "Python mirror: connected"
+    } else {
+        "Python mirror: not connected"
+    };
+    text(status).into()
+}
+
+fn mirror_connect_button() -> UIElement<'static> {
+    button("Connect mirror").on_press(Message::ConnectMirror).into()
+}
+
+fn mirror_disconnect_button() -> UIElement<'static> {
+    button("Disconnect mirror")
+        .on_press(Message::DisconnectMirror)
+        .into()
+}
+
 /// Mirror controls: a second destination that receives a copy of every packet,
 /// so the Python side can read the stream while iMotions keeps recording.
 fn mirror_row(state: &State) -> UIElement {
-    let status = if state.mirror_connected {
-        "Python stream: connected"
-    } else {
-        "Python stream: not connected"
-    };
-
     column![
-        text(status),
+        mirror_status_element(state),
         row![
-            button("Connect Python").on_press(Message::ConnectMirror),
-            text_input(DEFAULT_MIRROR_PLACEHOLDER, &state.mirror_addr_field)
-                .on_input(Message::MirrorAddrFieldUpdate),
-            button("Disconnect Python").on_press(Message::DisconnectMirror),
+            mirror_connect_button(),
+            mirror_addr_input(state),
+            mirror_disconnect_button(),
         ]
         .spacing(5),
     ]
