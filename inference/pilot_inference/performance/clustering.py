@@ -6,6 +6,8 @@ where |bias| is the mean of each flight's own |bias| (docs/adr/0002). Pilot meta
 DataFrame-in functions; cluster_pilots.py is the CLI wrapper.
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
@@ -52,6 +54,13 @@ def clustering_features(pilots: pd.DataFrame) -> pd.DataFrame:
     return features[FEATURE_COLUMNS]
 
 
+def _logged(features: pd.DataFrame) -> pd.DataFrame:
+    floors = pd.Series(
+        {f"{metric}_{part}": LOG_FLOOR[metric] for metric in METRICS for part in FEATURE_PARTS}
+    )
+    return np.log(features + floors[features.columns])
+
+
 def _scaled(features: pd.DataFrame) -> np.ndarray:
     """
     Log, then standardize over the cohort being clustered (never per pilot).
@@ -59,10 +68,7 @@ def _scaled(features: pd.DataFrame) -> np.ndarray:
     Deviation sizes are positive and pilots differ by multiples, so on a
     linear scale the worst pilots stretch the axis and the rest bunch up.
     """
-    floors = pd.Series(
-        {f"{metric}_{part}": LOG_FLOOR[metric] for metric in METRICS for part in FEATURE_PARTS}
-    )
-    return StandardScaler().fit_transform(np.log(features + floors[features.columns]))
+    return StandardScaler().fit_transform(_logged(features))
 
 
 def _kmeans_labels(scaled: np.ndarray, k: int, seed: int) -> np.ndarray:
@@ -129,22 +135,65 @@ def fit(pilots: pd.DataFrame, k: int, seed: int = 0):
     Raises if k is outside candidate_ks, the range the sweep offers. That
     needs at least 6 pilots.
     """
+    reference = fit_reference(pilots, k, seed)
+    return reference.assignments, reference.centres
+
+
+def _centres(features: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
+    # The raw-unit mean of each group's members, not the KMeans centre, which
+    # lives in log-scaled space.
+    grouped = features.groupby(labels)
+    centres = grouped.mean()
+    centres.insert(0, "pilots", grouped.size())
+    return centres.rename_axis("group").reset_index()
+
+
+@dataclass
+class ReferenceGroups:
+    """
+    Performance groups fitted once on a reference cohort, kept so that pilots
+    outside it can be placed in a group without refitting (docs/adr/0004).
+
+    assignments and centres are what fit() returns for the same cohort, k and
+    seed.
+    """
+
+    scaler: StandardScaler
+    kmeans: KMeans
+    assignments: pd.DataFrame
+    centres: pd.DataFrame
+
+    def assign(self, pilots: pd.DataFrame) -> pd.DataFrame:
+        """
+        The nearest reference group for each pilot, as pilot_id and group.
+
+        Pilots are scaled with the reference cohort's scaling, not their own,
+        so a group means the same thing for them as for the cohort. They do
+        not move the groups. Raises on NaN features, like fit().
+        """
+        features = clustering_features(pilots)
+        scaled = self.scaler.transform(_logged(features))
+        return pd.DataFrame({"pilot_id": features.index, "group": self.kmeans.predict(scaled)})
+
+
+def fit_reference(pilots: pd.DataFrame, k: int, seed: int = 0) -> ReferenceGroups:
+    """
+    fit(), keeping the fitted scaling and KMeans so other pilots can be assigned.
+
+    Same rules as fit(): k must be in candidate_ks, which needs at least 6 pilots.
+    """
     features = clustering_features(pilots)
     allowed = candidate_ks(len(features))
     if k not in allowed:
         raise ValueError(
             f"k must be {allowed.start} to {allowed.stop - 1} for {len(features)} pilots, got {k}"
         )
-    labels = _kmeans_labels(_scaled(features), k, seed)
+    logged = _logged(features)
+    scaler = StandardScaler().fit(logged)
+    kmeans = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(scaler.transform(logged))
+    labels = kmeans.labels_
     assignments = pd.DataFrame({"pilot_id": features.index, "group": labels})
-
-    # The raw-unit mean of each group's members, not the KMeans centre, which
-    # lives in log-scaled space.
-    grouped = features.groupby(labels)
-    centres = grouped.mean()
-    centres.insert(0, "pilots", grouped.size())
-    centres = centres.rename_axis("group").reset_index()
-    return assignments, centres
+    return ReferenceGroups(scaler, kmeans, assignments, _centres(features, labels))
 
 
 def truth_agreement(assignments: pd.DataFrame, truth: pd.DataFrame) -> float:
