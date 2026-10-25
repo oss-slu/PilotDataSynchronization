@@ -7,7 +7,7 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input, 
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
-use crate::state::IMOTIONS_ADDR_HINT;
+use crate::state::{IMOTIONS_ADDR_HINT, MIRROR_ADDR_HINT};
 use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
@@ -43,6 +43,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     // TCP connect/disconnect row
     elements.push(tcp_connect_button(state));
     elements.push(tcp_disconnect_button());
+
+    // Second destination, read by the Python side
+    elements.push(mirror_row(state));
 
     // Metrics (if enabled)
     elements.push(metrics_block(state));
@@ -214,6 +217,48 @@ fn tcp_disconnect_button() -> UIElement<'static> {
     button("Disconnect TCP")
         .on_press(Message::DisconnectTcp)
         .into()
+}
+
+/// Build the mirror address input, wired to `Message::MirrorAddrFieldUpdate`.
+fn mirror_addr_input(state: &State) -> UIElement {
+    text_input(MIRROR_ADDR_HINT, &state.mirror_addr_field)
+        .on_input(Message::MirrorAddrFieldUpdate)
+        .into()
+}
+
+fn mirror_status_element(state: &State) -> UIElement {
+    let status = if state.mirror_connected {
+        "Python mirror: connected"
+    } else {
+        "Python mirror: not connected"
+    };
+    text(status).into()
+}
+
+fn mirror_connect_button() -> UIElement<'static> {
+    button("Connect mirror").on_press(Message::ConnectMirror).into()
+}
+
+fn mirror_disconnect_button() -> UIElement<'static> {
+    button("Disconnect mirror")
+        .on_press(Message::DisconnectMirror)
+        .into()
+}
+
+/// Mirror controls: a second destination that receives a copy of every packet,
+/// so the Python side can read the stream while iMotions keeps recording.
+fn mirror_row(state: &State) -> UIElement {
+    column![
+        mirror_status_element(state),
+        row![
+            mirror_connect_button(),
+            mirror_addr_input(state),
+            mirror_disconnect_button(),
+        ]
+        .spacing(5),
+    ]
+    .spacing(5)
+    .into()
 }
 
 /// XML download card or opener button depending on `state.card_open`

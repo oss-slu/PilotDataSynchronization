@@ -119,6 +119,24 @@ Two more behaviors that catch people out:
 - The eight dataref toggles do not affect what is sent over TCP. All eight values are always transmitted. The toggles control only which `<Sample>` entries appear in the generated `iMotions.xml`.
 - Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again.
 
+### Sending to iMotions and Python at the same time
+
+`Connect TCP` has one destination. To feed iMotions and the Python side from the same flight, use the mirror:
+
+1. Connect TCP to iMotions as above.
+2. Start the logger, which listens on port 5001 by default: `uv run python -m pilot_inference.capture.data_logger` from `inference/`.
+3. Type its address, for example `127.0.0.1:5001`, into the second box and press `Connect mirror`.
+
+Both then receive the same packets, byte for byte. The mirror's socket is written from its own thread, so the iMotions stream never waits on it: if the Python process is missing, slow or killed, copies are dropped or the mirror is closed, a line appears in the event log, and iMotions keeps recording at full rate. Reconnect it with `Connect mirror` once Python is listening again.
+
+What the mirror does not promise is every packet. A reader that falls behind loses copies, which suits statistics over a stream and does not suit anything needing a complete record. Whatever reads this socket should keep reading it, on its own thread if it also does slow work.
+
+Reconnecting opens a new connection, and the logger starts a new `flight_id` for each one unless you passed `--flight-id`. Pass it for a real session, or one flight will be split across two ids in the CSV.
+
+With no iMotions to record to, skip the mirror and point `Connect TCP` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
+
+`Send Packet` goes to both destinations, which makes it a check of both links. It also means the logger writes a row of zeros, so avoid it mid-recording.
+
 ## 3. iMotions
 
 With the relay running, generate the event-source definition that iMotions needs:

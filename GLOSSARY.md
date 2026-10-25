@@ -34,6 +34,10 @@ _Avoid_: IPC layer, transport
 A stand-in for iMotions used when no real iMotions instance is available.
 _Avoid_: Fake iMotions
 
+**Mirror**:
+A second destination the **Relay** copies every packet to, so the Python side can read a flight while iMotions records it. The copy is best effort: packets are dropped if the mirror falls behind, and the iMotions stream is never held up for it (`docs/adr/0003`).
+_Avoid_: Python stream, fan-out, secondary connection, sink
+
 ### Performance measurement
 
 **Airspeed**:
