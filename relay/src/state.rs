@@ -34,6 +34,13 @@ use std::sync::{OnceLock, Mutex};
 /// a future `log_event` call lands on a hot path, as happened before #203.
 pub(crate) const EVENT_LOG_CAPACITY: usize = 200;
 
+/// What to type into the relay's address box. Deliberately not a working
+/// address: iMotions runs on its own machine in the lab, so the IP has to come
+/// from there. 5050 is the port it was listening on, read from Global Settings,
+/// API tab, Event Receiving, and that is a setting rather than a fixed default.
+/// The placeholder text and the validation message both come from here.
+pub(crate) const IMOTIONS_ADDR_HINT: &str = "<iMotions IP>:5050";
+
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
 pub(crate) struct State {
@@ -346,7 +353,9 @@ impl State {
         let _parsed = address
             .trim()
             .parse::<SocketAddr>()
-            .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:5050"))?;
+            .map_err(|_| {
+                anyhow!("Invalid address. Enter a literal IP and port, for example {IMOTIONS_ADDR_HINT}")
+            })?;
         Ok(())
     }
 

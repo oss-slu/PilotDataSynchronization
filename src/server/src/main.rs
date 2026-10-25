@@ -51,13 +51,16 @@ fn main() -> std::io::Result<()> {
         Ok(port) => port,
         Err(e) => {
             eprintln!("{e}");
-            eprintln!("Usage: cargo run -- [port]  (default {DEFAULT_PORT})");
+            eprintln!(
+                "Usage: cargo run -- [port]  (default {DEFAULT_PORT}, a local testing port, not iMotions')"
+            );
             process::exit(2);
         }
     };
 
     let listener = TcpListener::bind(("127.0.0.1", port))?;
-    println!("Server listening on {}", listener.local_addr()?);
+    println!("Mock server listening on {}", listener.local_addr()?);
+    println!("This stands in for iMotions. The port is local to this mock, not iMotions'.");
 
     // Listen for incoming connections
     for stream in listener.incoming() {

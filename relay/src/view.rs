@@ -7,16 +7,10 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input, 
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
+use crate::state::IMOTIONS_ADDR_HINT;
 use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
-
-/// Where iMotions listens, read off the lab machine: Global Settings, API tab,
-/// Event Receiving, with TCP enabled. It is a setting rather than a fixed
-/// default, so other installs can differ and this stays a hint, not a value the
-/// relay assumes. 9999 used to sit here and was only ever the mock server's
-/// port.
-const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:5050";
 
 /// How many of the most recent `event_log` entries the GUI renders.
 const EVENT_LOG_VISIBLE: usize = 5;
@@ -179,7 +173,7 @@ fn ipc_disconnect_button() -> UIElement<'static> {
 
 /// Build the TCP address input widget wired to `Message::TcpAddrFieldUpdate`.
 fn tcp_addr_input(state: &State) -> UIElement {
-    text_input(DEFAULT_TCP_PLACEHOLDER, &state.tcp_addr_field)
+    text_input(IMOTIONS_ADDR_HINT, &state.tcp_addr_field)
         .on_input(|addr| Message::TcpAddrFieldUpdate(addr))
         .into()
 }

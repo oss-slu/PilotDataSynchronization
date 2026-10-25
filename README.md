@@ -102,10 +102,11 @@ Then, in order:
 
 1. Start iMotions, or the mock server, first, so that something is listening.
 2. Launch the relay. The IPC listener that the plugin connects to starts automatically. You do not need to press `Connect IPC`. That button exists only to reconnect after you have pressed `Disconnect IPC`.
-3. Type the iMotions address into the text box, for example `127.0.0.1:5050`.
-   - There is no default value. The greyed-out `127.0.0.1:5050` is placeholder text, not a setting.
+3. Type the iMotions address into the text box.
+   - There is no default value. The greyed-out `<iMotions IP>:5050` is placeholder text, not a setting, and not an address that works.
+   - The IP is the machine running iMotions. In the lab that is a different computer from the one running the relay, so `127.0.0.1` only applies if both are on the same machine.
    - 5050 is the port iMotions was listening on in the lab. It is a setting, not a fixed default, so check it on the machine you are using (see below).
-   - A literal IP address and port are required. `localhost:5050` is rejected.
+   - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
 4. Press `Connect TCP`.
 5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
