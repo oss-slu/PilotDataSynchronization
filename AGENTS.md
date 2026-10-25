@@ -9,7 +9,7 @@ Data flow: `xplane_plugin` (C++) → `baton` (Rust library, compiled to C++) →
 - `xplane_plugin/`: X-Plane plugin, built with Meson. `baton` lives in `xplane_plugin/subprojects/baton`.
 - `relay/`: Rust relay with a GUI.
 - `src/server/`: mock iMotions TCP server for testing without iMotions.
-- `inference/`: logging, labeling, training. See `inference/README.md`.
+- `inference/`: logging, pilot performance groups, and an out-of-scope event classification pipeline. One package, `inference/pilot_inference/`. See `inference/README.md`.
 
 ## Build and test
 
@@ -18,14 +18,14 @@ Run from the repo root, in order, per component:
 - Plugin (also builds baton): `cd xplane_plugin && meson setup build && meson compile -C build && meson test -C build`
 - Relay: `cd relay && cargo test`
 - Baton: `cd xplane_plugin/subprojects/baton && cargo test`
-- Inference: `cd inference && uv sync`, then `uv run python <script>`. `uv run pytest` runs the tests in `inference/tests/`; most scripts are untested.
+- Inference: `cd inference && uv sync`, then `uv run python -m pilot_inference.<group>.<module>`. `uv run pytest` runs the tests in `inference/tests/`; the event classification scripts are mostly untested.
 
 CI is in `.github/workflows/` (`meson-build.yml`, `super-linter.yml`). Run `meson setup` with the cross-file for your OS if not on native Windows (see README).
 
 ## Gotchas
 
 - Hardware-bound: anything needing live X-Plane or iMotions cannot be verified by an agent. Say so rather than claiming it works.
-- Data in `inference/Data/` was collected before #196, so `altitude` and `velocity` are mis-scaled (divide by 3.28084 and 1.94384). See `docs/telemetry_schema.md`.
+- Data in `inference/data/` was collected before #196, so `altitude` and `velocity` are mis-scaled (divide by 3.28084 and 1.94384). See `docs/telemetry_schema.md`.
 - `yaw` is true heading, effectively a duplicate of `heading`.
 - The 20 Hz send on Windows and Linux lives in the plugin window's draw callback.
 - Heading deviation needs wrapped angular difference, and floored modulo is Python-only; do not port the formula to C++ or Rust as written.

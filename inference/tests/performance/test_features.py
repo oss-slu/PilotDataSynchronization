@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from features import (
+from pilot_inference.performance.features import (
     METRICS,
     STATISTICS,
     compute_deviations,

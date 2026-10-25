@@ -4,7 +4,7 @@
 - `baton`: C++ library for communicating with `relay`. Provides an object that handles inter-process communication (IPC) and abstracts over it for ease-of-use. Currently located in `xplane_plugin/subprojects`
 
 Additional Components:
-- `inference`: Python-based module for logging, labeling, and training a machine learning model using the collected flight data
+- `inference`: Python package for logging telemetry and forming pilot performance groups from the collected flight data
 
 # New Contributor? Start Here
 
@@ -12,7 +12,7 @@ Pilot Data Synchronization spans three languages (C++, Rust, Python) and two ext
 
 | You want to work on | You need | Start with |
 |---|---|---|
-| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/Data/` |
+| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/data/` |
 | Relay GUI (`relay/`) | Rust | [Setup → Relay](#2-relay), then test against the [mock iMotions server](#no-imotions-use-the-mock-server) |
 | X-Plane plugin / baton | Meson, Ninja, mingw-w64, Rust | [Setup → X-Plane plugin](#1-x-plane-plugin) |
 | Docs / data schema | Nothing to install | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) and [`GLOSSARY.md`](GLOSSARY.md) |
@@ -191,7 +191,7 @@ The data flow is as follows:
 - `xplane_plugin` extracts the data
 - `xplane_plugin` uses the `baton` library to send the data to the `relay` program
 - `relay` sends the data to iMotions
-- *(optional)* `inference` can log the same TCP data stream for dataset creation and model training
+- *(optional)* `inference` can log the same TCP data stream and form pilot performance groups from it
 
 `relay` and `baton` are developed by this team and are not external programs/libraries.
 
@@ -237,7 +237,7 @@ Component-level detail lives next to the code it describes, so it stays in sync:
 |---|---|
 | Project vocabulary | [`GLOSSARY.md`](GLOSSARY.md) |
 | Telemetry fields, units and deviation metrics (the data contract) | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) |
-| ML pipeline: logging, labeling, training | [`inference/README.md`](inference/README.md) |
+| ML: logging, performance groups | [`inference/README.md`](inference/README.md) |
 | X-Plane DataRefs used by the plugin | [`xplane_plugin/docs/key_datarefs.md`](xplane_plugin/docs/key_datarefs.md) |
 | Issue labels and triage | [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md) |
 | Product roadmap framework | [`Documents/PRODUCT_ROADMAP_FRAMEWORK.md`](Documents/PRODUCT_ROADMAP_FRAMEWORK.md) |

@@ -9,10 +9,11 @@ pilot and metric so a pilot can be better at altitude than at heading.
 
 Writes telemetry in post-#196 units (ft, kts) that compute_features.py
 accepts, and the true tiers to a separate file that clustering may compare
-against. generate_balanced_data.py is separate and serves the labeler.
+against. event_classification/generate_balanced_data.py is separate and serves
+the labeler.
 
-Usage (from the project root):
-    python inference/generate_synthetic_pilots.py
+Usage (from inference/, after uv sync):
+    uv run python -m pilot_inference.performance.generate_synthetic_pilots
 """
 
 import argparse
@@ -21,9 +22,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from features import ACTUAL_COLUMN, METRICS
+from pilot_inference.paths import DATA_DIR
+from pilot_inference.performance.features import ACTUAL_COLUMN, METRICS
 
-DATA_DIR = Path(__file__).parent / "Data"
 HZ = 20
 TIERS = (1, 2, 3)
 TIER_SCALE = {1: 1.0, 2: 2.0, 3: 4.0}

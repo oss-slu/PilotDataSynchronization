@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from angles import angular_diff
+from pilot_inference.angles import angular_diff
 
 
 @pytest.mark.parametrize(
