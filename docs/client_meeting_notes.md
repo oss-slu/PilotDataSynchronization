@@ -59,6 +59,7 @@ Vocabulary follows [GLOSSARY.md](../GLOSSARY.md).
 ## Network port
 
 - The X-Plane plugin sent to a placeholder port in the code. A new port was set, but it is **still unverified** that it matches the port iMotions listens on. The client, who handles the iMotions machine, will check. See [README.md](../README.md) for the open question.
+  - Answered since this meeting: iMotions listens on 5050, read off the machine under Global Settings, API, Event Receiving. See the comment on #195.
 - Whether developers get administrator rights on the simulator machine was not settled.
 
 ## Open items

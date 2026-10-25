@@ -102,9 +102,11 @@ Then, in order:
 
 1. Start iMotions, or the mock server, first, so that something is listening.
 2. Launch the relay. The IPC listener that the plugin connects to starts automatically. You do not need to press `Connect IPC`. That button exists only to reconnect after you have pressed `Disconnect IPC`.
-3. Type the iMotions address into the text box, for example `127.0.0.1:9999`.
-   - There is no default value. The greyed-out `127.0.0.1:9999` is placeholder text, not a setting.
-   - A literal IP address and port are required. `localhost:9999` is rejected.
+3. Type the iMotions address into the text box.
+   - There is no default value. The greyed-out `<iMotions IP>:5050` is placeholder text, not a setting, and not an address that works.
+   - The IP is the machine running iMotions. In the lab that is a different computer from the one running the relay, so `127.0.0.1` only applies if both are on the same machine.
+   - 5050 is the port iMotions was listening on in the lab. It is a setting, not a fixed default, so check it on the machine you are using (see below).
+   - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
 4. Press `Connect TCP`.
 5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
@@ -139,7 +141,15 @@ E;1;PilotDataSync;;;;;AltitudeSync;1250.5;1250.5
 
 Packets are semicolon-delimited and CRLF-terminated. The value appears twice because each sample carries both a `FlightModel*` and a `Pilot*` field.
 
-> Needs verification. How `iMotions.xml` is imported into iMotions, and which port iMotions actually listens on, are not documented anywhere in this repository. `127.0.0.1:9999` appears only as placeholder text in the relay's UI. Nothing confirms it is iMotions' real port. If you have iMotions access, please confirm both and update this section.
+### Which port iMotions listens on
+
+Read it off the iMotions machine: `Global Settings`, `API` tab, `Event Receiving`. The relay needs `Enable event reception` ticked and `Use TCP` ticked, and the port in that box is the one to type into the relay. On the lab machine it is 5050.
+
+The same panel lists the registered event sources. Ours shows as `Id: PilotDataSync`, version 1, `Positional Flight Data`, which is what the generated `iMotions.xml` defines. If it is missing, iMotions will drop our packets.
+
+Three other ports appear on that tab and none of them are ours: `Remote Control`, and the `Destination Server` ports under `Event Forwarding` and `Replay Event Forwarding`. Those are for iMotions sending data out, not receiving it.
+
+> Still needs verification. How the generated `iMotions.xml` is imported into iMotions is not documented anywhere in this repository, and nobody on the team has done the import themselves. It was already registered on the lab machine. See #195.
 
 ### No iMotions? Use the mock server
 
@@ -154,6 +164,8 @@ cargo run -- 7878      # or pick another port
 Enter `127.0.0.1:9999` in the relay and press `Connect TCP`.
 
 The mock server prints every packet it receives, numbered, until the relay disconnects. It does not reply to the relay.
+
+9999 is this mock's own port, picked for local testing. It is not iMotions' port and never was.
 
 ## Verifying it works
 

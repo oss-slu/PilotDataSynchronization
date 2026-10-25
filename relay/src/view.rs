@@ -7,11 +7,10 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input, 
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
+use crate::state::IMOTIONS_ADDR_HINT;
 use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
-
-const DEFAULT_TCP_PLACEHOLDER: &str = "127.0.0.1:9999";
 
 /// How many of the most recent `event_log` entries the GUI renders.
 const EVENT_LOG_VISIBLE: usize = 5;
@@ -174,7 +173,7 @@ fn ipc_disconnect_button() -> UIElement<'static> {
 
 /// Build the TCP address input widget wired to `Message::TcpAddrFieldUpdate`.
 fn tcp_addr_input(state: &State) -> UIElement {
-    text_input(DEFAULT_TCP_PLACEHOLDER, &state.tcp_addr_field)
+    text_input(IMOTIONS_ADDR_HINT, &state.tcp_addr_field)
         .on_input(|addr| Message::TcpAddrFieldUpdate(addr))
         .into()
 }
