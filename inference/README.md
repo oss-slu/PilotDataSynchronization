@@ -172,7 +172,12 @@ where we are the instructor:
 3. Press Enter at the moment each instruction is spoken. The targets it changes are not scored
    for 30 seconds (`--settle`), so the turn or level-off does not count; targets it leaves alone,
    or restates at the same value, are scored throughout, so altitude lost in a turn counts.
-   Type `q` and Enter to stop.
+   Type `q` and Enter to stop. The sidecar ends the relay connection, writes every sample it
+   already received, then closes its files.
+
+The sidecar is used on Windows, the lab machine's OS. It also stops cleanly on Linux and macOS,
+where closing a listening socket alone does not wake a waiting `accept()`, so stopping before a
+relay connects would otherwise hang. That case was checked under WSL; the tests run on Windows.
 
 No group is shown until every factor has 60 seconds scored (`--min-scored`). Once one is, it
 stays shown while a later instruction's factors settle, since the others are still scored. The
