@@ -39,7 +39,7 @@ from pilot_inference.capture.data_logger import (
 from pilot_inference.paths import DATA_DIR
 from pilot_inference.performance.clustering import (
     FEATURE_COLUMNS,
-    ReferenceGroups,
+    CohortGroups,
     fit_reference,
     truth_agreement,
 )
@@ -185,7 +185,7 @@ def record_samples(
         log.write(row)
 
 
-def reference_cohort(n_pilots: int, k: int, seed: int) -> tuple[ReferenceGroups, float]:
+def reference_cohort(n_pilots: int, k: int, seed: int) -> tuple[CohortGroups, float]:
     """Synthetic pilots with their groups, and how well the groups match their hidden tiers."""
     telemetry, truth = generate_pilots(n_pilots=n_pilots, seed=seed)
     _, pilots = compute_features(telemetry)
@@ -193,8 +193,8 @@ def reference_cohort(n_pilots: int, k: int, seed: int) -> tuple[ReferenceGroups,
     return reference, truth_agreement(reference.assignments, truth)
 
 
-def describe_groups(reference: ReferenceGroups) -> str:
-    """The reference groups' raw-unit centres, one line per group."""
+def describe_groups(reference: CohortGroups) -> str:
+    """The cohort's groups as raw-unit centres, one line per group."""
     lines = []
     for centre in reference.centres.itertuples(index=False):
         parts = [
@@ -207,7 +207,7 @@ def describe_groups(reference: ReferenceGroups) -> str:
 
 
 def status_line(
-    flight: LiveFlight, reference: ReferenceGroups, min_scored: float, at: datetime
+    flight: LiveFlight, reference: CohortGroups, min_scored: float, at: datetime
 ) -> str:
     """One console line: where the brief is, how much is scored, and the group if there is one."""
     if flight.current is None:
@@ -239,7 +239,7 @@ def status_line(
 
 def print_status(
     flight: LiveFlight,
-    reference: ReferenceGroups,
+    reference: CohortGroups,
     lock: threading.Lock,
     min_scored: float,
     interval: float,
@@ -296,7 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-scored", type=float, default=60.0, help="Scored seconds before naming a group"
     )
     parser.add_argument("--interval", type=float, default=5.0, help="Seconds between status lines")
-    parser.add_argument("--k", type=int, default=3, help="Number of reference groups")
+    parser.add_argument("--k", type=int, default=3, help="Number of performance groups")
     parser.add_argument("--seed", type=int, default=0, help="Seed for the synthetic reference cohort")
     parser.add_argument(
         "--cohort-pilots", type=int, default=15, help="Synthetic pilots in the reference cohort"
@@ -318,7 +318,7 @@ def main(argv=None) -> None:
 
     print(f"Fitting {args.k} groups on {args.cohort_pilots} synthetic pilots (seed {args.seed})...")
     reference, agreement = reference_cohort(args.cohort_pilots, args.k, args.seed)
-    print("Reference groups (synthetic, so a group is a demonstration, not a measurement):")
+    print("Performance groups of the synthetic reference cohort (a demonstration, not a measurement):")
     print(describe_groups(reference))
     print(f"  agreement with the synthetic pilots' hidden tiers (adjusted Rand): {agreement:.2f}")
 

@@ -149,8 +149,10 @@ the capture logger would (port 5001, the relay's mirror suggestion) and prints, 
 the pilot's deviation features so far and the nearest performance group. Use it instead of the
 logger for that flight: it writes the same columns plus the `target_*` columns to
 `data/live_flight_data.csv`, and each instruction with its time to
-`data/live_flight_data_instructions.csv`. Running `compute_features` on the saved CSV gives the
-same features the console showed.
+`data/live_flight_data_instructions.csv`. Both files are appended to, like the logger's session
+file, so one file can hold several flights and pilots. Running `compute_features` on it gives each
+flight the features the console showed for it in `flight_features.csv`; the per-pilot features
+average a pilot's flights.
 
 The client's targets are not available yet, so live groups work on flights we fly ourselves,
 where we are the instructor:
@@ -172,9 +174,11 @@ where we are the instructor:
    or restates at the same value, are scored throughout, so altitude lost in a turn counts.
    Type `q` and Enter to stop.
 
-No group is shown until every factor has 60 seconds scored (`--min-scored`). The groups are fitted once at
-start-up on 15 synthetic pilots with k = 3, and the live pilot is placed in the nearest one
-without refitting, so the group numbers do not change during the flight. The cohort is
+No group is shown until every factor has 60 seconds scored (`--min-scored`). Once one is, it
+stays shown while a later instruction's factors settle, since the others are still scored. The
+groups are fitted once at start-up on a reference cohort of 15 synthetic pilots with k = 3, and
+the live pilot is placed in the nearest one without refitting, so the group numbers do not change
+during the flight. The cohort is
 synthetic, so the group demonstrates the pipeline; it does not measure the pilot against real
 pilots.
 

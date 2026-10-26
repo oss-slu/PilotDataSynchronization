@@ -199,3 +199,45 @@ def test_a_logged_instruction_carries_its_unchanged_targets(tmp_path):
     row = instruction_row(flight, turn, at(20))
     assert row["target_heading"] == 360.0
     assert row["target_altitude"] == 3000.0
+
+
+def log_flight(log: CsvLog, flight: LiveFlight, telemetry: pd.DataFrame) -> None:
+    flight.instruct(at(0))
+    for i, values in enumerate(telemetry.to_dict("records")):
+        log.write(flight.add_sample(values, at(i * 0.05)))
+
+
+def test_an_appended_csv_still_gives_each_flight_its_live_features(tmp_path):
+    telemetry = wobbly_flight(120)
+    telemetry[["roll", "pitch", "yaw", "g_force"]] = 0.0
+    log = CsvLog(tmp_path / "live.csv", LIVE_CSV_FIELDS)
+    earlier = LiveFlight([Instruction("hold", dict(HOLD, altitude=2000.0))], "p1", "f1", timedelta(0))
+    log_flight(log, earlier, telemetry)
+    later = LiveFlight([Instruction("hold", dict(HOLD))], "p1", "f2", timedelta(0))
+    log_flight(log, later, telemetry)
+    log.close()
+
+    offline, _ = compute_features(pd.read_csv(tmp_path / "live.csv"))
+    columns = [f"{m}_{s}" for m in METRICS for s in ("mad", "std", "bias", "abs_bias")]
+    # The pilot's offline features average both flights; the flight's own row is the live one.
+    pd.testing.assert_frame_equal(
+        offline.loc[offline["flight_id"] == "f2", columns].reset_index(drop=True),
+        later.pilot_features()[columns],
+        check_exact=False,
+    )
+
+
+def test_a_group_stays_named_while_one_factor_settles(reference):
+    brief = [Instruction("hold 270", dict(HOLD)), Instruction("turn 360", {"heading": 360.0})]
+    flight = LiveFlight(brief, "p1", "f1", settle=timedelta(seconds=30))
+    flight.instruct(at(0))
+    # 100 s of flying, 70 s of it scored once the first settle window ends.
+    telemetry = wobbly_flight(2000)
+    telemetry[["roll", "pitch", "yaw", "g_force"]] = 0.0
+    for i, values in enumerate(telemetry.to_dict("records")):
+        flight.add_sample(values, at(i * 0.05))
+    flight.instruct(at(100))
+    line = status_line(flight, reference, 60, at(105))
+    assert "(settling heading)" in line
+    assert "provisional" not in line
+    assert "group " in line

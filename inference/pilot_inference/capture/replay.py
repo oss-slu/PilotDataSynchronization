@@ -8,6 +8,10 @@ synthetic telemetry has no roll, pitch, yaw or g_force. Target columns are not
 sent, because the relay carries none; --brief-out writes them as a brief to
 start live_groups with, and exits without sending.
 
+Rows are sent as they are. The committed CSVs in data/ predate #196, so their
+altitude and velocity are mis-scaled (docs/telemetry_schema.md section 1);
+replaying one sends those wrong values as if the plugin had.
+
 Usage (from inference/, after uv sync):
     uv run python -m pilot_inference.capture.replay --input data/synthetic_pilot_telemetry.csv --flight P01-F1
 """

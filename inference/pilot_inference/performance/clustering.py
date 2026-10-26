@@ -154,10 +154,11 @@ def _centres(features: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
 
 
 @dataclass
-class ReferenceGroups:
+class CohortGroups:
     """
-    Performance groups fitted once on a reference cohort, kept so that pilots
-    outside it can be placed in a group without refitting (docs/adr/0004).
+    The performance groups of a reference cohort, fitted once and kept so that
+    pilots outside the cohort can be placed in a group without refitting
+    (docs/adr/0004).
 
     assignments and centres are what fit() returns for the same cohort, k and
     seed.
@@ -170,7 +171,7 @@ class ReferenceGroups:
 
     def assign(self, pilots: pd.DataFrame) -> pd.DataFrame:
         """
-        The nearest reference group for each pilot, as pilot_id and group.
+        The nearest of the cohort's groups for each pilot, as pilot_id and group.
 
         Pilots are scaled with the reference cohort's scaling, not their own,
         so a group means the same thing for them as for the cohort. They do
@@ -181,7 +182,7 @@ class ReferenceGroups:
         return pd.DataFrame({"pilot_id": features.index, "group": self.kmeans.predict(scaled)})
 
 
-def fit_reference(pilots: pd.DataFrame, k: int, seed: int = 0) -> ReferenceGroups:
+def fit_reference(pilots: pd.DataFrame, k: int, seed: int = 0) -> CohortGroups:
     """
     fit(), keeping the fitted scaling and KMeans so other pilots can be assigned.
 
@@ -198,7 +199,7 @@ def fit_reference(pilots: pd.DataFrame, k: int, seed: int = 0) -> ReferenceGroup
     kmeans = _kmeans(k, seed).fit(scaler.transform(logged))
     labels = kmeans.labels_
     assignments = pd.DataFrame({"pilot_id": features.index, "group": labels})
-    return ReferenceGroups(scaler, kmeans, assignments, _centres(features, labels))
+    return CohortGroups(scaler, kmeans, assignments, _centres(features, labels))
 
 
 def truth_agreement(assignments: pd.DataFrame, truth: pd.DataFrame) -> float:

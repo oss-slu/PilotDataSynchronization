@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from pilot_inference.angles import angular_diff
 from pilot_inference.capture.data_logger import CSV_FIELDS, TELEMETRY_FIELDS
 from pilot_inference.performance.features import METRICS, TARGET_COLUMN, compute_features
 
@@ -83,6 +84,13 @@ def load_brief(path: Path) -> list[Instruction]:
     return instructions
 
 
+def _changed(metric: str, before: float, after: float) -> bool:
+    """Whether a target moved. Headings compare wrapped, so 0 after 360 is the same north."""
+    if metric == "heading":
+        return angular_diff(after, before) != 0
+    return after != before
+
+
 @dataclass(frozen=True)
 class _Given:
     """
@@ -139,10 +147,6 @@ class LiveFlight:
         return self._history[-1].instruction if self._history else None
 
     @property
-    def given_at(self) -> datetime | None:
-        return self._history[-1].at if self._history else None
-
-    @property
     def current_targets(self) -> dict[str, float]:
         """Every target the latest instruction left in force, settling or not."""
         return dict(self._history[-1].targets) if self._history else {}
@@ -179,7 +183,7 @@ class LiveFlight:
         # at the same value keeps being scored.
         scored_from = {
             metric: at + self.settle
-            if before is None or targets[metric] != before.targets[metric]
+            if before is None or _changed(metric, before.targets[metric], targets[metric])
             else before.scored_from[metric]
             for metric in METRICS
         }

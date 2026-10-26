@@ -207,3 +207,11 @@ def test_settling_says_how_long_each_factor_has_left():
     assert left["heading"] == pytest.approx(10.0)
     assert left["altitude"] == pytest.approx(6.0)
     assert flight.settling(at(12)) == {"heading": pytest.approx(2.0)}
+
+
+def test_north_restated_as_0_after_360_does_not_settle():
+    brief = [Instruction("hold 360", dict(HOLD, heading=360.0)), Instruction("heading 0", {"heading": 0.0})]
+    flight = LiveFlight(brief, "p1", "f1", settle=timedelta(seconds=10))
+    flight.instruct(at(0))
+    flight.instruct(at(20))
+    assert flight.settling(at(21)) == {}
