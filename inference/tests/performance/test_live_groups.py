@@ -180,3 +180,22 @@ def test_a_garbled_connection_does_not_stop_the_next_one():
     received = [samples.get(timeout=5) for _ in range(3)]
     server.close()
     assert len(received) == 3
+
+
+def test_status_names_the_factors_still_settling(reference):
+    brief = [Instruction("hold 270", dict(HOLD)), Instruction("turn 360", {"heading": 360.0})]
+    flight = LiveFlight(brief, "p1", "f1", settle=timedelta(seconds=10))
+    flight.instruct(at(0))
+    flight.instruct(at(20))
+    line = status_line(flight, reference, 60, at(25))
+    assert "instruction 2/2 (settling heading)" in line
+
+
+def test_a_logged_instruction_carries_its_unchanged_targets(tmp_path):
+    brief = [Instruction("hold 270", dict(HOLD)), Instruction("turn 360", {"heading": 360.0})]
+    flight = LiveFlight(brief, "p1", "f1")
+    flight.instruct(at(0))
+    turn = flight.instruct(at(20))
+    row = instruction_row(flight, turn, at(20))
+    assert row["target_heading"] == 360.0
+    assert row["target_altitude"] == 3000.0

@@ -212,16 +212,19 @@ def status_line(
     """One console line: where the brief is, how much is scored, and the group if there is one."""
     if flight.current is None:
         return "Waiting for the first instruction. Press Enter as you give it."
-    stage = f"instruction {flight.given}/{len(flight.brief)}"
-    if at < flight.given_at + flight.settle:
-        stage += " (settling)"
+    progress = f"instruction {flight.given}/{len(flight.brief)}"
+    settling = flight.settling(at)
+    if len(settling) == len(METRICS):
+        progress += " (settling)"
+    elif settling:
+        progress += f" (settling {', '.join(settling)})"
     scored = f"scored {flight.scored_seconds:.0f}s"
     with warnings.catch_warnings():
         # A metric with nothing scored yet warns; the line already says so.
         warnings.simplefilter("ignore", UserWarning)
         pilots = flight.pilot_features()
     if pilots is None:
-        return f"{stage}, nothing scored yet"
+        return f"{progress}, nothing scored yet"
     features = ", ".join(
         f"{metric} std {pilots[f'{metric}_std'].iloc[0]:.1f} "
         f"|bias| {pilots[f'{metric}_abs_bias'].iloc[0]:.1f}"
@@ -231,7 +234,7 @@ def status_line(
         group = f"provisional, {min_scored:.0f}s scored needed for a group"
     else:
         group = f"group {reference.assign(pilots)['group'].iloc[0]}"
-    return f"{stage}, {scored}, {group} | {features}"
+    return f"{progress}, {scored}, {group} | {features}"
 
 
 def print_status(
@@ -255,7 +258,8 @@ def instruction_row(flight: LiveFlight, instruction: Instruction, at: datetime) 
         "flight_id": flight.flight_id,
         "number": flight.given,
         "instruction": instruction.text,
-        **{TARGET_COLUMN[metric]: value for metric, value in instruction.targets.items()},
+        # The targets in force after it, so a turn's row still shows the altitude it keeps.
+        **{TARGET_COLUMN[metric]: value for metric, value in flight.current_targets.items()},
     }
 
 
@@ -357,12 +361,19 @@ def main(argv=None) -> None:
                 instruction = flight.instruct(at)
                 if instruction is not None:
                     row = instruction_row(flight, instruction, at)
+                    settling = flight.settling(at)
             if instruction is None:
                 print("No instructions left in the brief. The last one stays in force; q to stop.")
                 continue
             instructions_log.write(row)
             print(f"Instruction {flight.given}/{len(brief)} given: {instruction.text}")
-            print(f"  scoring starts in {args.settle:.0f}s")
+            if not settling:
+                print("  no target changed, so nothing settles")
+            # Group by whole seconds left, since an earlier window may still be running.
+            left = {metric: math.ceil(seconds) for metric, seconds in settling.items()}
+            for seconds in sorted(set(left.values()), reverse=True):
+                names = ", ".join(m for m, value in left.items() if value == seconds)
+                print(f"  {names} scored again in {seconds}s")
             if flight.given < len(brief):
                 print(f"  next: {brief[flight.given].text}")
     except (EOFError, KeyboardInterrupt):

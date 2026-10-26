@@ -157,18 +157,22 @@ where we are the instructor:
 
 1. Write a brief: a CSV with an `instruction` column and a target per factor (`heading`,
    `altitude`, `airspeed`, `vertical_speed`), one row per instruction in order.
-   `briefs/example_level_holds.csv` is four level holds. Every instruction sets all four
-   targets, and headings are magnetic, as the X-Plane heading indicator and the plugin show them.
+   `briefs/example_level_holds.csv` is four level holds. The first instruction sets all four
+   targets; after that a blank cell keeps the target from the instruction before, as a real
+   "turn right heading 360" keeps the altitude. Headings are magnetic, as the X-Plane heading
+   indicator and the plugin show them.
 2. Start `live_groups` with the brief and a `--pilot-id`, then press `Connect mirror` in the relay
    (or `Connect TCP` with no iMotions). It replaces the capture logger for the flight, so stop
    `data_logger` first; if the port is still taken, `live_groups` says so and exits.
    On Windows and Linux keep the plugin's "Positional Flight Data" window open the whole flight:
    the stream stops when it closes (see the root README), and the status line's scored time then
    stops growing.
-3. Press Enter at the moment each instruction is spoken. Targets stay blank for 30 seconds after
-   each one (`--settle`), so the turn or level-off is not scored. Type `q` and Enter to stop.
+3. Press Enter at the moment each instruction is spoken. The targets it changes are not scored
+   for 30 seconds (`--settle`), so the turn or level-off does not count; targets it leaves alone,
+   or restates at the same value, are scored throughout, so altitude lost in a turn counts.
+   Type `q` and Enter to stop.
 
-No group is shown until 60 seconds are scored (`--min-scored`). The groups are fitted once at
+No group is shown until every factor has 60 seconds scored (`--min-scored`). The groups are fitted once at
 start-up on 15 synthetic pilots with k = 3, and the live pilot is placed in the nearest one
 without refitting, so the group numbers do not change during the flight. The cohort is
 synthetic, so the group demonstrates the pipeline; it does not measure the pilot against real

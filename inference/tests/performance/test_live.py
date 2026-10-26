@@ -63,12 +63,20 @@ def test_brief_missing_a_factor_is_refused(tmp_path):
         load_brief(path)
 
 
-def test_brief_with_a_blank_target_names_the_instruction(tmp_path):
+def test_a_blank_target_is_left_to_carry_over(tmp_path):
     path = write_brief(
         tmp_path,
-        "instruction,heading,altitude,airspeed,vertical_speed\nhold,270,3000,100,0\nclimb,270,,100,500\n",
+        "instruction,heading,altitude,airspeed,vertical_speed\nhold,270,3000,100,0\nturn,360,,,\n",
     )
-    with pytest.raises(ValueError, match="instruction 2 has no target for altitude"):
+    assert load_brief(path)[1].targets == {"heading": 360.0}
+
+
+def test_the_first_instruction_must_set_every_target(tmp_path):
+    path = write_brief(
+        tmp_path,
+        "instruction,heading,altitude,airspeed,vertical_speed\nhold,270,,100,0\nturn,360,,,\n",
+    )
+    with pytest.raises(ValueError, match="instruction 1 has no target for altitude"):
         load_brief(path)
 
 
@@ -120,9 +128,13 @@ def test_settling_after_a_new_instruction_is_not_scored_time():
     flight.add_sample(sample(), at(10))
     flight.add_sample(sample(), at(10.5))
     flight.instruct(at(11))
-    flight.add_sample(sample(), at(15))  # settling
-    flight.add_sample(sample(), at(21))  # first scored sample of the new hold
+    flight.add_sample(sample(), at(15))  # heading settling, altitude still scored
+    flight.add_sample(sample(), at(21))  # first scored heading of the new hold
     flight.add_sample(sample(), at(21.5))
+    assert flight.scored_seconds_by_factor["heading"] == pytest.approx(1.0)
+    # Altitude never settled: 0.5 s, two stalls of at most a second each, then 0.5 s.
+    assert flight.scored_seconds_by_factor["altitude"] == pytest.approx(3.0)
+    # A group waits on the least-scored factor.
     assert flight.scored_seconds == pytest.approx(1.0)
 
 
@@ -151,3 +163,47 @@ def test_a_sample_handled_after_an_instruction_keeps_the_one_it_arrived_under():
     row = flight.add_sample(sample(), at(5))
     assert row["target_heading"] == 270.0
     assert flight.scored_seconds == pytest.approx(0.05)
+
+
+def hold_then_turn(settle: float = 10.0) -> LiveFlight:
+    """A level hold on 270, then a turn to 360 that names only the heading."""
+    brief = [Instruction("hold 270", dict(HOLD)), Instruction("turn 360", {"heading": 360.0})]
+    return LiveFlight(brief, "p1", "f1", settle=timedelta(seconds=settle))
+
+
+def test_targets_an_instruction_does_not_name_carry_over():
+    flight = hold_then_turn(settle=0)
+    flight.instruct(at(0))
+    flight.instruct(at(5))
+    assert flight.targets_at(at(6)) == dict(HOLD, heading=360.0)
+
+
+def test_only_the_targets_an_instruction_changes_settle():
+    flight = hold_then_turn(settle=10)
+    flight.instruct(at(0))
+    flight.instruct(at(20))
+    during_turn = flight.targets_at(at(25))
+    assert math.isnan(during_turn["heading"])
+    assert during_turn["altitude"] == 3000.0
+    assert flight.targets_at(at(30))["heading"] == 360.0
+
+
+def test_a_target_restated_at_the_same_value_does_not_settle():
+    flight = two_holds(settle=10)
+    flight.instruct(at(0))
+    # The turn to 360 restates 3000 ft, 100 kts and level flight.
+    flight.instruct(at(20))
+    during_turn = flight.targets_at(at(25))
+    assert math.isnan(during_turn["heading"])
+    assert during_turn["altitude"] == 3000.0
+
+
+def test_settling_says_how_long_each_factor_has_left():
+    flight = hold_then_turn(settle=10)
+    flight.instruct(at(0))
+    # The turn comes before the first settle window ends: only heading restarts.
+    flight.instruct(at(4))
+    left = flight.settling(at(4))
+    assert left["heading"] == pytest.approx(10.0)
+    assert left["altitude"] == pytest.approx(6.0)
+    assert flight.settling(at(12)) == {"heading": pytest.approx(2.0)}
