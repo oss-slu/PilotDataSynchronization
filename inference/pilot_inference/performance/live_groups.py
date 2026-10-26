@@ -119,28 +119,80 @@ def read_relay(conn: socket.socket, samples: queue.Queue) -> None:
                 sample.reset()
 
 
-def serve_relay(server: socket.socket, samples: queue.Queue) -> None:
+class RelayListener:
     """
-    Accept relay connections one after another until the server socket closes.
+    Accepts relay connections one after another on `server`, reading each into
+    `samples` on a thread of its own, until closed.
 
     A reconnect continues the same flight, as a restarted recording does.
     """
-    while True:
+
+    def __init__(self, server: socket.socket, samples: queue.Queue):
+        self._server = server
+        self._samples = samples
+        self._lock = threading.Lock()
+        self._conn: socket.socket | None = None
+        self._closed = False
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+
+    @property
+    def port(self) -> int:
+        return self._server.getsockname()[1]
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def close(self) -> None:
+        """
+        Stop accepting, end the connection in progress and wait for the reader,
+        so nothing is queued once this returns.
+        """
+        with self._lock:
+            self._closed = True
+            conn = self._conn
+        # On Linux and macOS closing a listening socket does not wake a thread
+        # blocked in accept(); shutting it down does. Windows raises here, and
+        # close() alone is enough there.
         try:
-            conn, addr = server.accept()
+            self._server.shutdown(socket.SHUT_RDWR)
         except OSError:
-            return
-        print(f"Relay connected from {addr[0]}:{addr[1]}")
-        try:
-            read_relay(conn, samples)
-        except ConnectionError:
             pass
-        except (OSError, ValueError) as error:
-            # Garbled bytes or a socket error end this connection, not the
-            # listener: the mirror never reconnects by itself (docs/adr/0003),
-            # so the next Connect mirror must still find someone listening.
-            print(f"Relay connection failed: {error}")
-        print("Relay disconnected. Press Connect mirror again to resume.")
+        self._server.close()
+        if conn is not None:
+            # Unblocks the reader's readline, which then ends the connection itself.
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        self._thread.join()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, addr = self._server.accept()
+            except OSError:
+                return
+            with self._lock:
+                if self._closed:
+                    conn.close()
+                    return
+                self._conn = conn
+            print(f"Relay connected from {addr[0]}:{addr[1]}")
+            try:
+                read_relay(conn, self._samples)
+            except ConnectionError:
+                pass
+            except (OSError, ValueError) as error:
+                # Garbled bytes or a socket error end this connection, not the
+                # listener: the mirror never reconnects by itself (docs/adr/0003),
+                # so the next Connect mirror must still find someone listening.
+                if not self._closed:
+                    print(f"Relay connection failed: {error}")
+            with self._lock:
+                self._conn = None
+                if self._closed:
+                    return
+            print("Relay disconnected. Press Connect mirror again to resume.")
 
 
 def _cell(value) -> str:
@@ -246,8 +298,10 @@ def print_status(
     stop: threading.Event,
 ) -> None:
     while not stop.wait(interval):
+        # Copy under the lock, recompute outside it, so the recorder is never held up.
         with lock:
-            line = status_line(flight, reference, min_scored, now())
+            snapshot = flight.snapshot()
+        line = status_line(snapshot, reference, min_scored, now())
         print(f"[{now().astimezone():%H:%M:%S}] {line}")
 
 
@@ -331,8 +385,9 @@ def main(argv=None) -> None:
     recorder = threading.Thread(
         target=record_samples, args=(samples, flight, lock, samples_log), daemon=True
     )
+    listener = RelayListener(server, samples)
+    listener.start()
     threads = [
-        threading.Thread(target=serve_relay, args=(server, samples), daemon=True),
         recorder,
         threading.Thread(
             target=print_status,
@@ -380,8 +435,9 @@ def main(argv=None) -> None:
         pass
     finally:
         stop.set()
-        server.close()
-        # Write out whatever the reader has already queued before closing the files.
+        # Stop the reader first, so nothing is queued after STOP; then write out
+        # everything it queued before closing the files.
+        listener.close()
         samples.put(STOP)
         recorder.join()
         samples_log.close()

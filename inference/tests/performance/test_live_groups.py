@@ -12,6 +12,7 @@ from pilot_inference.capture.replay import replay
 from pilot_inference.performance.features import METRICS, compute_features
 from pilot_inference.performance.live import LIVE_CSV_FIELDS, Instruction, LiveFlight
 from pilot_inference.performance.live_groups import (
+    RelayListener,
     STOP,
     CsvLog,
     instruction_row,
@@ -19,7 +20,6 @@ from pilot_inference.performance.live_groups import (
     main,
     record_samples,
     reference_cohort,
-    serve_relay,
     status_line,
 )
 
@@ -58,16 +58,15 @@ def listening_socket() -> socket.socket:
 
 
 def test_replayed_packets_arrive_as_samples():
-    server = listening_socket()
     samples: queue.Queue = queue.Queue()
-    reader = threading.Thread(target=serve_relay, args=(server, samples), daemon=True)
-    reader.start()
+    listener = RelayListener(listening_socket(), samples)
+    listener.start()
     flight = wobbly_flight(25)
 
-    replay(flight, "127.0.0.1", server.getsockname()[1], hz=0)
+    replay(flight, "127.0.0.1", listener.port, hz=0)
 
     received = [samples.get(timeout=5) for _ in range(len(flight))]
-    server.close()
+    listener.close()
     assert [values["altitude"] for values, _ in received] == pytest.approx(flight["altitude"].tolist())
     assert [values["velocity"] for values, _ in received] == pytest.approx(flight["velocity"].tolist())
     # Columns the CSV lacks are sent as zero, so every sample is complete.
@@ -168,17 +167,17 @@ def test_a_busy_port_stops_before_anything_is_written(tmp_path):
 
 
 def test_a_garbled_connection_does_not_stop_the_next_one():
-    server = listening_socket()
     samples: queue.Queue = queue.Queue()
-    threading.Thread(target=serve_relay, args=(server, samples), daemon=True).start()
-    port = server.getsockname()[1]
+    listener = RelayListener(listening_socket(), samples)
+    listener.start()
+    port = listener.port
 
     with socket.create_connection(("127.0.0.1", port)) as garbled:
         garbled.sendall(b"\xff\xfe not utf-8\r\n")
     replay(wobbly_flight(3), "127.0.0.1", port, hz=0)
 
     received = [samples.get(timeout=5) for _ in range(3)]
-    server.close()
+    listener.close()
     assert len(received) == 3
 
 
@@ -241,3 +240,35 @@ def test_a_group_stays_named_while_one_factor_settles(reference):
     assert "(settling heading)" in line
     assert "provisional" not in line
     assert "group " in line
+
+
+def test_closing_the_listener_stops_a_connected_relay():
+    samples: queue.Queue = queue.Queue()
+    listener = RelayListener(listening_socket(), samples)
+    listener.start()
+
+    def stream_until_cut_off():
+        try:
+            replay(wobbly_flight(100_000), "127.0.0.1", listener.port, 200)
+        except ConnectionError:
+            pass  # what the relay sees when the sidecar closes
+
+    relay = threading.Thread(target=stream_until_cut_off, daemon=True)
+    relay.start()
+    samples.get(timeout=5)  # the relay is connected and streaming
+
+    listener.close()
+    queued = samples.qsize()
+    relay.join(timeout=5)
+    # Nothing arrives once close() returns, even though the relay was still sending.
+    assert samples.qsize() == queued
+    assert not relay.is_alive()
+
+
+def test_closing_the_listener_with_no_relay_returns():
+    listener = RelayListener(listening_socket(), queue.Queue())
+    listener.start()
+    closer = threading.Thread(target=listener.close, daemon=True)
+    closer.start()
+    closer.join(timeout=5)
+    assert not closer.is_alive()

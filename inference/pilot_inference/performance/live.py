@@ -14,6 +14,7 @@ console.
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -73,6 +74,11 @@ def load_brief(path: Path) -> list[Instruction]:
     instructions = []
     for number, row in enumerate(brief.itertuples(index=False), start=1):
         given = {metric: float(getattr(row, metric)) for metric in METRICS}
+        infinite = [metric for metric, value in given.items() if math.isinf(value)]
+        if infinite:
+            raise ValueError(
+                f"{path} instruction {number} has an infinite target for {', '.join(infinite)}"
+            )
         blank = [metric for metric, value in given.items() if math.isnan(value)]
         if number == 1 and blank:
             raise ValueError(
@@ -109,7 +115,7 @@ class LiveFlight:
     One flight in progress: the brief, which instruction is in force, and the
     samples scored against it.
 
-    Not thread-safe; the CLI holds a lock around every call.
+    Not thread-safe; the CLI holds a lock around every call, or reads a snapshot().
     """
 
     def __init__(
@@ -243,6 +249,18 @@ class LiveFlight:
             self._last_scored[metric] = (at, stretch)
         self._scored_rows.append(row)
         return row
+
+    def snapshot(self) -> LiveFlight:
+        """
+        A copy that later instructions and samples do not change, safe to read
+        without the caller's lock. Extend it when __init__ gains a mutable field.
+        """
+        frozen = copy.copy(self)
+        frozen._history = list(self._history)
+        frozen.scored_seconds_by_factor = dict(self.scored_seconds_by_factor)
+        frozen._last_scored = dict(self._last_scored)
+        frozen._scored_rows = list(self._scored_rows)
+        return frozen
 
     def pilot_features(self) -> pd.DataFrame | None:
         """

@@ -215,3 +215,28 @@ def test_north_restated_as_0_after_360_does_not_settle():
     flight.instruct(at(0))
     flight.instruct(at(20))
     assert flight.settling(at(21)) == {}
+
+
+def test_an_infinite_target_is_refused(tmp_path):
+    path = write_brief(
+        tmp_path,
+        "instruction,heading,altitude,airspeed,vertical_speed\nhold,270,3000,100,0\nclimb,,inf,,\n",
+    )
+    with pytest.raises(ValueError, match="instruction 2 .*altitude"):
+        load_brief(path)
+
+
+def test_a_snapshot_does_not_move_as_the_flight_goes_on():
+    flight = two_holds(settle=0)
+    flight.instruct(at(0))
+    flight.add_sample(sample(altitude=3010.0), at(0))
+    flight.add_sample(sample(altitude=3010.0), at(0.05))
+    snapshot = flight.snapshot()
+
+    flight.instruct(at(1))
+    flight.add_sample(sample(altitude=3100.0), at(1))
+    flight.add_sample(sample(altitude=3100.0), at(1.05))
+
+    assert snapshot.given == 1
+    assert snapshot.pilot_features()["altitude_bias"].iloc[0] == pytest.approx(10.0)
+    assert snapshot.scored_seconds_by_factor["altitude"] == pytest.approx(0.05)

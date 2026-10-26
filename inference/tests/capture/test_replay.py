@@ -67,3 +67,8 @@ def test_brief_holds_a_flights_constant_targets():
 def test_brief_is_refused_when_targets_change():
     with pytest.raises(ValueError, match="target_altitude"):
         brief_for(flights())
+
+
+def test_a_flight_cannot_be_picked_from_a_csv_without_flight_ids():
+    with pytest.raises(ValueError, match="flight_id"):
+        select_flight(pd.DataFrame({"altitude": [1.0, 2.0]}), "A")

@@ -55,6 +55,10 @@ def select_flight(telemetry: pd.DataFrame, flight_id: str | None) -> pd.DataFram
     so two flights are never sent back to back as if they were one.
     """
     if "flight_id" not in telemetry.columns:
+        if flight_id is not None:
+            raise ValueError(
+                f"The CSV has no flight_id column, so --flight {flight_id} cannot pick a flight"
+            )
         return telemetry
     flights = telemetry["flight_id"].astype(str).unique().tolist()
     if flight_id is None:
@@ -118,9 +122,13 @@ def main(argv=None) -> None:
     )
     args = parser.parse_args(argv)
 
-    rows = select_flight(pd.read_csv(args.input), args.flight)
-    if args.brief_out:
-        brief_for(rows).to_csv(args.brief_out, index=False)
+    try:
+        rows = select_flight(pd.read_csv(args.input), args.flight)
+        brief = brief_for(rows) if args.brief_out else None
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
+    if brief is not None:
+        brief.to_csv(args.brief_out, index=False)
         print(f"Wrote a brief with this flight's targets to {args.brief_out}")
         return
     print(f"Sending {len(rows)} samples to {args.host}:{args.port} at {args.hz:g} Hz")
