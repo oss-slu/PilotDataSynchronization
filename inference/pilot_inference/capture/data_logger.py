@@ -94,7 +94,7 @@ def ensure_csv(csv_path: Path, fields: list[str] = CSV_FIELDS) -> None:
             header = next(csv.reader(handle), [])
         if header != fields:
             raise ValueError(
-                f"{csv_path} has columns {header}, but this logger writes {fields}. "
+                f"{csv_path} has columns {header}, but these rows have {fields}. "
                 "Appending would misalign the rows. Pass --csv with a new path, or move "
                 "the old file aside."
             )

@@ -73,6 +73,32 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def listen(host: str, port: int) -> socket.socket:
+    """
+    A listening socket on host:port that nothing else can share.
+
+    On Windows SO_REUSEADDR would let this bind a port the capture logger is
+    already listening on, leaving the relay to reach either one, so there the
+    port is claimed exclusively instead. Elsewhere SO_REUSEADDR only allows a
+    quick restart. Exits with the likely cause if the port is taken.
+    """
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        server.bind((host, port))
+    except OSError as error:
+        server.close()
+        raise SystemExit(
+            f"Port {port} on {host} is in use ({error.strerror}). Is data_logger or another "
+            "live_groups still running? Stop it, or pass --port and point the relay's mirror there."
+        ) from None
+    server.listen()
+    return server
+
+
 def read_relay(conn: socket.socket, samples: queue.Queue) -> None:
     """
     Turn one relay connection into (values, arrival time) pairs on `samples`.
@@ -109,6 +135,11 @@ def serve_relay(server: socket.socket, samples: queue.Queue) -> None:
             read_relay(conn, samples)
         except ConnectionError:
             pass
+        except (OSError, ValueError) as error:
+            # Garbled bytes or a socket error end this connection, not the
+            # listener: the mirror never reconnects by itself (docs/adr/0003),
+            # so the next Connect mirror must still find someone listening.
+            print(f"Relay connection failed: {error}")
         print("Relay disconnected. Press Connect mirror again to resume.")
 
 
@@ -272,6 +303,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> None:
     args = build_parser().parse_args(argv)
     brief = load_brief(args.brief)
+    # Before the cohort fit and the CSVs, so a taken port fails at once and leaves nothing behind.
+    server = listen(args.host, args.port)
     flight = LiveFlight(
         brief,
         args.pilot_id,
@@ -290,11 +323,6 @@ def main(argv=None) -> None:
     lock = threading.Lock()
     stop = threading.Event()
     samples: queue.Queue = queue.Queue()
-
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((args.host, args.port))
-    server.listen()
 
     recorder = threading.Thread(
         target=record_samples, args=(samples, flight, lock, samples_log), daemon=True

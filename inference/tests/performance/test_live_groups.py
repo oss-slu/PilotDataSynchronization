@@ -16,6 +16,7 @@ from pilot_inference.performance.live_groups import (
     CsvLog,
     instruction_row,
     instructions_path,
+    main,
     record_samples,
     reference_cohort,
     serve_relay,
@@ -143,3 +144,39 @@ def test_instructions_are_logged_with_their_targets(tmp_path):
     assert row["instruction"] == "hold 270"
     assert row["target_heading"] == 270.0
     assert instructions_path(tmp_path / "live.csv").name == "live_instructions.csv"
+
+
+def test_a_busy_port_stops_before_anything_is_written(tmp_path):
+    # Held the way the capture logger holds it.
+    occupant = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    occupant.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    occupant.bind(("127.0.0.1", 0))
+    occupant.listen()
+    port = occupant.getsockname()[1]
+    brief = tmp_path / "brief.csv"
+    brief.write_text("instruction,heading,altitude,airspeed,vertical_speed\nhold,270,3000,100,0\n")
+    csv_path = tmp_path / "live.csv"
+
+    with pytest.raises(SystemExit) as stopped:
+        main(["--brief", str(brief), "--port", str(port), "--csv", str(csv_path)])
+    occupant.close()
+
+    assert f"Port {port}" in str(stopped.value)
+    assert "data_logger" in str(stopped.value)
+    assert not csv_path.exists()
+    assert not instructions_path(csv_path).exists()
+
+
+def test_a_garbled_connection_does_not_stop_the_next_one():
+    server = listening_socket()
+    samples: queue.Queue = queue.Queue()
+    threading.Thread(target=serve_relay, args=(server, samples), daemon=True).start()
+    port = server.getsockname()[1]
+
+    with socket.create_connection(("127.0.0.1", port)) as garbled:
+        garbled.sendall(b"\xff\xfe not utf-8\r\n")
+    replay(wobbly_flight(3), "127.0.0.1", port, hz=0)
+
+    received = [samples.get(timeout=5) for _ in range(3)]
+    server.close()
+    assert len(received) == 3

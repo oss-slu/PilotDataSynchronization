@@ -71,8 +71,13 @@ def _scaled(features: pd.DataFrame) -> np.ndarray:
     return StandardScaler().fit_transform(_logged(features))
 
 
+def _kmeans(k: int, seed: int) -> KMeans:
+    """The one KMeans setup every fit uses, so the sweep and the groups cannot drift apart."""
+    return KMeans(n_clusters=k, n_init=10, random_state=seed)
+
+
 def _kmeans_labels(scaled: np.ndarray, k: int, seed: int) -> np.ndarray:
-    return KMeans(n_clusters=k, n_init=10, random_state=seed).fit_predict(scaled)
+    return _kmeans(k, seed).fit_predict(scaled)
 
 
 def candidate_ks(n_pilots: int) -> range:
@@ -190,7 +195,7 @@ def fit_reference(pilots: pd.DataFrame, k: int, seed: int = 0) -> ReferenceGroup
         )
     logged = _logged(features)
     scaler = StandardScaler().fit(logged)
-    kmeans = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(scaler.transform(logged))
+    kmeans = _kmeans(k, seed).fit(scaler.transform(logged))
     labels = kmeans.labels_
     assignments = pd.DataFrame({"pilot_id": features.index, "group": labels})
     return ReferenceGroups(scaler, kmeans, assignments, _centres(features, labels))
