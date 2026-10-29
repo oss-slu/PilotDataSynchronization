@@ -821,6 +821,9 @@ impl State {
                 Ok(stream) => {
                     human_log("TCP", "Successfully connected to iMotions server.");
                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                    // Report it so the status line follows the real socket instead
+                    // of waiting for a manual Check TCP Connection Status press.
+                    let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Connected);
                     stream
                 }
                 Err(e) => {
@@ -856,16 +859,60 @@ impl State {
                             }
 
                             for packet in packets_for_fields(&fields) {
+                                let bytes = packet.len();
                                 let res = send_packet_and_debug(&mut stream, &packet);
                                 let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
+                                // Mirror regardless of the iMotions result: the mirror is
+                                // a separate destination and should not lose a copy just
+                                // because iMotions went away.
                                 mirror_send(&mut mirror, &packet, &mut child_bichannel);
+
+                                match res {
+                                    Ok(()) => {
+                                        // Report the write so the throughput block has
+                                        // something to count.
+                                        let _ = child_bichannel
+                                            .send_to_parent(FromTcpThreadMessage::Sent(bytes));
+                                    }
+                                    Err(e) => {
+                                        // A write failure means the socket is gone, so stop
+                                        // at the first one and report it as a disconnect.
+                                        // Reporting each failed packet instead would write
+                                        // ~120 entries/sec to the event log and bury
+                                        // everything else in the GUI panel.
+                                        let reason = format!("TCP send failed: {}", e);
+                                        human_log("TCP", &reason);
+                                        // Same path #179 established for a failed connect:
+                                        // the GUI shows it and reap_tcp_thread clears the
+                                        // handle, so Connect TCP works again without
+                                        // pressing Disconnect TCP first.
+                                        let _ = child_bichannel.send_to_parent(
+                                            FromTcpThreadMessage::Disconnected(reason.clone()),
+                                        );
+                                        bail!(reason);
+                                    }
+                                }
                             }
                         }
                         ToTcpThreadMessage::SendRaw(packet) => {
-                            let res = send_packet_and_debug(&mut stream, &packet);
-                            let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
-                            if let Err(e) = res {
-                                human_log("TCP", &format!("Test packet failed: {}", e));
+                            match send_packet_and_debug(&mut stream, &packet) {
+                                Ok(()) => {
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                                    // A test packet is still a packet on the wire, so it
+                                    // counts toward throughput like any other.
+                                    let _ = child_bichannel.send_to_parent(
+                                        FromTcpThreadMessage::Sent(packet.len()),
+                                    );
+                                }
+                                Err(e) => {
+                                    let reason = format!("Test packet failed: {}", e);
+                                    human_log("TCP", &reason);
+                                    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+                                    let _ = child_bichannel.send_to_parent(
+                                        FromTcpThreadMessage::Disconnected(reason.clone()),
+                                    );
+                                    bail!(reason);
+                                }
                             }
                             // The mirror gets the test packet too, so the button
                             // checks both links at once.

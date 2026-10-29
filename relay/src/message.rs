@@ -73,7 +73,12 @@ pub(crate) enum FromTcpThreadMessage {
     Disconnected(String),
     /// A packet was sent to remote (In bytes)
     Sent(usize),
-    /// Error reported
+    /// Error reported.
+    ///
+    /// Nothing constructs this today: a failed write means the socket is gone,
+    /// so the TCP thread reports `Disconnected` and exits rather than emitting
+    /// a send error per dropped packet. Kept for a future transient-failure
+    /// case that can be reported without tearing the connection down.
     SendError(String),
     /// Mirror destination accepted the connection
     MirrorConnected(String),
