@@ -306,7 +306,7 @@ A quick way to confirm your toolchain is healthy. For the full walkthrough, see 
 - Labeling pipeline successfully processed over 16k rows, though some flight phase labels are still missing  
 - Final validation still requires a full real-time flight session with X-Plane + iMotions connected  
 
-Note: the file `toml .rust-toolchain.toml` at the repository root is not currently in effect. `rustup` only reads `rust-toolchain.toml` (or `rust-toolchain`), so the leading `toml ` in the filename means the toolchain is not pinned locally or in CI. Both use the default stable toolchain. Renaming the file would activate the `channel = "1.80.0"` pin inside it, which has not been tested against the current dependencies.
+Note: `rust-toolchain.toml` at the repository root pins the toolchain to `1.80.0`. `rustup` reads it automatically, so the first `cargo` command in a fresh clone downloads that toolchain along with the `rustfmt` and `clippy` components and the `x86_64-pc-windows-gnu` target. This applies locally and in CI. The pin is verified against the current dependencies: relay, `src/server` and baton all build and pass their tests on 1.80.0.
 
 # Team
 
