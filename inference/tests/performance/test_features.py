@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from features import (
+from pilot_inference.performance.features import (
     METRICS,
     STATISTICS,
     compute_deviations,
@@ -212,3 +212,22 @@ def test_one_row_flight_has_zero_std():
     assert row["altitude_mad"] == pytest.approx(100.0)
     assert row["altitude_std"] == 0.0
     assert row["altitude_rows_used"] == 1
+
+
+def test_abs_bias_is_per_flight_so_opposite_flights_do_not_cancel():
+    # 50 ft high on one flight, 50 ft low on the next: signed bias cancels,
+    # absolute bias must not.
+    df = pd.concat(
+        [
+            make_flight(flight_id="high", altitude=5050.0),
+            make_flight(flight_id="low", altitude=4950.0),
+        ],
+        ignore_index=True,
+    )
+    flights, pilots = compute_features(df)
+    flights = flights.set_index("flight_id")
+    assert flights.loc["high", "altitude_abs_bias"] == pytest.approx(50.0)
+    assert flights.loc["low", "altitude_abs_bias"] == pytest.approx(50.0)
+    pilot = pilots.set_index("pilot_id").loc["p1"]
+    assert pilot["altitude_bias"] == pytest.approx(0.0)
+    assert pilot["altitude_abs_bias"] == pytest.approx(50.0)

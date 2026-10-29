@@ -1,8 +1,8 @@
 ﻿"""
 
 Outputs:
-    - Trained model files: models/bestModel.pkl & models/finalModel.pkl
-    - Held-out test split: dataset/test.csv (read by test_model.py for evaluation)
+    - Trained model file: models/bestModel.pkl
+    - Held-out test split: data/prepared/test.csv (read by evaluate_model.py for evaluation)
     - Evaluation metrics: accuracy, precision, recall
 """
 
@@ -14,6 +14,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, classification_report, confusion_matrix
 import joblib
 import logging
+
+from pilot_inference.paths import DATA_DIR, MODELS_DIR, PREPARED_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -110,7 +112,7 @@ class FlightEventModelTrainer:
 
     def save_test_split(self, X_test: pd.DataFrame, y_test: pd.Series, output_path: Path):
         """
-        Save the held-out test split so test_model.py can evaluate on data the
+        Save the held-out test split so evaluate_model.py can evaluate on data the
         model never trained on, instead of re-scoring the full labeled dataset.
 
         Args:
@@ -232,26 +234,19 @@ class FlightEventModelTrainer:
         # Create models directory if it doesn't exist
         models_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save as both bestModel.pkl and finalModel.pkl
         best_model_path = models_dir / 'bestModel.pkl'
-        final_model_path = models_dir / 'finalModel.pkl'
-        
-        logger.info("\nSaving trained models:")
-        
+
+        logger.info("\nSaving trained model:")
+
         joblib.dump(self.model, best_model_path)
         logger.info(f"  [OK] Saved: {best_model_path}")
-        
-        joblib.dump(self.model, final_model_path)
-        logger.info(f"  [OK] Saved: {final_model_path}")
 
 
 def main():
     """Main execution function."""
-    # Define paths relative to inference folder
-    inference_dir = Path(__file__).parent
-    data_file = inference_dir / 'Data' / 'labeled_flight_data.csv'
-    models_dir = inference_dir / 'Models'
-    test_split_file = inference_dir / 'dataset' / 'test.csv'
+    data_file = DATA_DIR / 'labeled_flight_data.csv'
+    models_dir = MODELS_DIR
+    test_split_file = PREPARED_DIR / 'test.csv'
     
     logger.info("="*60)
     logger.info("Flight Event Prediction - Model Training")
@@ -269,7 +264,7 @@ def main():
         # Prepare train/test split
         X_train, X_test, y_train, y_test = trainer.prepare_data(df, test_size=0.2)
 
-        # Save the held-out split so test_model.py can evaluate on unseen data
+        # Save the held-out split so evaluate_model.py can evaluate on unseen data
         trainer.save_test_split(X_test, y_test, test_split_file)
 
         # Train model

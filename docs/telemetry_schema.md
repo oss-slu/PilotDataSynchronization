@@ -13,11 +13,11 @@ and the DataRef reference in [xplane_plugin/docs/key_datarefs.md](../xplane_plug
 ## 1. What the plugin outputs today
 
 The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (throttled to one
-send per 50ms) and streams them through Baton → Relay → `data_logger.py`, which
+send per 50ms) and streams them through Baton → Relay → `inference/pilot_inference/capture/data_logger.py`, which
 writes one CSV row per complete sample.
 
-Current CSV output (`inference/Data/session_flight_data.csv`, one file per
-collection session). The CSVs committed under `inference/Data/` were logged
+Current CSV output (`inference/data/session_flight_data.csv`, one file per
+collection session). The CSVs committed under `inference/data/` were logged
 before `pilot_id` and `flight_id` existed and do not have those two columns:
 
 | Field | Type | Units | Source (DataRef) | Notes |
@@ -43,7 +43,7 @@ error), not the aircraft's raw physical state — see note 2 in
 #196, the plugin multiplied `altitude_ft_pilot` (already feet) by 3.28084 and
 `airspeed_kts_pilot` (already knots) by 1.94384 before sending. Data collected
 with the fixed plugin is in feet and knots. The CSVs committed under
-`inference/Data/` were collected before the fix, so their `altitude` and
+`inference/data/` were collected before the fix, so their `altitude` and
 `velocity` columns, and the labels derived from them, are still scaled by
 those factors. Divide `altitude` by 3.28084 and `velocity` by 1.94384, or
 re-collect the data, before using it.
@@ -132,11 +132,17 @@ alongside the telemetry data) and joined in at feature-engineering time.
 | `pilot_id` | string | — | join key to telemetry table |
 | `certification_level` | string (categorical) | — | e.g. Student, Private, Commercial, ATP — exact category set TBD with client |
 | `flight_hours` | float | hours | total logged flight hours |
-| `pilot_rating` | string or numeric | — | client mentioned "pilot rating" as distinct from certification; needs clarification on whether this is a licensing rating (e.g. instrument rating) or a performance score |
+| `pilot_rating` | string or numeric | — | client mentioned "pilot rating" as distinct from certification; the client says it is the type of certification, not a performance score (see below) |
 
-**Open question for the client:** clarify whether `pilot_rating` is a
-licensing qualification (instrument, multi-engine, etc.) or an evaluative
-score, since that changes its type and how it factors into clustering.
+**Answered by the client:** `pilot_rating` is the type of certification, not an
+evaluative score (see [client_meeting_notes.md](client_meeting_notes.md)). It
+is still unclear whether it differs from `certification_level`. The client
+prioritizes `flight_hours` over certification, and agreed it is used after
+clustering, not as a feature.
+
+**Heading reference:** the client says the scenario's route headings are
+**true** headings, but `heading` above is magnetic. Resolve this before
+targets are populated.
 
 ## 5. Deviation formulas
 
@@ -165,19 +171,22 @@ return a negative remainder for a negative left-hand side — both the plugin
 and the relay are implemented in those languages, so a direct port of this
 line would be wrong there. The formula's output range is also `[-180, 180)`:
 a difference of exactly +180° maps to -180°. The shared helper is
-`angular_diff` in `inference/angles.py`; both `features.py` and
-`label_generator.py`'s `_calculate_heading_change` (a related turn-rate
+`angular_diff` in `inference/pilot_inference/angles.py`; both `performance/features.py` and
+`event_classification/label_generator.py`'s `_calculate_heading_change` (a related turn-rate
 quantity) call it, so they agree at that boundary. Point any new heading
 computation at the helper rather than re-deriving this formula.
 
 The airspeed columns are named `airspeed_*` to match the glossary, while the
 raw telemetry column keeps its name, `velocity`.
 
-`inference/features.py` summarises deviation per flight and per pilot in raw
+`inference/pilot_inference/performance/features.py` summarises deviation per flight and per pilot in raw
 units: mean absolute deviation (`_mad`), standard deviation of the signed
-deviation (`_std`) and mean signed deviation (`_bias`) for each metric, plus
-the number of samples used (`_rows_used`, per flight). A pilot's features are
-the mean of their flights' features, with a `flights` count. Units differ in
+deviation (`_std`), mean signed deviation (`_bias`) and the absolute value of
+each flight's `_bias` (`_abs_bias`) for each metric, plus the number of samples
+used (`_rows_used`, per flight). A pilot's features are the mean of their
+flights' features, with a `flights` count. `_abs_bias` is taken per flight
+before the average, so a pilot 50 ft high on one flight and 50 ft low on
+another has `_bias` 0 but `_abs_bias` 50. Units differ in
 scale (ft vs. deg vs. kts), so scaling across pilots is done by the clustering
 step, not here; do not z-score per pilot, which would erase the differences
 between pilots.

@@ -4,7 +4,7 @@
 - `baton`: C++ library for communicating with `relay`. Provides an object that handles inter-process communication (IPC) and abstracts over it for ease-of-use. Currently located in `xplane_plugin/subprojects`
 
 Additional Components:
-- `inference`: Python-based module for logging, labeling, and training a machine learning model using the collected flight data
+- `inference`: Python package for logging telemetry and forming pilot performance groups from the collected flight data
 
 # New Contributor? Start Here
 
@@ -12,7 +12,7 @@ Pilot Data Synchronization spans three languages (C++, Rust, Python) and two ext
 
 | You want to work on | You need | Start with |
 |---|---|---|
-| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/Data/` |
+| ML / inference (`inference/`) | Python 3 only, no simulator | [`inference/README.md`](inference/README.md). Sample data lives in `inference/data/` |
 | Relay GUI (`relay/`) | Rust | [Setup → Relay](#2-relay), then test against the [mock iMotions server](#no-imotions-use-the-mock-server) |
 | X-Plane plugin / baton | Meson, Ninja, mingw-w64, Rust | [Setup → X-Plane plugin](#1-x-plane-plugin) |
 | Docs / data schema | Nothing to install | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) and [`GLOSSARY.md`](GLOSSARY.md) |
@@ -102,9 +102,11 @@ Then, in order:
 
 1. Start iMotions, or the mock server, first, so that something is listening.
 2. Launch the relay. The IPC listener that the plugin connects to starts automatically. You do not need to press `Connect IPC`. That button exists only to reconnect after you have pressed `Disconnect IPC`.
-3. Type the iMotions address into the text box, for example `127.0.0.1:9999`.
-   - There is no default value. The greyed-out `127.0.0.1:9999` is placeholder text, not a setting.
-   - A literal IP address and port are required. `localhost:9999` is rejected.
+3. Type the iMotions address into the text box.
+   - There is no default value. The greyed-out `<iMotions IP>:5050` is placeholder text, not a setting, and not an address that works.
+   - The IP is the machine running iMotions. In the lab that is a different computer from the one running the relay, so `127.0.0.1` only applies if both are on the same machine.
+   - 5050 is the port iMotions was listening on in the lab. It is a setting, not a fixed default, so check it on the machine you are using (see below).
+   - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
 4. Press `Connect TCP`.
 5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
@@ -116,6 +118,24 @@ Two more behaviors that catch people out:
 
 - The eight dataref toggles do not affect what is sent over TCP. All eight values are always transmitted. The toggles control only which `<Sample>` entries appear in the generated `iMotions.xml`.
 - Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again.
+
+### Sending to iMotions and Python at the same time
+
+`Connect TCP` has one destination. To feed iMotions and the Python side from the same flight, use the mirror:
+
+1. Connect TCP to iMotions as above.
+2. Start the logger, which listens on port 5001 by default: `uv run python -m pilot_inference.capture.data_logger` from `inference/`.
+3. Type its address, for example `127.0.0.1:5001`, into the second box and press `Connect mirror`.
+
+Both then receive the same packets, byte for byte. The mirror's socket is written from its own thread, so the iMotions stream never waits on it: if the Python process is missing, slow or killed, copies are dropped or the mirror is closed, a line appears in the event log, and iMotions keeps recording at full rate. Reconnect it with `Connect mirror` once Python is listening again.
+
+What the mirror does not promise is every packet. A reader that falls behind loses copies, which suits statistics over a stream and does not suit anything needing a complete record. Whatever reads this socket should keep reading it, on its own thread if it also does slow work.
+
+Reconnecting opens a new connection, and the logger starts a new `flight_id` for each one unless you passed `--flight-id`. Pass it for a real session, or one flight will be split across two ids in the CSV.
+
+With no iMotions to record to, skip the mirror and point `Connect TCP` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
+
+`Send Packet` goes to both destinations, which makes it a check of both links. It also means the logger writes a row of zeros, so avoid it mid-recording.
 
 ## 3. iMotions
 
@@ -139,7 +159,15 @@ E;1;PilotDataSync;;;;;AltitudeSync;1250.5;1250.5
 
 Packets are semicolon-delimited and CRLF-terminated. The value appears twice because each sample carries both a `FlightModel*` and a `Pilot*` field.
 
-> Needs verification. How `iMotions.xml` is imported into iMotions, and which port iMotions actually listens on, are not documented anywhere in this repository. `127.0.0.1:9999` appears only as placeholder text in the relay's UI. Nothing confirms it is iMotions' real port. If you have iMotions access, please confirm both and update this section.
+### Which port iMotions listens on
+
+Read it off the iMotions machine: `Global Settings`, `API` tab, `Event Receiving`. The relay needs `Enable event reception` ticked and `Use TCP` ticked, and the port in that box is the one to type into the relay. On the lab machine it is 5050.
+
+The same panel lists the registered event sources. Ours shows as `Id: PilotDataSync`, version 1, `Positional Flight Data`, which is what the generated `iMotions.xml` defines. If it is missing, iMotions will drop our packets.
+
+Three other ports appear on that tab and none of them are ours: `Remote Control`, and the `Destination Server` ports under `Event Forwarding` and `Replay Event Forwarding`. Those are for iMotions sending data out, not receiving it.
+
+> Still needs verification. How the generated `iMotions.xml` is imported into iMotions is not documented anywhere in this repository, and nobody on the team has done the import themselves. It was already registered on the lab machine. See #195.
 
 ### No iMotions? Use the mock server
 
@@ -154,6 +182,8 @@ cargo run -- 7878      # or pick another port
 Enter `127.0.0.1:9999` in the relay and press `Connect TCP`.
 
 The mock server prints every packet it receives, numbered, until the relay disconnects. It does not reply to the relay.
+
+9999 is this mock's own port, picked for local testing. It is not iMotions' port and never was.
 
 ## Verifying it works
 
@@ -191,7 +221,7 @@ The data flow is as follows:
 - `xplane_plugin` extracts the data
 - `xplane_plugin` uses the `baton` library to send the data to the `relay` program
 - `relay` sends the data to iMotions
-- *(optional)* `inference` can log the same TCP data stream for dataset creation and model training
+- *(optional)* `inference` can log the same TCP data stream and form pilot performance groups from it
 
 `relay` and `baton` are developed by this team and are not external programs/libraries.
 
@@ -237,7 +267,7 @@ Component-level detail lives next to the code it describes, so it stays in sync:
 |---|---|
 | Project vocabulary | [`GLOSSARY.md`](GLOSSARY.md) |
 | Telemetry fields, units and deviation metrics (the data contract) | [`docs/telemetry_schema.md`](docs/telemetry_schema.md) |
-| ML pipeline: logging, labeling, training | [`inference/README.md`](inference/README.md) |
+| ML: logging, performance groups | [`inference/README.md`](inference/README.md) |
 | X-Plane DataRefs used by the plugin | [`xplane_plugin/docs/key_datarefs.md`](xplane_plugin/docs/key_datarefs.md) |
 | Issue labels and triage | [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md) |
 | Product roadmap framework | [`Documents/PRODUCT_ROADMAP_FRAMEWORK.md`](Documents/PRODUCT_ROADMAP_FRAMEWORK.md) |

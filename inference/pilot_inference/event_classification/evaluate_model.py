@@ -1,7 +1,7 @@
 ﻿"""
-Flight Event Prediction - Model Testing Script
+Flight Event Prediction - Model Evaluation Script
 
-This script tests trained Random Forest models for flight event prediction.
+This script evaluates trained Random Forest models for flight event prediction.
 It loads saved models, runs inference on test data, and evaluates performance.
 
 Outputs:
@@ -16,6 +16,8 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, class
 import joblib
 import logging
 from datetime import datetime
+
+from pilot_inference.paths import DATA_DIR, INFERENCE_DIR, MODELS_DIR, PREPARED_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -233,29 +235,21 @@ class FlightEventModelTester:
 
 def main():
     """Main execution function for model testing."""
-    # Define paths relative to inference folder
-    inference_dir = Path(__file__).parent
-
-    # Model paths (try both bestModel.pkl and finalModel.pkl)
-    models_dir = inference_dir / 'Models'
-    model_paths = [
-        models_dir / 'bestModel.pkl',
-        models_dir / 'finalModel.pkl'
-    ]
+    model_paths = [MODELS_DIR / 'bestModel.pkl']
 
     # Data paths (try multiple locations)
     data_candidates = [
-        inference_dir / 'dataset' / 'test.csv',  # Held-out split saved by train_model.py
-        inference_dir / 'Data' / 'labeled_flight_data.csv',  # Full labeled dataset (fallback; overlaps with training data)
-        inference_dir / 'labeled_flight_data.csv'  # Alternative location
+        PREPARED_DIR / 'test.csv',  # Held-out split saved by train_model.py
+        DATA_DIR / 'labeled_flight_data.csv',  # Full labeled dataset (fallback; overlaps with training data)
+        INFERENCE_DIR / 'labeled_flight_data.csv'  # Alternative location
     ]
 
     # Output paths
-    output_predictions = inference_dir / 'predictions_output.csv'
-    output_metrics = inference_dir / 'evaluation_metrics.json'
+    output_predictions = INFERENCE_DIR / 'predictions_output.csv'
+    output_metrics = INFERENCE_DIR / 'evaluation_metrics.json'
 
     logger.info("="*60)
-    logger.info("Flight Event Prediction - Model Testing")
+    logger.info("Flight Event Prediction - Model Evaluation")
     logger.info("="*60)
 
     try:
@@ -273,7 +267,7 @@ def main():
         if not model_loaded:
             raise FileNotFoundError(
                 f"No model files found. Searched: {', '.join(str(p) for p in model_paths)}\n"
-                "Please train a model first using train_model.py"
+                "Please train a model first: python -m pilot_inference.event_classification.train_model"
             )
 
         # Load test data (try available data files)
