@@ -1,0 +1,83 @@
+---
+name: Rust
+
+# Builds and tests the Rust crates. The Meson workflow covers the C++
+# plugin only, so without this nothing checks the relay, the mock server
+# or baton.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Report every crate, rather than hiding the rest behind the
+      # first failure.
+      fail-fast: false
+      matrix:
+        crate:
+          - relay
+          - src/server
+          - xplane_plugin/subprojects/baton
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The relay is an iced GUI, so its dependency tree pulls in
+      # wayland, x11 and drm crates that need these headers present to
+      # build. The other two crates are plain std and need none of it.
+      - name: Install GUI build dependencies
+        if: matrix.crate == 'relay'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libgl1-mesa-dev \
+            libudev-dev \
+            libfontconfig1-dev \
+            pkg-config
+
+      # rust-toolchain.toml at the repository root decides the version,
+      # so no toolchain is named here.
+      - name: Show toolchain
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ matrix.crate }}/target
+          key: >-
+            ${{ runner.os }}-cargo-${{ matrix.crate }}-${{
+            hashFiles(format('{0}/Cargo.lock', matrix.crate)) }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.crate }}-
+
+      - name: Build
+        working-directory: ${{ matrix.crate }}
+        run: cargo build --verbose
+
+      - name: Test
+        working-directory: ${{ matrix.crate }}
+        run: cargo test --verbose
