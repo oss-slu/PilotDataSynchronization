@@ -34,6 +34,10 @@ _Avoid_: IPC layer, transport
 A stand-in for iMotions used when no real iMotions instance is available.
 _Avoid_: Fake iMotions
 
+**Mirror**:
+A second destination the **Relay** copies every packet to, so the Python side can read a flight while iMotions records it. The copy is best effort: packets are dropped if the mirror falls behind, and the iMotions stream is never held up for it (`docs/adr/0003`).
+_Avoid_: Python stream, fan-out, secondary connection, sink
+
 ### Performance measurement
 
 **Airspeed**:
@@ -56,6 +60,22 @@ _Avoid_: Performance score, error metrics
 The four metrics the client cares about: heading, vertical speed, altitude and airspeed.
 _Avoid_: Core metrics, KPIs
 
+**Performance group**:
+A set of pilots whose **Deviation features** resemble each other. Groups are not ranked.
+_Avoid_: Tier (a **Synthetic pilot**'s known level is its **Hidden tier**, a different thing), skill level, class
+
+**Segment**:
+One of the seven phases of a **Flight**, from takeoff through landing.
+_Avoid_: Phase, section, leg (the five-value **Flight phase** in the out-of-scope section and a **Leg** are different things)
+
+**Leg**:
+A stretch of the route flown on one heading, such as the 190° climb or the 220° approach.
+_Avoid_: Segment (the client's seven phases), phase
+
+**Instruction**:
+The timestamped moment a pilot is told a new **Target**, such as "change heading to 20". Instructions are standardized across pilots.
+_Avoid_: Command, prompt, target change
+
 ### Pilots and flights
 
 **Pilot**:
@@ -70,27 +90,44 @@ _Avoid_: Session, run, trip
 Facts about a pilot that are not telemetry: certification level, flight hours and pilot rating.
 _Avoid_: Pilot profile, demographics
 
-### Classification
+### Synthetic pilots
+
+**Synthetic pilot**:
+A generated pilot with generated flights, built to deviate by a known amount, used to check that **Performance groups** find real differences before real pilots are available.
+_Avoid_: Test pilot, fake pilot, mock pilot
+
+**Hidden tier**:
+The known deviation level a **Synthetic pilot** is generated at, kept apart from its telemetry so **Performance groups** can be compared against it. Real pilots have none.
+_Avoid_: True group, skill level
+
+### Out of scope: event classification
+
+The client has not asked for these terms; they are kept apart from the model above.
 
 **Flight event label**:
-One of the 13 classes assigned to a sample, naming what the aircraft is doing at that moment.
+One of the 13 classes assigned to a **Sample**, naming what the aircraft is doing at that moment.
 _Avoid_: Class, tag, category
 
 **Flight phase**:
-A flight event label that names a stage of a flight: taxi, takeoff, cruise, approach or landing.
+A **Flight event label** that names a stage of a flight: taxi, takeoff, cruise, approach or landing. There are five, and they are not the client's seven **Segments**.
 _Avoid_: Stage, segment
 
 **Synthetic data**:
-Generated telemetry, balanced across flight event labels, used when real flights are not available.
+Generated telemetry, balanced across **Flight event labels**, used when real flights are not available.
 _Avoid_: Fake data, dummy data, mock data
 
 ## Relationships
 
 - A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
 - A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
-- A **Sample** receives exactly one **Flight event label**; a **Flight phase** is a kind of flight event label.
+- A **Flight** is divided into **Segments**, and is also flown as a sequence of **Legs**. An **Instruction** sets a new **Target** from that moment on.
+- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
+- **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
+- Out of scope: a **Sample** receives exactly one **Flight event label**, and a **Flight phase** is a kind of **Flight event label**.
 
 ## Flagged ambiguities
 
-- **Pilot rating** is unresolved: the client may mean a licensing rating (instrument, multi-engine) or a performance score. Do not use it as a precise term until clarified.
-- **Target** source is undecided: instructor-assigned, or taken from the autopilot. No targets are captured yet.
+- **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
+- **Target** source is the **Instruction**: the client gives standardized, timestamped instructions during the flight, and iMotions holds the timestamps. None have been shared and no targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.
+- **Leg** and **Segment** may or may not line up. The client's seven **Segments** are unknown until she shares them, so how they map to our **Legs** is open.
+- **Segment** names and boundaries are unknown until the client shares her seven-phase segmentation, which she marks by hand from the iMotions audio and video. Detecting **Instructions** automatically, for example from the eye tracker's audio, is later work; today the client segments by hand.

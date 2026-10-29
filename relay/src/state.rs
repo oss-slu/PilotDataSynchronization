@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::thread::{JoinHandle, spawn};
 use iced::time::Duration;
 use crate::bichannel;
+use crate::bichannel::ChildBiChannel;
 use crate::bichannel::ParentBiChannel;
 use crate::message::FromIpcThreadMessage;
 use crate::message::FromTcpThreadMessage;
@@ -33,6 +34,34 @@ use std::sync::{OnceLock, Mutex};
 /// so this is scrollback headroom. The cap keeps the log O(1) in memory even if
 /// a future `log_event` call lands on a hot path, as happened before #203.
 pub(crate) const EVENT_LOG_CAPACITY: usize = 200;
+
+/// What to type into the relay's address box. Deliberately not a working
+/// address: iMotions runs on its own machine in the lab, so the IP has to come
+/// from there. 5050 is the port it was listening on, read from Global Settings,
+/// API tab, Event Receiving, and that is a setting rather than a fixed default.
+/// The placeholder text and the validation message both come from here.
+pub(crate) const IMOTIONS_ADDR_HINT: &str = "<iMotions IP>:5050";
+
+/// What to type into the mirror's address box. Unlike the iMotions hint this is
+/// a working example, because the Python listener usually runs on the same
+/// machine as the relay, and 5001 is the capture logger's default port.
+pub(crate) const MIRROR_ADDR_HINT: &str = "127.0.0.1:5001";
+
+/// Bounds on the mirror destination that feeds the Python side (#245).
+///
+/// Connecting and writing both run on the mirror's own thread, so these never
+/// cost the iMotions stream anything. They exist so a Python process that is
+/// gone or wedged is given up on rather than held open forever.
+const MIRROR_CONNECT_TIMEOUT: StdDuration = StdDuration::from_millis(500);
+const MIRROR_WRITE_TIMEOUT: StdDuration = StdDuration::from_millis(100);
+
+/// How many packets may wait for the mirror's writer thread.
+///
+/// The stream is 8 packets per sample at 20 Hz, so 160 a second. This holds
+/// about a second and a half, enough to ride out a clustering refit without
+/// losing anything. Past that the oldest behaviour is to drop new packets
+/// rather than make iMotions wait.
+const MIRROR_QUEUE_CAPACITY: usize = 256;
 
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
@@ -77,6 +106,10 @@ pub(crate) struct State {
     pub saved_tcp_addrs: Vec<String>,
     pub selected_tcp_addr: Option<String>,
     pub tcp_addr_validation_error: Option<String>,
+
+    // Mirror destination: the Python side reads the same packets iMotions gets
+    pub mirror_addr_field: String,
+    pub mirror_connected: bool,
 }
 
 impl Default for State {
@@ -117,6 +150,9 @@ impl Default for State {
 
             sent_packet_times: std::collections::VecDeque::new(),
             sent_samples: std::collections::VecDeque::new(),
+
+            mirror_addr_field: String::new(),
+            mirror_connected: false,
         }
     }
 }
@@ -141,6 +177,65 @@ fn normalize_baton_payload(raw: &str) -> Vec<String> {
         .map(|f| sanitize_field(f))
         .filter(|f| !f.is_empty())
         .collect()
+}
+
+/// The iMotions packets one baton sample turns into, in send order.
+///
+/// Pulled out of the TCP thread so the mapping can be tested without a socket,
+/// and so both destinations are written the same bytes from one list rather
+/// than each building its own.
+fn packets_for_fields(fields: &[String]) -> Vec<String> {
+    let pair = |value: &String| vec![value.clone(), value.clone()];
+
+    if fields.len() == 4 {
+        let (alt, air, head, vv) = (&fields[0], &fields[1], &fields[2], &fields[3]);
+        return vec![
+            build_imotions_packet("AltitudeSync", &pair(alt)),
+            build_imotions_packet("AirspeedSync", &pair(air)),
+            build_imotions_packet("VerticalVelocitySync", &pair(vv)),
+            build_imotions_packet("HeadingSync", &pair(head)),
+        ];
+    }
+
+    if fields.len() == 8 {
+        let (alt, air, head, vv) = (&fields[0], &fields[1], &fields[2], &fields[3]);
+        let (roll, pitch, yaw, gforce) = (&fields[4], &fields[5], &fields[6], &fields[7]);
+        return vec![
+            build_imotions_packet("AltitudeSync", &pair(alt)),
+            build_imotions_packet("AirspeedSync", &pair(air)),
+            build_imotions_packet("VerticalVelocitySync", &pair(vv)),
+            build_imotions_packet("HeadingSync", &pair(head)),
+            build_imotions_packet("RollSync", &pair(roll)),
+            build_imotions_packet("PitchSync", &pair(pitch)),
+            build_imotions_packet("YawSync", &pair(yaw)),
+            build_imotions_packet("GForceSync", &pair(gforce)),
+        ];
+    }
+
+    // Anything else: take the fields two at a time, in event order, and stop
+    // when they run out. "Event" here is one iMotions entry, not a Sample in
+    // the GLOSSARY sense, which is a whole set of telemetry values.
+    const IMOTIONS_EVENTS: [&str; 8] = [
+        "AltitudeSync",
+        "AirspeedSync",
+        "VerticalVelocitySync",
+        "HeadingSync",
+        "RollSync",
+        "PitchSync",
+        "YawSync",
+        "GForceSync",
+    ];
+    let mut packets = Vec::new();
+    let mut idx = 0usize;
+    for name in IMOTIONS_EVENTS {
+        if idx + 1 >= fields.len() {
+            break;
+        }
+        let payload = vec![fields[idx].clone(), fields[idx + 1].clone()];
+        packets.push(build_imotions_packet(name, &payload));
+        idx += 2;
+    }
+    packets
 }
 
 fn build_imotions_packet(event_name: &str, fields: &[String]) -> String {
@@ -257,6 +352,148 @@ fn human_log(level: &str, msg: &str) {
     }
 }
 
+/// What the mirror's writer thread reports back to the TCP thread.
+enum MirrorEvent {
+    Connected(String),
+    Disconnected(String),
+}
+
+/// The TCP thread's handle on the mirror: a queue into the writer thread, and
+/// the writer thread's reports coming back.
+struct Mirror {
+    packets: crossbeam::channel::Sender<String>,
+    events: crossbeam::channel::Receiver<MirrorEvent>,
+    dropped: usize,
+    /// Whether we are in a run of drops, so the log gets one line when the
+    /// mirror falls behind and one when it recovers, not one per packet.
+    lagging: bool,
+}
+
+/// Start the mirror's writer thread and hand back a queue into it.
+///
+/// Connecting and writing both happen on that thread, so neither can delay the
+/// iMotions stream. The TCP thread only ever pushes into a bounded queue, which
+/// either takes the packet immediately or refuses it.
+fn spawn_mirror(address: String) -> Mirror {
+    let (packets_tx, packets_rx) = crossbeam::channel::bounded::<String>(MIRROR_QUEUE_CAPACITY);
+    let (events_tx, events_rx) = crossbeam::channel::unbounded();
+
+    spawn(move || {
+        let mut stream = match connect_mirror(&address) {
+            Ok(stream) => {
+                human_log("TCP", &format!("Python mirror connected to {}", address));
+                let _ = events_tx.send(MirrorEvent::Connected(address.clone()));
+                stream
+            }
+            Err(e) => {
+                let reason = format!("Python mirror connection failed: {}", e);
+                human_log("TCP", &reason);
+                let _ = events_tx.send(MirrorEvent::Disconnected(reason));
+                return;
+            }
+        };
+
+        // Ends when the TCP thread drops its sender, which is how the mirror is
+        // closed and how it goes away with the connection it belongs to.
+        for packet in packets_rx {
+            let write = stream
+                .write_all(packet.as_bytes())
+                .and_then(|()| stream.flush());
+            if let Err(e) = write {
+                let reason = format!("Python mirror dropped: {}", e);
+                human_log("TCP", &reason);
+                let _ = events_tx.send(MirrorEvent::Disconnected(reason));
+                return;
+            }
+        }
+    });
+
+    Mirror {
+        packets: packets_tx,
+        events: events_rx,
+        dropped: 0,
+        lagging: false,
+    }
+}
+
+/// Open the mirror connection. Runs on the writer thread, so the timeout here
+/// costs the iMotions stream nothing.
+fn connect_mirror(address: &str) -> Result<TcpStream> {
+    let addr: SocketAddr = address
+        .parse()
+        .map_err(|_| anyhow!("Mirror address is not a literal IP and port: {address}"))?;
+    let stream = TcpStream::connect_timeout(&addr, MIRROR_CONNECT_TIMEOUT)?;
+    stream.set_write_timeout(Some(MIRROR_WRITE_TIMEOUT))?;
+    stream.set_nodelay(true)?;
+    Ok(stream)
+}
+
+/// Hand one packet to the mirror's writer thread, if there is one.
+///
+/// Never waits. A full queue means the reader is behind, so the packet is
+/// dropped and counted. Losing copies is the right trade: the mirror is for
+/// analysis that can tolerate gaps, and the iMotions recording cannot be redone.
+fn mirror_send(
+    mirror: &mut Option<Mirror>,
+    packet: &str,
+    child_bichannel: &mut ChildBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>,
+) {
+    let Some(active) = mirror.as_mut() else {
+        return;
+    };
+    match active.packets.try_send(packet.to_string()) {
+        Ok(()) => {
+            if active.lagging {
+                let note = format!(
+                    "Python mirror caught up, {} copies dropped while it was behind",
+                    active.dropped
+                );
+                human_log("TCP", &note);
+                let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorLagging(note));
+                active.lagging = false;
+                active.dropped = 0;
+            }
+        }
+        Err(_) => {
+            active.dropped += 1;
+            // One line per episode. At 160 packets a second, reporting each
+            // drop would push everything else out of the capped event log.
+            if !active.lagging {
+                active.lagging = true;
+                let note =
+                    "Python mirror is behind, dropping copies. iMotions is unaffected".to_string();
+                human_log("TCP", &note);
+                let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorLagging(note));
+            }
+        }
+    }
+}
+
+/// Forward anything the writer thread has reported, and clear the mirror if it
+/// has gone away.
+fn drain_mirror_events(
+    mirror: &mut Option<Mirror>,
+    child_bichannel: &mut ChildBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>,
+) {
+    let events: Vec<MirrorEvent> = match mirror.as_ref() {
+        Some(active) => active.events.try_iter().collect(),
+        None => return,
+    };
+    for event in events {
+        match event {
+            MirrorEvent::Connected(address) => {
+                let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::MirrorConnected(address));
+            }
+            MirrorEvent::Disconnected(reason) => {
+                let _ = child_bichannel
+                    .send_to_parent(FromTcpThreadMessage::MirrorDisconnected(reason));
+                *mirror = None;
+                return;
+            }
+        }
+    }
+}
+
 fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
     human_log("TX", &format!("packet len={} text={:?}", packet.len(), packet));
     let hex: String = packet
@@ -315,7 +552,7 @@ impl State {
         };
         for address in addresses {
             let candidate = address.trim();
-            if Self::validate_tcp_addr(candidate).is_ok() {
+            if Self::validate_tcp_addr(candidate, IMOTIONS_ADDR_HINT).is_ok() {
                 uniq.insert(candidate.to_string());
             }
         }
@@ -342,11 +579,15 @@ impl State {
         Ok(())
     }
 
-    pub fn validate_tcp_addr(address: &str) -> Result<()> {
+    /// `example` is the address hint for whichever box is being validated, so
+    /// the mirror does not tell people to type an iMotions address.
+    pub fn validate_tcp_addr(address: &str, example: &str) -> Result<()> {
         let _parsed = address
             .trim()
             .parse::<SocketAddr>()
-            .map_err(|_| anyhow!("Invalid IP address. Use format: 127.0.0.1:9999"))?;
+            .map_err(|_| {
+                anyhow!("Invalid address. Enter a literal IP and port, for example {example}")
+            })?;
         Ok(())
     }
 
@@ -596,13 +837,18 @@ impl State {
                     bail!(reason);
                 }
             };
-            
+
+            // Second destination for the same packets, set by SetMirror. Its
+            // socket is owned by a writer thread; this is only the queue into
+            // it, so nothing here can be slowed by the Python side.
+            let mut mirror: Option<Mirror> = None;
+
             while !child_bichannel.is_killswitch_engaged() {
+                drain_mirror_events(&mut mirror, &mut child_bichannel);
                 for message in child_bichannel.received_messages() {
                     match message {
                         ToTcpThreadMessage::Send(data) => {
                             let fields = normalize_baton_payload(&data);
-                            
 
                             if fields.len() < 2 {
                                 human_log("TCP", &format!(
@@ -612,95 +858,40 @@ impl State {
                                 continue;
                             }
 
-                            // A write failure means the socket is gone, so stop at the
-                            // first one and report it as a disconnect. Reporting each
-                            // failed packet instead would write ~120 entries/sec to the
-                            // event log and bury everything else in the GUI panel.
-                            let send_outcome = (|| -> Result<()> {
-                                let mut try_send = |pkt: String| -> Result<()> {
-                                    let bytes = pkt.len();
-                                    match send_packet_and_debug(&mut stream, &pkt) {
-                                        Ok(()) => {
-                                            let _ = child_bichannel.set_is_conn_to_endpoint(true);
-                                            // Report the write so the throughput block has
-                                            // something to count.
-                                            let _ = child_bichannel
-                                                .send_to_parent(FromTcpThreadMessage::Sent(bytes));
-                                            Ok(())
-                                        }
-                                        Err(e) => {
-                                            let _ = child_bichannel.set_is_conn_to_endpoint(false);
-                                            Err(e)
-                                        }
+                            for packet in packets_for_fields(&fields) {
+                                let bytes = packet.len();
+                                let res = send_packet_and_debug(&mut stream, &packet);
+                                let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
+                                // Mirror regardless of the iMotions result: the mirror is
+                                // a separate destination and should not lose a copy just
+                                // because iMotions went away.
+                                mirror_send(&mut mirror, &packet, &mut child_bichannel);
+
+                                match res {
+                                    Ok(()) => {
+                                        // Report the write so the throughput block has
+                                        // something to count.
+                                        let _ = child_bichannel
+                                            .send_to_parent(FromTcpThreadMessage::Sent(bytes));
                                     }
-                                };
-
-                                if fields.len() == 4 {
-                                    let alt = fields[0].clone();
-                                    let air = fields[1].clone();
-                                    let head = fields[2].clone();
-                                    let vv = fields[3].clone();
-
-                                    try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]))?;
-                                    try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]))?;
-                                    try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]))?;
-                                    try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]))?;
-                                    return Ok(());
-                                }
-
-                                if fields.len() == 8 {
-                                    let alt = fields[0].clone();
-                                    let air = fields[1].clone();
-                                    let head = fields[2].clone();
-                                    let vv = fields[3].clone();
-                                    let roll = fields[4].clone();
-                                    let pitch = fields[5].clone();
-                                    let yaw = fields[6].clone();
-                                    let gforce = fields[7].clone();
-
-                                    try_send(build_imotions_packet("AltitudeSync", &[alt.clone(), alt.clone()]))?;
-                                    try_send(build_imotions_packet("AirspeedSync", &[air.clone(), air.clone()]))?;
-                                    try_send(build_imotions_packet("VerticalVelocitySync", &[vv.clone(), vv.clone()]))?;
-                                    try_send(build_imotions_packet("HeadingSync", &[head.clone(), head.clone()]))?;
-                                    try_send(build_imotions_packet("RollSync", &[roll.clone(), roll.clone()]))?;
-                                    try_send(build_imotions_packet("PitchSync", &[pitch.clone(), pitch.clone()]))?;
-                                    try_send(build_imotions_packet("YawSync", &[yaw.clone(), yaw.clone()]))?;
-                                    try_send(build_imotions_packet("GForceSync", &[gforce.clone(), gforce.clone()]))?;
-                                    return Ok(());
-                                }
-
-                                // Paired mapping
-                                let mut idx = 0usize;
-                                let mut send_pair_if_present = |name: &str, idx: &mut usize| -> Result<()> {
-                                    if *idx + 1 < fields.len() {
-                                        let payload = vec![fields[*idx].clone(), fields[*idx + 1].clone()];
-                                        let pkt = build_imotions_packet(name, &payload);
-                                        *idx += 2;
-                                        try_send(pkt)?;
+                                    Err(e) => {
+                                        // A write failure means the socket is gone, so stop
+                                        // at the first one and report it as a disconnect.
+                                        // Reporting each failed packet instead would write
+                                        // ~120 entries/sec to the event log and bury
+                                        // everything else in the GUI panel.
+                                        let reason = format!("TCP send failed: {}", e);
+                                        human_log("TCP", &reason);
+                                        // Same path #179 established for a failed connect:
+                                        // the GUI shows it and reap_tcp_thread clears the
+                                        // handle, so Connect TCP works again without
+                                        // pressing Disconnect TCP first.
+                                        let _ = child_bichannel.send_to_parent(
+                                            FromTcpThreadMessage::Disconnected(reason.clone()),
+                                        );
+                                        bail!(reason);
                                     }
-                                    Ok(())
-                                };
-
-                                send_pair_if_present("AltitudeSync", &mut idx)?;
-                                send_pair_if_present("AirspeedSync", &mut idx)?;
-                                send_pair_if_present("VerticalVelocitySync", &mut idx)?;
-                                send_pair_if_present("HeadingSync", &mut idx)?;
-                                send_pair_if_present("RollSync", &mut idx)?;
-                                send_pair_if_present("PitchSync", &mut idx)?;
-                                send_pair_if_present("YawSync", &mut idx)?;
-                                send_pair_if_present("GForceSync", &mut idx)?;
-                                Ok(())
-                            })();
-
-                            if let Err(e) = send_outcome {
-                                let reason = format!("TCP send failed: {}", e);
-                                human_log("TCP", &reason);
-                                // Same path #179 established for a failed connect: the
-                                // GUI shows it and reap_tcp_thread clears the handle, so
-                                // Connect TCP works again without Disconnect TCP first.
-                                let _ = child_bichannel
-                                    .send_to_parent(FromTcpThreadMessage::Disconnected(reason.clone()));
-                                bail!(reason);
+                                }
                             }
                         }
                         ToTcpThreadMessage::SendRaw(packet) => {
@@ -723,6 +914,27 @@ impl State {
                                     bail!(reason);
                                 }
                             }
+                            // The mirror gets the test packet too, so the button
+                            // checks both links at once.
+                            mirror_send(&mut mirror, &packet, &mut child_bichannel);
+                        }
+                        ToTcpThreadMessage::SetMirror(target) => {
+                            // Dropping the old handle closes its queue, which
+                            // ends that writer thread and its socket with it.
+                            mirror = None;
+                            match target {
+                                None => {
+                                    let _ = child_bichannel.send_to_parent(
+                                        FromTcpThreadMessage::MirrorDisconnected(
+                                            "closed".to_string(),
+                                        ),
+                                    );
+                                }
+                                // Connecting happens on the writer thread, so
+                                // this returns immediately and the result
+                                // arrives as a MirrorEvent.
+                                Some(address) => mirror = Some(spawn_mirror(address)),
+                            }
                         }
                     }
                 }
@@ -738,6 +950,32 @@ impl State {
         Ok(())
     }
 
+    /// Point the mirror at `address`, so the Python side receives a copy of
+    /// every packet (#245).
+    ///
+    /// The mirror lives inside the TCP thread, so iMotions has to be connected
+    /// first. With no iMotions to talk to, point Connect TCP straight at the
+    /// Python listener instead and leave the mirror unused.
+    pub fn mirror_connect(&mut self, address: String) -> Result<()> {
+        Self::validate_tcp_addr(&address, MIRROR_ADDR_HINT)?;
+        // validate_tcp_addr trims before parsing, so trim here too. Otherwise a
+        // pasted address with a stray space passes validation and then fails to
+        // parse inside the thread.
+        let address = address.trim().to_string();
+        let Some(bichannel) = self.tcp_bichannel.as_mut() else {
+            bail!("Connect TCP first. The mirror copies that stream.")
+        };
+        bichannel.send_to_child(ToTcpThreadMessage::SetMirror(Some(address)))
+    }
+
+    pub fn mirror_disconnect(&mut self) -> Result<()> {
+        let Some(bichannel) = self.tcp_bichannel.as_mut() else {
+            self.mirror_connected = false;
+            return Ok(());
+        };
+        bichannel.send_to_child(ToTcpThreadMessage::SetMirror(None))
+    }
+
     pub fn tcp_disconnect(&mut self) -> Result<()> {
         if self.tcp_thread_handle.is_none() {
             bail!("TCP thread does not exist.")
@@ -749,6 +987,9 @@ impl State {
         };
         let was_connected = bichannel.is_conn_to_endpoint().unwrap_or(false);
         bichannel.killswitch_engage()?;
+        // The mirror lives in that thread, so it goes down with it. Without
+        // this the GUI keeps claiming the mirror is connected.
+        self.mirror_connected = false;
         
         if !was_connected {
             spawn(move || {
@@ -772,6 +1013,8 @@ impl State {
         }
         self.tcp_bichannel = None;
         self.tcp_connected = false;
+        // The mirror lived in that thread, so it is gone with it.
+        self.mirror_connected = false;
     }
 
     pub fn is_tcp_connected(&self) -> bool {
@@ -806,6 +1049,53 @@ mod tests {
         )));
         assert!(state.event_log.front().unwrap().contains("event 50"));
         assert!(!state.event_log.iter().any(|e| e.ends_with("event 0")));
+    }
+
+    fn fields(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn eight_fields_become_one_packet_per_event_in_order() {
+        let packets = packets_for_fields(&fields(&[
+            "1000", "120", "90", "500", "2", "3", "91", "1.0",
+        ]));
+
+        let names: Vec<&str> = packets
+            .iter()
+            .map(|p| p.split(';').nth(7).expect("no sample name"))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "AltitudeSync",
+                "AirspeedSync",
+                "VerticalVelocitySync",
+                "HeadingSync",
+                "RollSync",
+                "PitchSync",
+                "YawSync",
+                "GForceSync",
+            ]
+        );
+        // Heading is field 2 and vertical velocity field 3, but they are sent
+        // the other way round. Pin that, it is easy to "tidy" and break.
+        assert_eq!(packets[2], "E;1;PilotDataSync;;;;;VerticalVelocitySync;500;500\r\n");
+        assert_eq!(packets[3], "E;1;PilotDataSync;;;;;HeadingSync;90;90\r\n");
+    }
+
+    #[test]
+    fn four_fields_send_only_the_flight_dynamics_factors() {
+        let packets = packets_for_fields(&fields(&["1000", "120", "90", "500"]));
+        assert_eq!(packets.len(), 4);
+        assert_eq!(packets[0], "E;1;PilotDataSync;;;;;AltitudeSync;1000;1000\r\n");
+    }
+
+    #[test]
+    fn an_odd_field_count_pairs_what_it_can_and_drops_the_remainder() {
+        let packets = packets_for_fields(&fields(&["1000", "120", "90"]));
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0], "E;1;PilotDataSync;;;;;AltitudeSync;1000;120\r\n");
     }
 
     #[test]
