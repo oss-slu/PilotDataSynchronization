@@ -1,0 +1,5 @@
+instruction,heading,altitude,airspeed,vertical_speed
+"Fly heading 270, maintain 3000 feet, 100 knots",270,3000,100,0
+"Turn right heading 360",360,,,
+"Turn right heading 090",90,,,
+"Turn right heading 180",180,,,

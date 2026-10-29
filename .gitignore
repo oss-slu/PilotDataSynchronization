@@ -55,6 +55,11 @@ inference/data/pilot_clusters.csv
 inference/data/group_centres.csv
 # Collected telemetry (one file per collection session, written by data_logger.py)
 inference/data/session_flight_data.csv
+# Written by live_groups.py for one flight, and the files the README's replay demo makes
+inference/data/live_flight_data.csv
+inference/data/live_flight_data_instructions.csv
+inference/data/replay_pilots.csv
+inference/briefs/replay.csv
 
 # Local build archives
 /xplane_plugin.zip

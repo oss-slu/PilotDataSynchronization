@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pilot_inference.performance.clustering import fit, sweep, truth_agreement
+from pilot_inference.performance.clustering import fit, fit_reference, sweep, truth_agreement
 from pilot_inference.performance.features import METRICS, STATISTICS, compute_features
 from pilot_inference.performance.generate_synthetic_pilots import generate_pilots
 
@@ -230,3 +230,46 @@ def test_pilot_off_target_in_opposite_directions_on_different_flights_is_not_on_
     assert len(alternating) == 1
     assert len(on_target) == 1
     assert alternating != on_target
+
+
+def synthetic_cohort(seed=0):
+    telemetry, truth = generate_pilots(n_pilots=15, seed=seed, flight_seconds=30)
+    _, pilots = compute_features(telemetry)
+    return pilots
+
+
+def test_reference_groups_are_what_fit_returns():
+    pilots = synthetic_cohort()
+    assignments, centres = fit(pilots, k=3)
+    reference = fit_reference(pilots, k=3)
+    pd.testing.assert_frame_equal(reference.assignments, assignments)
+    pd.testing.assert_frame_equal(reference.centres, centres)
+
+
+def test_assigning_the_cohort_reproduces_its_groups():
+    pilots = synthetic_cohort()
+    reference = fit_reference(pilots, k=3)
+    pd.testing.assert_frame_equal(reference.assign(pilots), reference.assignments)
+
+
+def test_a_new_pilot_flying_like_a_member_joins_that_members_group():
+    pilots = synthetic_cohort()
+    reference = fit_reference(pilots, k=3)
+    twin = pilots[pilots["pilot_id"] == "P15"].assign(pilot_id="live")
+    assert reference.assign(twin)["group"].iloc[0] == group_of(reference.assignments, "P15")
+
+
+def test_assigning_does_not_move_the_groups():
+    pilots = synthetic_cohort()
+    reference = fit_reference(pilots, k=3)
+    before = reference.kmeans.cluster_centers_.copy()
+    reference.assign(synthetic_cohort(seed=1))
+    np.testing.assert_array_equal(reference.kmeans.cluster_centers_, before)
+
+
+def test_assigning_a_pilot_with_nan_features_is_refused():
+    pilots = synthetic_cohort()
+    reference = fit_reference(pilots, k=3)
+    gap = pilots.head(1).assign(pilot_id="live", altitude_std=np.nan)
+    with pytest.raises(ValueError, match="live"):
+        reference.assign(gap)

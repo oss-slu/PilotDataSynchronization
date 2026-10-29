@@ -87,20 +87,20 @@ def new_flight_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def ensure_csv(csv_path: Path) -> None:
+def ensure_csv(csv_path: Path, fields: list[str] = CSV_FIELDS) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     if csv_path.exists() and csv_path.stat().st_size > 0:
         with csv_path.open("r", newline="", encoding="utf-8") as handle:
             header = next(csv.reader(handle), [])
-        if header != CSV_FIELDS:
+        if header != fields:
             raise ValueError(
-                f"{csv_path} has columns {header}, but this logger writes {CSV_FIELDS}. "
+                f"{csv_path} has columns {header}, but these rows have {fields}. "
                 "Appending would misalign the rows. Pass --csv with a new path, or move "
                 "the old file aside."
             )
         return
     with csv_path.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
+        writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         handle.flush()
         os.fsync(handle.fileno())

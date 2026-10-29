@@ -11,14 +11,15 @@ Forest) is kept in its own folder, **out of scope** for the client's request; se
 ```
 inference/
   pyproject.toml, uv.lock
+  briefs/                       instructions with targets, for flights we fly ourselves
   data/                         input and output CSVs (not code)
     prepared/                   train/test splits written by event_classification
   models/                       trained models (not tracked; train_model.py writes them)
   pilot_inference/              the package
     angles.py                   wrapped angular difference, shared
     paths.py                    where data/ and models/ are
-    capture/                    data_logger.py
-    performance/                features, clustering, synthetic pilots and their CLIs
+    capture/                    data_logger.py, replay.py
+    performance/                features, clustering, synthetic pilots, live groups and their CLIs
     event_classification/       OUT OF SCOPE: labeler, Random Forest, evaluation
   tests/                        mirrors pilot_inference/
 ```
@@ -73,6 +74,9 @@ uv run python -m pilot_inference.performance.generate_synthetic_pilots
 uv run python -m pilot_inference.performance.compute_features --input data/synthetic_pilot_telemetry.csv
 uv run python -m pilot_inference.performance.cluster_pilots
 uv run python -m pilot_inference.performance.cluster_pilots --k 3 --truth data/synthetic_pilot_tiers.csv
+
+# Live groups during a flight (replaces the capture logger for that flight)
+uv run python -m pilot_inference.performance.live_groups --brief briefs/example_level_holds.csv --pilot-id pilot-07
 ```
 
 `--pilot-id` labels every row so samples can be grouped per pilot and joined to pilot metadata.
@@ -138,6 +142,65 @@ the adjusted Rand index against the hidden tiers; the file must list each pilot 
 synthetic tiers overlap, so this is below 1: the default seed gives 0.79, and generator seeds 0 to
 11 range from 0.37 to 1.00.
 
+### Live groups
+
+`pilot_inference.performance.live_groups` is the sidecar from `docs/adr/0004`. It listens where
+the capture logger would (port 5001, the relay's mirror suggestion) and prints, every 5 seconds,
+the pilot's deviation features so far and the nearest performance group. Use it instead of the
+logger for that flight: it writes the same columns plus the `target_*` columns to
+`data/live_flight_data.csv`, and each instruction with its time to
+`data/live_flight_data_instructions.csv`. Both files are appended to, like the logger's session
+file, so one file can hold several flights and pilots. Running `compute_features` on it gives each
+flight the features the console showed for it in `flight_features.csv`; the per-pilot features
+average a pilot's flights.
+
+The client's targets are not available yet, so live groups work on flights we fly ourselves,
+where we are the instructor:
+
+1. Write a brief: a CSV with an `instruction` column and a target per factor (`heading`,
+   `altitude`, `airspeed`, `vertical_speed`), one row per instruction in order.
+   `briefs/example_level_holds.csv` is four level holds. The first instruction sets all four
+   targets; after that a blank cell keeps the target from the instruction before, as a real
+   "turn right heading 360" keeps the altitude. Headings are magnetic, as the X-Plane heading
+   indicator and the plugin show them.
+2. Start `live_groups` with the brief and a `--pilot-id`, then press `Connect mirror` in the relay
+   (or `Connect TCP` with no iMotions). It replaces the capture logger for the flight, so stop
+   `data_logger` first; if the port is still taken, `live_groups` says so and exits.
+   On Windows and Linux keep the plugin's "Positional Flight Data" window open the whole flight:
+   the stream stops when it closes (see the root README), and the status line's scored time then
+   stops growing.
+3. Press Enter at the moment each instruction is spoken. The targets it changes are not scored
+   for 30 seconds (`--settle`), so the turn or level-off does not count; targets it leaves alone,
+   or restates at the same value, are scored throughout, so altitude lost in a turn counts.
+   Type `q` and Enter to stop. The sidecar ends the relay connection, writes every sample it
+   already received, then closes its files.
+
+The sidecar is used on Windows, the lab machine's OS. It also stops cleanly on Linux and macOS,
+where closing a listening socket alone does not wake a waiting `accept()`, so stopping before a
+relay connects would otherwise hang. That case was checked under WSL; the tests run on Windows.
+
+No group is shown until every factor has 60 seconds scored (`--min-scored`). Once one is, it
+stays shown while a later instruction's factors settle, since the others are still scored. The
+groups are fitted once at start-up on a reference cohort of 15 synthetic pilots with k = 3, and
+the live pilot is placed in the nearest one without refitting, so the group numbers do not change
+during the flight. The cohort is
+synthetic, so the group demonstrates the pipeline; it does not measure the pilot against real
+pilots.
+
+To try it without X-Plane, replay a synthetic flight the cohort does not contain (another seed),
+using its targets as a one-instruction brief:
+
+```
+uv run python -c "from pilot_inference.performance.generate_synthetic_pilots import generate_pilots; generate_pilots(3, seed=7)[0].to_csv('data/replay_pilots.csv', index=False)"
+uv run python -m pilot_inference.capture.replay --input data/replay_pilots.csv --flight P03-F1 --brief-out briefs/replay.csv
+uv run python -m pilot_inference.performance.live_groups --brief briefs/replay.csv --settle 0
+# in a second terminal, then press Enter in the first
+uv run python -m pilot_inference.capture.replay --input data/replay_pilots.csv --flight P03-F1
+```
+
+`replay` sends a telemetry CSV in the relay's packet format at 20 Hz (`--hz`), so either listener
+reads it like a live flight. It needs a single flight, so pick one with `--flight`.
+
 ## Tests
 
 ```
@@ -145,9 +208,9 @@ uv sync              # installs pytest from the dev group
 uv run pytest
 ```
 
-`tests/` mirrors the package: `tests/capture/`, `tests/performance/` (deviation features, the
-synthetic pilot generator and performance groups, including recovering the synthetic tiers end to
-end), `tests/event_classification/` (the labeler's heading change), and `tests/test_angles.py`
+`tests/` mirrors the package: `tests/capture/` (the logger and replay), `tests/performance/`
+(deviation features, the synthetic pilot generator, performance groups including recovering the
+synthetic tiers end to end, and live groups from replayed packets to a saved CSV), `tests/event_classification/` (the labeler's heading change), and `tests/test_angles.py`
 for the angle helper.
 
 ## Out of scope: event classification
