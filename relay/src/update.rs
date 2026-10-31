@@ -358,8 +358,9 @@ fn create_xml_file(state: &mut State) -> Task<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use socket2::{Domain, Protocol, Socket, Type};
     use std::io::{BufRead, BufReader};
-    use std::net::{TcpListener, TcpStream};
+    use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::thread::sleep;
 
     // Waits for a condition, polling every 10ms, so the test does not hang.
@@ -478,6 +479,47 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind failed");
         let addr = listener.local_addr().expect("local_addr failed").to_string();
         (listener, addr)
+    }
+
+    // How much the Python side is allowed to buffer in the kernel, for the
+    // tests that are about the mirror falling behind.
+    //
+    // Linux rounds this up and enforces a floor, so the effective buffer is
+    // larger than the number asked for; what matters is that it is kilobytes
+    // rather than megabytes.
+    const SMALL_RECV_BUFFER: usize = 2048;
+
+    // A Python-side listener whose accepted connections have a deliberately
+    // small receive buffer.
+    //
+    // The two tests below are about what the relay does when the mirror cannot
+    // keep up, so they need a mirror that demonstrably cannot. Half of that is
+    // MIRROR_SEND_BUFFER, which bounds our own side; the other half is the
+    // reader's buffer, which in production belongs to the Python process and is
+    // whatever the host decided. Leaving it at the default meant the two sides
+    // together absorbed the whole run on a machine with generous tcp_rmem and
+    // blocked on a machine without, which is issue #251: the tests passed or
+    // failed according to the host rather than the code.
+    //
+    // Setting SO_RCVBUF explicitly also switches autotuning off for the socket,
+    // so the window stays pinned small. It has to be set on the listener,
+    // before listen, to be inherited by accepted connections.
+    fn stalling_listener_on_free_port() -> (TcpListener, String) {
+        let addr: SocketAddr = "127.0.0.1:0".parse().expect("parse failed");
+        let socket =
+            Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("socket failed");
+        socket
+            .set_recv_buffer_size(SMALL_RECV_BUFFER)
+            .expect("set_recv_buffer_size failed");
+        socket.bind(&addr.into()).expect("bind failed");
+        socket.listen(16).expect("listen failed");
+
+        let listener: TcpListener = socket.into();
+        let bound = listener
+            .local_addr()
+            .expect("local_addr failed")
+            .to_string();
+        (listener, bound)
     }
 
     fn read_lines(stream: &TcpStream, count: usize) -> Vec<String> {
@@ -694,13 +736,14 @@ mod tests {
     // falling behind rather than quietly coping.
     #[test]
     fn a_slow_python_reader_does_not_pace_imotions() {
-        // Enough to exceed the socket buffers, which absorb a surprising amount:
-        // at 500 samples the slow reader never creates any backpressure at all.
-        const SAMPLES: usize = 1500;
+        // 4000 packets against the roughly 500 the bounded buffers hold, so the
+        // mirror falls behind regardless of the host. This used to be 1500
+        // samples chasing the kernel's autotuned buffers, and still lost.
+        const SAMPLES: usize = 500;
         const PACKETS: usize = SAMPLES * 8;
 
         let (imotions, imotions_addr) = listener_on_free_port();
-        let (python, python_addr) = listener_on_free_port();
+        let (python, python_addr) = stalling_listener_on_free_port();
 
         let mut state = State::default();
         state.tcp_connect(imotions_addr).expect("tcp_connect failed");
@@ -716,9 +759,9 @@ mod tests {
         );
 
         // Reads steadily but slower than the relay writes: about 1000 lines a
-        // second against 12000 queued. Fast enough that writes keep succeeding,
-        // so the mirror stays up and the queue is what fills, which is the case
-        // that used to pace iMotions.
+        // second against 4000 queued. The window reopens as it reads, so some
+        // writes keep succeeding and the mirror does not simply go away; it is
+        // the case that used to pace iMotions.
         let slow_reader = std::thread::spawn(move || {
             let mut reader = BufReader::new(slow);
             let mut line = String::new();
@@ -759,7 +802,8 @@ mod tests {
 
         // The relay says something about it rather than quietly coping: either
         // copies are being dropped, or the writer gave up on the write timeout.
-        // Which one depends on how much the socket buffers absorb.
+        // Which one depends on how the reader's progress lines up with the
+        // timeout, so both count.
         assert!(
             wait_until(|| {
                 let _ = update(&mut state, Message::Update);
@@ -783,8 +827,14 @@ mod tests {
     // feed to iMotions.
     #[test]
     fn a_python_process_that_stops_reading_is_dropped_not_waited_on() {
+        // The Python side never reads, so its pinned receive buffer fills and
+        // stays full: writes block, the 100ms timeout fires and the mirror is
+        // dropped. With the host's default buffers the whole run fits in the
+        // kernel, nothing blocks, and the timeout never fires at all.
+        const SAMPLES: usize = 500;
+
         let (imotions, imotions_addr) = listener_on_free_port();
-        let (python, python_addr) = listener_on_free_port();
+        let (python, python_addr) = stalling_listener_on_free_port();
 
         let mut state = State::default();
         state.tcp_connect(imotions_addr).expect("tcp_connect failed");
@@ -812,7 +862,7 @@ mod tests {
         );
 
         let started = std::time::Instant::now();
-        for i in 0..3000 {
+        for i in 0..SAMPLES {
             send_sample(&mut state, &format!("{}", 1000 + i % 100));
         }
         assert!(
