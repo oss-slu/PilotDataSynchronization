@@ -582,8 +582,14 @@ impl State {
     /// `example` is the address hint for whichever box is being validated, so
     /// the mirror does not tell people to type an iMotions address.
     pub fn validate_tcp_addr(address: &str, example: &str) -> Result<()> {
-        let _parsed = address
-            .trim()
+        let trimmed = address.trim();
+        // An empty field is its own mistake. Reporting it as "invalid" reads as
+        // though something was typed wrong, when the greyed hint is placeholder
+        // text and nothing was typed at all.
+        if trimmed.is_empty() {
+            bail!("No address entered. Type one, for example {example}");
+        }
+        let _parsed = trimmed
             .parse::<SocketAddr>()
             .map_err(|_| {
                 anyhow!("Invalid address. Enter a literal IP and port, for example {example}")
