@@ -63,6 +63,23 @@ const MIRROR_WRITE_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 /// rather than make iMotions wait.
 const MIRROR_QUEUE_CAPACITY: usize = 256;
 
+/// How much the kernel may hold on the mirror socket on our behalf.
+///
+/// `MIRROR_QUEUE_CAPACITY` bounds only the queue in front of the writer
+/// thread. Behind it the socket's own send buffer is a second queue, and the
+/// Linux default is about 2.5 MB. Measured on loopback, that and the reader's
+/// buffer together swallow some 37,000 packets -- close to four minutes of
+/// stream -- before a write blocks, so a mirror that stopped reading minutes
+/// ago still takes writes, `MIRROR_WRITE_TIMEOUT` never fires, nothing is
+/// reported, and the bound in front of the writer is decoration.
+///
+/// Asking for 32 KiB brings that down to about 3,200 packets, or twenty
+/// seconds. Linux doubles the request, so the buffer is really 64 KiB; what
+/// matters is that it is tens of kilobytes rather than megabytes. It costs no
+/// throughput: 50,000 packets to a reader that keeps up take the same 45 ms
+/// either way.
+const MIRROR_SEND_BUFFER: usize = 32 * 1024;
+
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
 pub(crate) struct State {
@@ -425,6 +442,9 @@ fn connect_mirror(address: &str) -> Result<TcpStream> {
     let stream = TcpStream::connect_timeout(&addr, MIRROR_CONNECT_TIMEOUT)?;
     stream.set_write_timeout(Some(MIRROR_WRITE_TIMEOUT))?;
     stream.set_nodelay(true)?;
+    // Without this the write timeout above is unreachable in practice: see
+    // MIRROR_SEND_BUFFER.
+    socket2::SockRef::from(&stream).set_send_buffer_size(MIRROR_SEND_BUFFER)?;
     Ok(stream)
 }
 
