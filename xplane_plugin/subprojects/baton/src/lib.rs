@@ -40,6 +40,57 @@ fn log_to_file(message: &str) {
     }
 }
 
+/// How many times the handshake polls for the relay's reply, and how long it
+/// waits between tries. A second in total.
+const HANDSHAKE_ATTEMPTS: u32 = 100;
+const HANDSHAKE_POLL: Duration = Duration::from_millis(10);
+
+/// Wait for the relay's greeting on a non-blocking connection.
+///
+/// Returns the line it answered with, or None once the tries run out or the
+/// read fails outright.
+///
+/// An empty read is treated as "nothing yet" rather than as the relay hanging
+/// up, which is what #254 was. On Windows a non-blocking read of an empty pipe
+/// fails with ERROR_NO_DATA; std maps that to BrokenPipe, and interprocess
+/// 2.2.2 turns BrokenPipe into Ok(0) before we see it, so a hangup and an empty
+/// pipe are the same value here. The relay reads our greeting before it
+/// answers, so its reply is never already waiting on the first read, and
+/// treating Ok(0) as a hangup meant the plugin gave up every time. A relay that
+/// really has gone costs the full second instead of returning at once.
+///
+/// `buffer` carries over between tries, so a line split across reads is
+/// assembled rather than lost.
+fn await_greeting<R: BufRead>(
+    conn: &mut R,
+    buffer: &mut String,
+    attempts: u32,
+    poll: Duration,
+) -> Option<String> {
+    for _ in 0..attempts {
+        match conn.read_line(buffer) {
+            // Only a finished line is the greeting. read_line hands back a
+            // partial one as Ok(n), and taking that would both truncate the
+            // greeting and leave its tail to be read as telemetry.
+            Ok(n) if n > 0 && buffer.ends_with('\n') => return Some(buffer.trim().to_string()),
+            // Nothing yet, part of a line, or the relay has gone. The first and
+            // the last are the same value on Windows, so all three wait.
+            Ok(_) => thread::sleep(poll),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(poll),
+            Err(e) => {
+                log_to_file(&format!(
+                    "Failed to read server response: {} (kind: {:?})",
+                    e,
+                    e.kind()
+                ));
+                return None;
+            }
+        }
+    }
+    log_to_file("Timeout waiting for server response");
+    None
+}
+
 // This defines the interface for the C++ codegen. This is where functions are exposed to the C++ side.
 #[cxx::bridge]
 mod ffi {
@@ -147,31 +198,9 @@ impl Baton {
             // like above because BufReader implements the Read Trait.
             log_to_file("Waiting for server response");
             let mut buffer = String::with_capacity(128);
-            let mut attempts = 0;
-            loop {
-                match conn.read_line(&mut buffer) {
-                    Ok(0) => {
-                        log_to_file("Server closed connection during handshake");
-                        return;
-                    }
-                    Ok(_) => {
-                        log_to_file(&format!("Server answered: {}", buffer.trim()));
-                        break;
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        attempts += 1;
-                        if attempts > 100 {
-                            log_to_file("Timeout waiting for server response");
-                            return;
-                        }
-                        thread::sleep(Duration::from_millis(10));
-                        continue;
-                    }
-                    Err(e) => {
-                        log_to_file(&format!("Failed to read server response: {} (kind: {:?})", e, e.kind()));
-                        return;
-                    }
-                }
+            match await_greeting(&mut conn, &mut buffer, HANDSHAKE_ATTEMPTS, HANDSHAKE_POLL) {
+                Some(greeting) => log_to_file(&format!("Server answered: {}", greeting)),
+                None => return,
             }
             buffer.clear();
 
@@ -270,4 +299,81 @@ pub fn new_baton_handle() -> Box<Baton> {
 enum ChannelSignal {
     Stop,
     Send(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufReader, Read};
+
+    /// A reader that hands back a scripted sequence of results, so the
+    /// handshake can be driven through the cases a real pipe produces.
+    struct ScriptedReader {
+        steps: Vec<std::io::Result<&'static str>>,
+    }
+
+    impl Read for ScriptedReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.steps.is_empty() {
+                return Ok(0);
+            }
+            match self.steps.remove(0) {
+                Ok(text) => {
+                    let bytes = text.as_bytes();
+                    buf[..bytes.len()].copy_from_slice(bytes);
+                    Ok(bytes.len())
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+
+    fn would_block() -> std::io::Result<&'static str> {
+        Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "no data"))
+    }
+
+    fn run(steps: Vec<std::io::Result<&'static str>>, attempts: u32) -> Option<String> {
+        let mut reader = BufReader::new(ScriptedReader { steps });
+        let mut buffer = String::new();
+        await_greeting(&mut reader, &mut buffer, attempts, Duration::from_millis(0))
+    }
+
+    // #254: on Windows an empty pipe reads as Ok(0), so giving up on it meant
+    // the plugin never connected. The relay answers a moment later.
+    #[test]
+    fn an_empty_read_is_not_a_hangup() {
+        let greeting = run(
+            vec![Ok(""), Ok(""), Ok(""), Ok("Hello, from the relay (Rust)!\n")],
+            100,
+        );
+        assert_eq!(greeting.as_deref(), Some("Hello, from the relay (Rust)!"));
+    }
+
+    #[test]
+    fn a_would_block_is_still_retried() {
+        let greeting = run(vec![would_block(), Ok("Hello, from the relay (Rust)!\n")], 100);
+        assert_eq!(greeting.as_deref(), Some("Hello, from the relay (Rust)!"));
+    }
+
+    // A relay that never answers must not hang the thread stop() joins.
+    #[test]
+    fn a_silent_relay_gives_up_after_the_attempts_run_out() {
+        assert_eq!(run(vec![], 5), None);
+    }
+
+    #[test]
+    fn a_real_read_error_gives_up_at_once() {
+        let steps = vec![Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "reset",
+        ))];
+        assert_eq!(run(steps, 100), None);
+    }
+
+    // read_line can return a line in pieces; the buffer carries over.
+    #[test]
+    fn a_greeting_split_across_reads_is_assembled() {
+        let greeting = run(vec![Ok("Hello, from "), Ok(""), Ok("the relay (Rust)!\n")], 100);
+        assert_eq!(greeting.as_deref(), Some("Hello, from the relay (Rust)!"));
+    }
 }
