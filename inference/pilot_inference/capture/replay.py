@@ -41,11 +41,22 @@ RELAY_EVENTS = [
 
 
 def packets_for_row(row: dict) -> list[str]:
-    """One sample as the relay's iMotions packets, with each value sent twice as the relay does."""
+    """
+    One sample as the relay's iMotions packets.
+
+    Each entry carries two values, FlightModel* then Pilot*. A recorded CSV
+    holds pilot readings only, so the value goes in the pilot slot and is
+    repeated in the flightmodel slot as a stand-in: there is no flightmodel
+    half to replay. Consumers that want the pilot reading must take the second
+    value, as data_logger.parse_packet does.
+    """
     packets = []
     for event, column in RELAY_EVENTS:
-        value = row.get(column, 0.0)
-        packets.append(f"E;1;PilotDataSync;;;;;{event};{value:.6f};{value:.6f}\r\n")
+        pilot = row.get(column, 0.0)
+        flightmodel = pilot
+        packets.append(
+            f"E;1;PilotDataSync;;;;;{event};{flightmodel:.6f};{pilot:.6f}\r\n"
+        )
     return packets
 
 

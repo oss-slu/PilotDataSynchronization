@@ -115,8 +115,14 @@ def parse_packet(line: str) -> tuple[str, float] | None:
     if event_name not in EVENT_TO_COLUMN:
         return None
 
+    # Each entry carries two values, FlightModel* then Pilot*. The dataset is
+    # defined as pilot-side instrument readings, carrying simulated sensor
+    # error rather than the aircraft's true state (see GLOSSARY.md, "Pilot
+    # reading"), so the second one is the one to record. Before #184 the relay
+    # sent the pilot value in both slots, which made the first slot look
+    # correct; it carries the flightmodel value now.
     try:
-        value = float(parts[8])
+        value = float(parts[9])
     except ValueError:
         return None
 

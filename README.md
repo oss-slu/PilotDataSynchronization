@@ -154,10 +154,22 @@ The file is written to your Downloads folder as `iMotions.xml` (`%USERPROFILE%\D
 The `Id="PilotDataSync"` is what ties the definition to the live stream. Every packet the relay sends carries the same source name:
 
 ```
-E;1;PilotDataSync;;;;;AltitudeSync;1250.5;1250.5
+E;1;PilotDataSync;;;;;AltitudeSync;1248.2;1250.5
 ```
 
-Packets are semicolon-delimited and CRLF-terminated. The value appears twice because each sample carries both a `FlightModel*` and a `Pilot*` field.
+Packets are semicolon-delimited and CRLF-terminated. Two values appear because
+each sample carries both a `FlightModel*` and a `Pilot*` field, in that order:
+the aircraft's true state and the pilot's instrument reading, which differ by
+the simulated sensor error. Anything reading the stream for pilot performance
+wants the second value.
+
+`yaw` and `g_force` are exceptions. Neither has a pilot-side DataRef, so the
+plugin sends the flightmodel value in both halves and the two are always equal.
+
+Before #184 the plugin sent the pilot half only and the relay copied it into
+both fields, so the two values were always identical. A relay running against
+an older plugin still behaves that way, since it has nothing else to put
+there.
 
 ### Which port iMotions listens on
 
