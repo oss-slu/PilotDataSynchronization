@@ -74,10 +74,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.crate }}-
 
+      # --locked builds the versions in Cargo.lock instead of re-resolving.
+      # relay/Cargo.toml pins iced and anyhow at "*", so without it CI can
+      # quietly test a different dependency set than anyone ran locally, and
+      # a build that passes today can break tomorrow with no commit to blame.
+      # It also fails loudly if a Cargo.toml change was committed without the
+      # matching lockfile update.
       - name: Build
         working-directory: ${{ matrix.crate }}
-        run: cargo build --verbose
+        run: cargo build --locked --verbose
 
       - name: Test
         working-directory: ${{ matrix.crate }}
-        run: cargo test --verbose
+        run: cargo test --locked --verbose
