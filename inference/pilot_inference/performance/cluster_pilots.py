@@ -51,21 +51,39 @@ def main(argv=None) -> None:
     if args.truth is not None and args.k is None:
         parser.error("--truth needs --k: agreement is reported for one fitted k")
 
-    pilots = pd.read_csv(args.input)
+    try:
+        pilots = pd.read_csv(args.input)
+    except (OSError, ValueError) as e:
+        parser.error(f"--input {args.input}: {e}")
+
     if args.k is None:
         report = sweep(pilots, seed=args.seed, n_subsamples=args.subsamples)
         print(report.to_string(index=False, float_format="%.3f"))
         print("\nPick k from this report and rerun with --k.")
         return
 
-    assignments, centres = fit(pilots, args.k, seed=args.seed)
+    # Everything that can reject the arguments runs before anything is written.
+    # fit() raises for a k outside candidate_ks or a cohort too small to form
+    # groups, and truth_agreement() raises for a truth file that does not line
+    # up with the cohort. Scoring after the write left a failed run with its
+    # group and centre CSVs already on disk (#232).
+    try:
+        assignments, centres = fit(pilots, args.k, seed=args.seed)
+        score = None
+        if args.truth is not None:
+            score = truth_agreement(assignments, pd.read_csv(args.truth))
+    except (OSError, ValueError) as e:
+        # All of these are the arguments' fault, so they get argparse's
+        # one-line usage error and exit status 2, as --truth without --k
+        # already did, rather than a traceback.
+        parser.error(str(e))
+
     assignments.to_csv(args.assignments_output, index=False)
     centres.to_csv(args.centres_output, index=False)
     print(f"Wrote {len(assignments)} pilots in {args.k} groups to {args.assignments_output}")
     print(f"Wrote group centres to {args.centres_output}")
     print(centres.to_string(index=False, float_format="%.2f"))
-    if args.truth is not None:
-        score = truth_agreement(assignments, pd.read_csv(args.truth))
+    if score is not None:
         print(f"Agreement with true tiers (adjusted Rand index): {score:.3f}")
 
 
