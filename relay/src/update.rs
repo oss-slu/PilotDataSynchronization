@@ -827,11 +827,19 @@ mod tests {
     // feed to iMotions.
     #[test]
     fn a_python_process_that_stops_reading_is_dropped_not_waited_on() {
-        // The Python side never reads, so its pinned receive buffer fills and
-        // stays full: writes block, the 100ms timeout fires and the mirror is
-        // dropped. With the host's default buffers the whole run fits in the
-        // kernel, nothing blocks, and the timeout never fires at all.
-        const SAMPLES: usize = 500;
+        // The Python side never reads, so the buffers fill and stay full:
+        // writes block, the 100ms timeout fires and the mirror is dropped.
+        // With the host's default buffers the whole run fits in the kernel,
+        // nothing blocks, and the timeout never fires at all.
+        //
+        // Fed in batches until that happens rather than as one fixed burst.
+        // mirror_send drops into a 256-deep queue when it is full, so a burst
+        // does not decide how much reaches the writer thread -- the race
+        // between the two threads does, and a burst that loses it leaves the
+        // writer with far less than a bufferful and nothing ever blocks. The
+        // stalled reader never drains, so what the writer does get through
+        // accumulates across batches and the timeout is reached for certain.
+        const BATCH: usize = 200;
 
         let (imotions, imotions_addr) = listener_on_free_port();
         let (python, python_addr) = stalling_listener_on_free_port();
@@ -862,15 +870,18 @@ mod tests {
         );
 
         let started = std::time::Instant::now();
-        for i in 0..SAMPLES {
-            send_sample(&mut state, &format!("{}", 1000 + i % 100));
-        }
+        let mut samples = 0usize;
+        let was_dropped = wait_until(|| {
+            for i in 0..BATCH {
+                send_sample(&mut state, &format!("{}", 1000 + (samples + i) % 100));
+            }
+            samples += BATCH;
+            let _ = update(&mut state, Message::Update);
+            !state.mirror_connected
+        });
         assert!(
-            wait_until(|| {
-                let _ = update(&mut state, Message::Update);
-                !state.mirror_connected
-            }),
-            "a stalled reader was never dropped"
+            was_dropped,
+            "a stalled reader was never dropped after {samples} samples"
         );
         let elapsed = started.elapsed();
 
