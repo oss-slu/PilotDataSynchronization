@@ -20,7 +20,7 @@ Run from the repo root, in order, per component:
 - Baton: `cd xplane_plugin/subprojects/baton && cargo test`
 - Inference: `cd inference && uv sync`, then `uv run python -m pilot_inference.<group>.<module>`. `uv run pytest` runs the tests in `inference/tests/`; the event classification scripts are mostly untested.
 
-CI is in `.github/workflows/` (`meson-build.yml`, `super-linter.yml`). Run `meson setup` with the cross-file for your OS if not on native Windows (see README).
+CI is in `.github/workflows/`: `meson-build.yml` builds the C++ plugin on Windows, `rust.yml` builds and tests the three Rust crates on Ubuntu, and `super-linter.yml` lints. Run `meson setup` with the cross-file for your OS if not on native Windows (see README).
 
 ## Gotchas
 
