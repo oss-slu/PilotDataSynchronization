@@ -166,9 +166,6 @@ where we are the instructor:
 2. Start `live_groups` with the brief and a `--pilot-id`, then press `Connect mirror` in the relay
    (or `Connect TCP` with no iMotions). It replaces the capture logger for the flight, so stop
    `data_logger` first; if the port is still taken, `live_groups` says so and exits.
-   On Windows and Linux keep the plugin's "Positional Flight Data" window open the whole flight:
-   the stream stops when it closes (see the root README), and the status line's scored time then
-   stops growing.
 3. Press Enter at the moment each instruction is spoken. The targets it changes are not scored
    for 30 seconds (`--settle`), so the turn or level-off does not count; targets it leaves alone,
    or restates at the same value, are scored throughout, so altitude lost in a turn counts.

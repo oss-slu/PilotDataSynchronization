@@ -83,7 +83,9 @@ Once X-Plane loads the plugin, it connects on its own:
 - baton starts automatically and begins retrying its connection to the relay.
 - There is no menu item, no hotkey, and no button to press to start sending.
 
-> On Windows and Linux, data flows only while the plugin window is being drawn. The 20 Hz send lives inside that window's draw callback, so closing or hiding "Positional Flight Data" stops the stream completely. (macOS uses a flight-loop callback instead and is unaffected.)
+The plugin sends at 20 Hz from an X-Plane flight loop, for as long as it is enabled. The window only displays the values, so closing it, or a window that never appears, does not stop the stream. It cannot be reopened without restarting X-Plane, but nothing depends on it.
+
+If the window does not appear, X-Plane's `Log.txt` (in the X-Plane folder) records where it was placed: search for `[PDS PLUGIN] Window placed at` and compare it with the `[PDS PLUGIN] Monitor` lines after it. While data is flowing, `Log.txt` also gets a `[PDS PLUGIN] Send ->` line for every sample.
 
 baton retries the relay connection about 20 times across roughly 90 seconds, then gives up permanently. If the relay was not running during that window, disable and re-enable the plugin in X-Plane. Starting the relay afterwards will not recover the connection on its own.
 
@@ -220,8 +222,8 @@ In the relay's window:
 | Symptom | Cause | What to do |
 |---|---|---|
 | `Connect TCP` fails and the status stays `false` | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect TCP` again. `Disconnect TCP` first is no longer needed |
-| `:( No Baton Connection` | The plugin is not loaded, or its window is closed | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
-| Data stops part-way through a flight | The "Positional Flight Data" window was closed or hidden (Windows/Linux only) | Reopen it |
+| `:( No Baton Connection` | The plugin is not loaded or not enabled | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
+| `:) Baton Connected!` but no data reaches the relay | The plugin is not sending | Search X-Plane's `Log.txt` for `[PDS PLUGIN] Send ->`. If there are none, check the plugin is ticked in Plugins > Plugin Admin |
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |
 | The plugin never connects, even after the relay is started | baton gave up after roughly 90 seconds of retries and does not re-arm | Disable and re-enable the plugin in X-Plane |
 | `meson setup` fails while downloading subprojects | The X-Plane SDK and GoogleTest are fetched over the network | Check connectivity or proxy settings, then re-run `meson setup build` |
