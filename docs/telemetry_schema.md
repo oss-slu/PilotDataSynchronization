@@ -39,6 +39,40 @@ error), not the aircraft's raw physical state — see note 2 in
 `key_datarefs.md`. `yaw` and `g_force` are exceptions: both come from
 `sim/flightmodel/*` DataRefs rather than a pilot-side instrument.
 
+### The paired wire payload (#184)
+
+The plugin sends 16 values per sample, not 8: both halves of every value,
+flightmodel first, in the order the relay turns into iMotions entries.
+
+| position | 0, 1 | 2, 3 | 4, 5 | 6, 7 | 8, 9 | 10, 11 | 12, 13 | 14, 15 |
+|---|---|---|---|---|---|---|---|---|
+| value | altitude | airspeed | vertical speed | heading | roll | pitch | yaw | g force |
+
+Each pair becomes one iMotions entry carrying two values, `FlightModel*` then
+`Pilot*`, for example `E;1;PilotDataSync;;;;;AltitudeSync;1248.2;1250.5`.
+`data_logger.py` records the second value, because the dataset is defined as
+pilot-side readings (see GLOSSARY.md, "Pilot reading").
+
+Note the order: vertical speed comes before heading. The older pilot-only
+payload sent heading third and the relay reordered it on the way out; the
+paired payload is in entry order so the relay pairs straight through.
+
+The flightmodel half is converted into the pilot half's units in the plugin,
+since `sim/flightmodel/position/elevation` is metres and
+`sim/flightmodel/position/true_airspeed` is metres per second while the pilot
+DataRefs are already feet and knots. Airspeed also differs in kind, not only in
+sensor error: the flightmodel half is true airspeed and the pilot half is
+indicated, so the gap between them grows with altitude.
+
+`yaw` and `g_force` have no pilot-side DataRef, so both halves carry the
+flightmodel value and are always equal.
+
+**Older plugins send 8 values.** The relay still accepts 8 (and 4) and fills
+the flightmodel half with a copy of the pilot value, because it has nothing
+else to put there. Data captured that way cannot be used to compare the two
+halves, in the same way that pre-#196 data cannot be used at face value for
+`altitude` and `velocity`.
+
 **Older data has mis-scaled `altitude` and `velocity` (fixed in #196):** before
 #196, the plugin multiplied `altitude_ft_pilot` (already feet) by 3.28084 and
 `airspeed_kts_pilot` (already knots) by 1.94384 before sending. Data collected

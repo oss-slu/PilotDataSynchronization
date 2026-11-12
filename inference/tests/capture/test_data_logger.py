@@ -26,6 +26,22 @@ def packet(event: str, value: float) -> str:
     return f"E;1;PilotDataSync;;;;;{event};{value};{value}\r\n"
 
 
+def test_parse_packet_takes_the_pilot_half_not_the_flightmodel_half():
+    """
+    #184: each entry carries FlightModel* then Pilot*. The dataset is defined
+    as pilot-side instrument readings, so the second value is the one logged.
+    The helper above sends the same number twice, as a pre-#184 relay did, so
+    it cannot tell the two apart -- this uses values that differ.
+    """
+    line = "E;1;PilotDataSync;;;;;AltitudeSync;1000.0;1234.5\r\n"
+    assert data_logger.parse_packet(line) == ("AltitudeSync", 1234.5)
+
+
+def test_parse_packet_rejects_an_entry_missing_the_pilot_half():
+    """A truncated entry is dropped rather than logged as flightmodel data."""
+    assert data_logger.parse_packet("E;1;PilotDataSync;;;;;AltitudeSync;1000.0\r\n") is None
+
+
 def test_csv_fields_start_with_identity_columns():
     assert data_logger.CSV_FIELDS[:3] == ["timestamp", "pilot_id", "flight_id"]
     assert data_logger.CSV_FIELDS[3:] == data_logger.TELEMETRY_FIELDS

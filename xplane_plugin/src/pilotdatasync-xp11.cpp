@@ -51,6 +51,13 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD ul_reason_for_call,
 static XPLMWindowID g_window;
 
 // DataRef Identifiers (use lowercase variable names consistently)
+// The flightmodel datarefs are in meters and meters per second, so they are
+// converted to feet and knots. The pilot datarefs are already in feet and
+// knots. Both send sites need these, so they live here rather than in one of
+// them: the two halves of a pair must arrive in the same unit (#184).
+static const float msToFeetRate = 3.28084f;
+static const float msToKnotsRate = 1.94384f;
+
 static XPLMDataRef elevationFlightmodelRef;
 static XPLMDataRef elevationPilotRef;
 static XPLMDataRef airspeedFlightmodelRef;
@@ -138,11 +145,39 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
       // single-G field behavior
       float currentPilotGForce = XPLMGetDataf(gforceVerticalRef);
 
+      // The flightmodel half, converted into the pilot half's units so the
+      // two are comparable.
+      float currentFlightmodelElevation =
+          XPLMGetDataf(elevationFlightmodelRef) * msToFeetRate;
+      float currentFlightmodelAirspeed =
+          XPLMGetDataf(airspeedFlightmodelRef) * msToKnotsRate;
+      float currentFlightmodelVerticalVelocity =
+          XPLMGetDataf(verticalVelocityFlightmodelRef);
+      float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
+      float currentFlightmodelRoll = XPLMGetDataf(rollFlightmodelRef);
+      float currentFlightmodelPitch = XPLMGetDataf(pitchFlightmodelRef);
+      float currentFlightmodelYaw = XPLMGetDataf(yawFlightmodelRef);
+      float currentFlightmodelGForce = XPLMGetDataf(gforceVerticalRef);
+
+      // Both halves of every value, flightmodel first, in the relay's
+      // iMotions entry order. See the comment on the draw callback's send.
       std::vector<float> send_to_baton = {
-          currentPilotElevation, currentPilotAirspeed,
-          currentPilotHeading,   currentPilotVerticalVelocity,
-          currentPilotRoll,      currentPilotPitch,
-          currentPilotYaw,       currentPilotGForce,
+          currentFlightmodelElevation,
+          currentPilotElevation,
+          currentFlightmodelAirspeed,
+          currentPilotAirspeed,
+          currentFlightmodelVerticalVelocity,
+          currentPilotVerticalVelocity,
+          currentFlightmodelHeading,
+          currentPilotHeading,
+          currentFlightmodelRoll,
+          currentPilotRoll,
+          currentFlightmodelPitch,
+          currentPilotPitch,
+          currentFlightmodelYaw,
+          currentPilotYaw,
+          currentFlightmodelGForce,
+          currentPilotGForce,
       };
       baton->send(send_to_baton);
 
@@ -256,12 +291,6 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
   XPLMGetWindowGeometry(in_window_id, &l, &t, &r, &b);
 
   float col_white[] = {1.0, 1.0, 1.0}; // RGB
-
-  // The flightmodel datarefs are in meters and meters per second, so they are
-  // converted to feet and knots. The pilot datarefs are already in feet and
-  // knots.
-  float msToFeetRate = 3.28084f;
-  float msToKnotsRate = 1.94384f;
 
   auto build_str = [](string label, string unit, float value) {
     string suffix = !std::isnan(value) ? std::to_string(value) + " " + unit
@@ -414,23 +443,42 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
                         .count();
 
   if (elapsed_ms >= SEND_INTERVAL_MS) {
-    // Send flight data to Relay via Baton. Order must match Relay expectations:
-    // current behavior: plugin sends Pilot-only values in order:
-    //  [Altitude, Airspeed, Heading, VerticalVelocity, Roll, Pitch, Yaw,
+    // Send flight data to Relay via Baton. Both halves of every value,
+    // flightmodel first, in the order the relay turns into iMotions entries:
+    //  [Altitude, Airspeed, VerticalVelocity, Heading, Roll, Pitch, Yaw,
     //  G-Force]
-    // Keep that order and use flightmodel yaw and vertical G for compatibility.
+    //
+    // Note vertical velocity comes before heading. The old pilot-only payload
+    // sent heading third and the relay reordered it; the paired payload is in
+    // entry order instead, so the relay pairs straight through. Sending 16
+    // values is what lets FlightModel* and Pilot* differ at all (#184).
+    //
+    // Yaw and G-Force have no pilot-side DataRef, so both halves carry the
+    // flightmodel value and stay equal by design.
     vector<float> send_to_baton = {
-        currentPilotElevation, currentPilotAirspeed,
-        currentPilotHeading,   currentPilotVerticalVelocity,
-        currentPilotRoll,      currentPilotPitch,
-        currentPilotYaw,       currentPilotG,
+        currentFlightmodelElevation,
+        currentPilotElevation,
+        currentFlightmodelAirspeed,
+        currentPilotAirspeed,
+        currentFlightmodelVerticalVelocity,
+        currentPilotVerticalVelocity,
+        currentFlightmodelHeading,
+        currentPilotHeading,
+        currentFlightmodelRoll,
+        currentPilotRoll,
+        currentFlightmodelPitch,
+        currentPilotPitch,
+        currentFlightmodelYaw,
+        currentPilotYaw,
+        currentFlightmodelGVert,
+        currentPilotG,
     };
 
     {
-      char dbg[256];
+      char dbg[320];
       std::snprintf(dbg, sizeof(dbg),
-                    "[PDS PLUGIN] Draw send -> alt=%.3f air=%.3f hdg=%.3f "
-                    "vv=%.3f roll=%.3f pitch=%.3f yaw=%.3f g=%.3f\n",
+                    "[PDS PLUGIN] Draw send -> alt=%.3f/%.3f air=%.3f/%.3f "
+                    "vv=%.3f/%.3f hdg=%.3f/%.3f (flightmodel/pilot)\n",
                     send_to_baton[0], send_to_baton[1], send_to_baton[2],
                     send_to_baton[3], send_to_baton[4], send_to_baton[5],
                     send_to_baton[6], send_to_baton[7]);
