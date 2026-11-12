@@ -11,3 +11,6 @@ anyhow = "*"
 interprocess = "*"
 crossbeam = "0.8.4"
 chrono = "0.4.42"
+# For SO_SNDBUF and SO_RCVBUF on the mirror sockets, which std::net
+# does not expose. Cross-platform, so the Windows build gets them too.
+socket2 = "0.5"
