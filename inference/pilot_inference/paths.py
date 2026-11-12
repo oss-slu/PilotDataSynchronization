@@ -6,3 +6,5 @@ INFERENCE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = INFERENCE_DIR / "data"
 PREPARED_DIR = DATA_DIR / "prepared"
 MODELS_DIR = INFERENCE_DIR / "models"
+# Tables, figures and metrics.json from the model evaluation (#272).
+RESULTS_DIR = INFERENCE_DIR / "results"
