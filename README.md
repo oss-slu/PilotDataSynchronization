@@ -27,6 +27,19 @@ Then:
 
 Start the components in this order: iMotions (or the mock server) → relay → X-Plane. The relay is a TCP client, and any flight data that arrives before its TCP connection is up is discarded.
 
+## Download the built files
+
+Lab PCs do not need to build anything. Download `PilotDataSync.xpl` and `relay.exe` from the repo's [GitHub Releases page](https://github.com/oss-slu/PilotDataSynchronization/releases).
+
+- `PilotDataSync.xpl` goes into X-Plane's `Resources/plugins/PilotDataSync/win_x64/` folder. See [1. X-Plane plugin](#1-x-plane-plugin).
+- `relay.exe` can live anywhere. Run it by double-clicking it. It needs no VC++ redistributable. Double-clicking it opens a console window next to the relay window, where its diagnostic messages go (see [2. Relay](#2-relay)).
+
+> Not yet confirmed on a clean lab PC. The DLLs that `relay.exe` loads were checked, and none is part of the VC++ redistributable, but no one has run it on a PC without the redistributable installed. If you try it on one, please confirm it and delete this note.
+
+Build from source only when you want to change the code, or while no release has been published yet. A release is published by pushing a `v*` tag, such as `v0.1.0`.
+
+To try a branch on the lab PC before it merges, open its CI run under the repo's Actions tab. Every run keeps both files as workflow artifacts.
+
 ## Prerequisites
 
 | Tool | Version | Needed for | Notes |

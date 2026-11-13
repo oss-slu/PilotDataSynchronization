@@ -1,10 +1,12 @@
 ---
 name: Meson Build System
 
-# Basically, only rebuilds and tests the project when C++ is changed
-# Commented out to facilitate testing
+# Builds the plugin and relay on every branch push and pull request, and keeps
+# both files as workflow artifacts. The path filters are commented out to
+# facilitate testing. Tags are built by release.yml, which calls this workflow.
 on:
   push:
+    branches: ['**']
     # paths:
     #   - "**.cpp"
     #   - "**.h"
@@ -13,13 +15,15 @@ on:
     #   - "**.cpp"
     #   - "**.h"
   workflow_dispatch:
+  # Lets release.yml reuse this build instead of repeating its steps.
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
   build-on-windows:
-    name: Build and Test on Windows with Meson  
+    name: Build the plugin and relay on Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +42,24 @@ jobs:
           cd xplane_plugin/
           meson setup build
           meson compile -C build
+
+      - name: Build the relay
+        working-directory: relay
+        run: cargo build --release
+
+      - name: Upload the plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: xplane_plugin/build/PilotDataSync.xpl
+          if-no-files-found: error
+
+      - name: Upload the relay
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay
+          path: relay/target/release/relay.exe
+          if-no-files-found: error
       # - name: Test the Meson Project
       #   run: |
       #     cd xplane_plugin/
