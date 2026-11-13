@@ -1,5 +1,7 @@
 # The relay outlives the listener and retries its outputs
 
+Status: accepted. The relay's side is #276; the launchers and the listeners' resume are planned in #278 and #277.
+
 The launchers start the **Relay** as its own process, apart from the Python listener (`data_logger` or `live_groups`). They leave it running when the listener stops, and reuse it if it is already running. Given `--tcp` or `--mirror`, the relay keeps retrying that address until it connects, and again after a drop, so a listener started again mid-**Flight** is picked up with no clicks. We chose this because the **Plugin** cannot reconnect to a relay that has restarted (#256, #255): a relay that closed with its listener would cost the **Instructor** an X-Plane restart mid-**Flight**. In the lab, closing the console window is how people stop a listener.
 
 ## Considered Options

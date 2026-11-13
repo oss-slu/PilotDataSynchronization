@@ -109,7 +109,7 @@ Then, in order:
    - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
 4. Press `Connect TCP`.
-5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
+5. Press `Check TCP Connection Status` to refresh the status line. It is also updated when the connection is made or lost, but this button is the way to refresh it.
 6. Start X-Plane. Flight data now flows automatically.
 
 > The `Send Packet` button sends one test packet of zeros, for example `E;1;PilotDataSync;;;;;AltitudeSync;0;0`, and shows the time it was sent next to the button. The sample is the first dataref toggle that is enabled, so the packet always matches a `<Sample>` in the generated `iMotions.xml`. It is a connection check and needs TCP connected, not X-Plane. Avoid pressing it during a recording, since iMotions receives the zeros as a real sample. The live data stream is automatic and does not need this button.
@@ -150,9 +150,9 @@ cargo run -- --tcp 127.0.0.1:5001                               # no iMotions: s
 
 (With a built relay, the same options follow `relay`.) Addresses are a literal IP and port, as in the boxes. `--mirror` needs `--tcp`, because the mirror copies the TCP stream. `relay --help` prints the usage.
 
-- Each output given is retried every half second until it connects, and again after it drops. A listener that starts late, or is restarted mid-Flight, is picked up with no clicks, and the relay window says it is waiting and retrying. The relay itself keeps running, because the plugin cannot reconnect to a relay that has restarted (`docs/adr/0005`).
+- Each output given is retried until it connects, and again after it drops, a connection that was up at once. A listener that starts late, or is restarted mid-Flight, is picked up with no clicks, and the relay window says it is waiting for the address and retrying. The relay itself keeps running, because the plugin cannot reconnect to a relay that has restarted (`docs/adr/0005`).
 - While the mirror is down the iMotions stream is not held up, and the event log gets one line for the whole run of failed attempts, not one per attempt.
-- `Disconnect TCP` stops the retrying, and the mirror's with it. `Disconnect mirror` stops only the mirror's. The Instructor can still use the buttons as before, but a button press does not start retrying.
+- `Disconnect TCP` stops the retrying, and the mirror's with it. `Disconnect mirror` stops only the mirror's. Pressing `Connect TCP` or `Connect mirror` yourself takes that output over: it is connected as the button always did, and is not retried to the command-line address afterwards.
 - Without options nothing changes: the relay waits for you to click.
 
 ## 3. iMotions

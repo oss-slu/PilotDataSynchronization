@@ -15,7 +15,7 @@ What is guaranteed: the TCP thread never waits on the mirror. Connecting, writin
 
 A mirror falling behind is reported once when it starts dropping and once when it catches up, not per packet, because the event log is capped at 200 entries and 160 packets a second would empty it.
 
-The Python side has to read its socket continuously, on a thread of its own if it also does slow work. A clustering refit that stops reading for long enough will first lose copies and then, once the write timeout expires, lose the mirror. A mirror connected by clicking does not reconnect by itself.
+The Python side has to read its socket continuously, on a thread of its own if it also does slow work. A clustering refit that stops reading for long enough will first lose copies and then, once the write timeout expires, lose the mirror.
 
 A mirror connected by clicking is not reconnected: if Python restarts, press `Connect mirror` again. A mirror given with `--mirror` on the command line is retried until it connects and again after it drops (#276, docs/adr/0005).
 

@@ -27,9 +27,7 @@ fn main() -> iced::Result {
             std::process::exit(0);
         }
         Err(e) => {
-            eprintln!("relay: {e}
-
-{}", cli::USAGE);
+            eprintln!("relay: {e}\n\n{}", cli::USAGE);
             std::process::exit(2);
         }
     };

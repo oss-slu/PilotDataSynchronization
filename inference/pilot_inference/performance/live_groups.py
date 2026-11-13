@@ -184,15 +184,18 @@ class RelayListener:
                 pass
             except (OSError, ValueError) as error:
                 # Garbled bytes or a socket error end this connection, not the
-                # listener: the mirror never reconnects by itself (docs/adr/0003),
-                # so the next Connect mirror must still find someone listening.
+                # listener: the relay may reconnect (with --mirror it does so by
+                # itself, docs/adr/0005), and must still find someone listening.
                 if not self._closed:
                     print(f"Relay connection failed: {error}")
             with self._lock:
                 self._conn = None
                 if self._closed:
                     return
-            print("Relay disconnected. Press Connect mirror again to resume.")
+            print(
+                "Relay disconnected. A relay started with --mirror reconnects by itself; "
+                "otherwise press Connect mirror again."
+            )
 
 
 def _cell(value) -> str:

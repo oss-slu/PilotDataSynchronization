@@ -38,6 +38,10 @@ _Avoid_: Fake iMotions
 A second destination the **Relay** copies every packet to, so the Python side can read a flight while iMotions records it. The copy is best effort: packets are dropped if the mirror falls behind, and the iMotions stream is never held up for it (`docs/adr/0003`).
 _Avoid_: Python stream, fan-out, secondary connection, sink
 
+**Listener**:
+The Python program that reads a **Flight**'s **Telemetry** from the **Relay**, through the **Mirror** or directly when there is no iMotions: the capture logger or live groups.
+_Avoid_: Consumer, sink. "Sidecar" in `docs/adr/0004` means the live-groups listener only.
+
 ### Performance measurement
 
 **Airspeed**:

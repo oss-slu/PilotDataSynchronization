@@ -7,7 +7,7 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input, 
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
-use crate::state::{IMOTIONS_ADDR_HINT, MIRROR_ADDR_HINT, RECONNECT_INTERVAL};
+use crate::state::{IMOTIONS_ADDR_HINT, MIRROR_ADDR_HINT};
 use crate::{Message, State};
 
 type UIElement<'a> = Element<'a, Message>;
@@ -152,14 +152,16 @@ fn human_bps(bps: f64) -> String {
     format!("{:.2} Gbps", gbps)
 }
 
+/// How an output given on the command line is described while it is down.
+fn waiting_text(address: &str) -> String {
+    format!("waiting for {address}, retrying")
+}
+
 fn tcp_connect_status_element(state: &State) -> UIElement {
     // An address given on the command line is kept connected, so its status is
     // shown live instead of waiting for Check TCP Connection Status.
-    let status = match (state.tcp_waiting_for(), state.tcp_target.as_deref()) {
-        (Some(address), _) => format!(
-            "waiting for {address}, retrying every {} ms",
-            RECONNECT_INTERVAL.as_millis()
-        ),
+    let status = match (state.tcp_waiting_for(), state.tcp_retry.target.as_deref()) {
+        (Some(address), _) => waiting_text(address),
         (None, Some(address)) => format!("connected to {address}"),
         (None, None) => state.tcp_connected.to_string(),
     };
@@ -240,10 +242,7 @@ fn mirror_status_element(state: &State) -> UIElement {
     let status = if state.mirror_connected {
         "Python mirror: connected".to_string()
     } else if let Some(address) = state.mirror_waiting_for() {
-        format!(
-            "Python mirror: waiting for {address}, retrying every {} ms",
-            RECONNECT_INTERVAL.as_millis()
-        )
+        format!("Python mirror: {}", waiting_text(address))
     } else {
         "Python mirror: not connected".to_string()
     };
