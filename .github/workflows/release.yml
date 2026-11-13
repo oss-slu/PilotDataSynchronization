@@ -1,0 +1,46 @@
+---
+name: Release
+
+# A v* tag publishes a GitHub Release. A manual run is a dry run: it builds
+# and uploads the files as workflow artifacts, and publishes nothing.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the plugin and relay
+    uses: ./.github/workflows/meson-build.yml
+
+  publish:
+    name: Publish the GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the plugin
+        uses: actions/download-artifact@v4
+        with:
+          name: PilotDataSync-plugin
+          path: release-files
+
+      - name: Download the relay
+        uses: actions/download-artifact@v4
+        with:
+          name: relay
+          path: release-files
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" --generate-notes
+          release-files/PilotDataSync.xpl release-files/relay.exe
