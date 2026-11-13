@@ -85,7 +85,9 @@ Once X-Plane loads the plugin, it connects on its own:
 
 The plugin sends at 20 Hz from an X-Plane flight loop, for as long as it is enabled. The window only displays the values, so closing it, or a window that never appears, does not stop the stream. It cannot be reopened without restarting X-Plane, but nothing depends on it.
 
-If the window does not appear, X-Plane's `Log.txt` (in the X-Plane folder) records where it was placed: search for `[PDS PLUGIN] Window placed at` and compare it with the `[PDS PLUGIN] Monitor` lines after it. While data is flowing, `Log.txt` also gets a `[PDS PLUGIN] Send ->` line for every sample.
+If the window does not appear, X-Plane's `Log.txt` (in the X-Plane folder) records where it went: search for `[PDS PLUGIN] Window placed at` and compare it with the `[PDS PLUGIN] Monitor ... (global)` lines after it, which use the same coordinates. X-Plane lists only the monitors it runs full-screen on there, so in windowed mode there are none. The `(OS)` lines list every monitor, in Windows' own pixels.
+
+Every sample the plugin sends, from the flight loop or the window's `Send Packet` button, also adds a `[PDS PLUGIN] Send ->` line to `Log.txt`.
 
 baton retries the relay connection about 20 times across roughly 90 seconds, then gives up permanently. If the relay was not running during that window, disable and re-enable the plugin in X-Plane. Starting the relay afterwards will not recover the connection on its own.
 

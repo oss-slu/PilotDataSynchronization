@@ -53,8 +53,8 @@ static XPLMWindowID g_window;
 // DataRef Identifiers (use lowercase variable names consistently)
 // The flightmodel datarefs are in meters and meters per second, so they are
 // converted to feet and knots. The pilot datarefs are already in feet and
-// knots. Both send sites need these, so they live here rather than in one of
-// them: the two halves of a pair must arrive in the same unit (#184).
+// knots. Both read_sample() and the window's display need these, so they live
+// here: the two halves of a pair must arrive in the same unit (#184).
 static const float msToFeetRate = 3.28084f;
 static const float msToKnotsRate = 1.94384f;
 
@@ -155,14 +155,9 @@ vector<float> read_sample() {
   };
 }
 
-// Send a sample every SEND_INTERVAL_MS for as long as the plugin is enabled.
-// X-Plane runs flight loops whether or not the window is drawn, so data keeps
-// flowing with "Positional Flight Data" closed or off-screen (#274). It used
-// to be sent from the draw callback, and a window that was never drawn sent
-// nothing at all.
-float send_flight_loop(float in_elapsed_since_last_call,
-                       float in_elapsed_since_last_flight_loop, int in_counter,
-                       void *in_refcon) {
+// Send one sample to the relay and record it in Log.txt. Used by the flight
+// loop and by the window's Send Packet button.
+void send_sample() {
   vector<float> send_to_baton = read_sample();
 
   {
@@ -176,18 +171,32 @@ float send_flight_loop(float in_elapsed_since_last_call,
     XPLMDebugString(dbg);
   }
   baton->send(send_to_baton);
+}
+
+// Send a sample every SEND_INTERVAL_MS for as long as the plugin is enabled.
+// X-Plane runs flight loops whether or not the window is drawn, so data keeps
+// flowing with "Positional Flight Data" closed or off-screen (#274). It used
+// to be sent from the draw callback, and a window that was never drawn sent
+// nothing at all.
+float send_flight_loop(float in_elapsed_since_last_call,
+                       float in_elapsed_since_last_flight_loop, int in_counter,
+                       void *in_refcon) {
+  send_sample();
 
   return SEND_INTERVAL_MS / 1000.0f;
 }
 
-// Write one monitor's bounds to Log.txt, in the same global coordinates as
-// the window's position. Called by XPLMGetAllMonitorBoundsGlobal.
+// Write one monitor's bounds to Log.txt. Both XPLMGetAllMonitorBoundsGlobal
+// and XPLMGetAllMonitorBoundsOS call back with this signature; in_refcon
+// names which coordinates the bounds are in.
 void log_monitor_bounds(int in_monitor_index, int in_left, int in_top,
                         int in_right, int in_bottom, void *in_refcon) {
-  char line[160];
-  std::snprintf(line, sizeof(line),
-                "[PDS PLUGIN] Monitor %d: left=%d top=%d right=%d bottom=%d\n",
-                in_monitor_index, in_left, in_top, in_right, in_bottom);
+  char line[200];
+  std::snprintf(
+      line, sizeof(line),
+      "[PDS PLUGIN] Monitor %d (%s): left=%d top=%d right=%d bottom=%d\n",
+      in_monitor_index, static_cast<const char *>(in_refcon), in_left, in_top,
+      in_right, in_bottom);
   XPLMDebugString(line);
 }
 
@@ -198,7 +207,7 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
     // Button bounds are set in draw_pilotdatasync_plugin
     if (x >= button_left && x <= button_right && y >= button_bottom &&
         y <= button_top) {
-      baton->send(read_sample());
+      send_sample();
 
       last_send_timestamp = get_current_timestamp();
     }
@@ -280,17 +289,25 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
   XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
-  // Record where the window was put, and where the monitors are, so a window
-  // nobody can see can be found from Log.txt (#274).
+  // Record where the window ended up, and where the monitors are, so a window
+  // nobody can see can be found from Log.txt (#274). The window and the
+  // "global" monitor lines share X-Plane's coordinates, but X-Plane lists only
+  // the monitors it runs full-screen on there. The "OS" lines list every
+  // monitor, in the operating system's pixels.
+  int window_left, window_top, window_right, window_bottom;
+  XPLMGetWindowGeometry(g_window, &window_left, &window_top, &window_right,
+                        &window_bottom);
   char placed[200];
   std::snprintf(placed, sizeof(placed),
                 "[PDS PLUGIN] Window placed at left=%d top=%d right=%d "
                 "bottom=%d, inside screen bounds left=%d top=%d right=%d "
                 "bottom=%d\n",
-                params.left, params.top, params.right, params.bottom, left,
-                top, right, bottom);
+                window_left, window_top, window_right, window_bottom, left, top,
+                right, bottom);
   XPLMDebugString(placed);
-  XPLMGetAllMonitorBoundsGlobal(log_monitor_bounds, NULL);
+  XPLMGetAllMonitorBoundsGlobal(log_monitor_bounds,
+                                const_cast<char *>("global"));
+  XPLMGetAllMonitorBoundsOS(log_monitor_bounds, const_cast<char *>("OS"));
 
   return g_window != NULL;
 }
