@@ -98,6 +98,10 @@ _Avoid_: User, subject, participant
 One continuous simulator session by one pilot.
 _Avoid_: Session, run, trip
 
+**Instructor**:
+The person who gives the **Instructions** during a **Flight** and runs the software that records it.
+_Avoid_: Host, operator, experimenter
+
 **Pilot metadata**:
 Facts about a pilot that are not telemetry: certification level, flight hours and pilot rating.
 _Avoid_: Pilot profile, demographics
@@ -132,6 +136,7 @@ _Avoid_: Fake data, dummy data, mock data
 
 - A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
 - A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
+- An **Instructor** gives a **Flight**'s **Instructions** in the order its **Brief** lists them.
 - A **Flight** is divided into **Segments**, and is also flown as a sequence of **Legs**. A **Brief** lists its **Instructions** in order.
 - An **Instruction** sets new **Targets** from the moment it is given. The targets it changes are not scored during its **Settle window**.
 - A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone. A pilot outside the **Reference cohort** is placed in the nearest group without changing the groups.

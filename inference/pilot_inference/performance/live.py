@@ -2,7 +2,7 @@
 Deviation features for one flight while it is being flown (docs/adr/0004).
 
 For flights we fly ourselves we are the instructor, so we know the targets: a
-brief lists the instructions with the targets each one sets, and the operator
+brief lists the instructions with the targets each one sets, and the Instructor
 marks each one as it is spoken. Targets an instruction does not name carry
 over. LiveFlight attaches the targets in force to every sample, leaving the
 ones an instruction changed blank for a settle window so the turn or level-off

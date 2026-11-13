@@ -2,7 +2,7 @@
 Show a pilot's performance group while they fly (docs/adr/0004).
 
 Listens for the relay's mirror (or Connect TCP), assembles samples the way the
-capture logger does, attaches the brief's targets as the operator marks each
+capture logger does, attaches the brief's targets as the Instructor marks each
 instruction, and writes every sample to CSV. Every few seconds it prints the
 pilot's deviation features and the nearest group of a reference cohort. The
 cohort is synthetic until real pilots have targets, so the group demonstrates
