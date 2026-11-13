@@ -53,6 +53,10 @@ pub(crate) const MIRROR_ADDR_HINT: &str = "127.0.0.1:5001";
 /// cost the iMotions stream anything. They exist so a Python process that is
 /// gone or wedged is given up on rather than held open forever.
 const MIRROR_CONNECT_TIMEOUT: StdDuration = StdDuration::from_millis(500);
+
+/// How long an output given on the command line waits between attempts to
+/// connect, at start-up and after a drop (#276).
+pub(crate) const RECONNECT_INTERVAL: StdDuration = StdDuration::from_millis(500);
 const MIRROR_WRITE_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 
 /// How many packets may wait for the mirror's writer thread.
@@ -81,6 +85,60 @@ const MIRROR_QUEUE_CAPACITY: usize = 256;
 const MIRROR_SEND_BUFFER: usize = 32 * 1024;
 
 // --- State definition -------------------------------------------------------
+/// What the relay keeps trying to connect for one output given on the command
+/// line (#276, docs/adr/0005).
+#[derive(Debug, Default)]
+pub(crate) struct Retry {
+    /// The address given on the command line. `None` once it was never given,
+    /// Disconnect was pressed, or the Instructor connected by hand instead.
+    pub target: Option<String>,
+    /// Not before this instant. `None` means an attempt may start now: a
+    /// connection that was up has just been lost, or none has been tried yet.
+    next_attempt: Option<Instant>,
+    /// Whether the event log already has the line for the current run of
+    /// failed attempts, so a retry loop adds one line, not one per attempt.
+    noted: bool,
+}
+
+impl Retry {
+    fn with_target(target: Option<String>) -> Retry {
+        Retry {
+            target,
+            ..Retry::default()
+        }
+    }
+
+    fn is_due(&self, now: Instant) -> bool {
+        self.target.is_some() && self.next_attempt.map_or(true, |at| now >= at)
+    }
+
+    /// An attempt failed, or the output is still not up: wait before the next.
+    fn retry_later(&mut self) {
+        self.next_attempt = Some(Instant::now() + RECONNECT_INTERVAL);
+    }
+
+    /// A connection that was up has been lost, or an attempt has just started:
+    /// the next attempt may start at once.
+    fn retry_now(&mut self) {
+        self.next_attempt = None;
+    }
+
+    /// True the first time it is called in a run of failures, so the caller
+    /// logs once.
+    fn note_once(&mut self) -> bool {
+        !std::mem::replace(&mut self.noted, true)
+    }
+
+    fn restart(&mut self) {
+        self.noted = false;
+        self.next_attempt = None;
+    }
+
+    fn clear(&mut self) {
+        *self = Retry::default();
+    }
+}
+
 #[allow(unused)]
 pub(crate) struct State {
     pub elapsed_time: Duration,
@@ -127,6 +185,13 @@ pub(crate) struct State {
     // Mirror destination: the Python side reads the same packets iMotions gets
     pub mirror_addr_field: String,
     pub mirror_connected: bool,
+
+    // Outputs given on the command line, which the relay keeps connected
+    // (#276). A `Retry` with no target is only ever connected by clicking.
+    pub tcp_retry: Retry,
+    pub mirror_retry: Retry,
+    // A SetMirror is out and its outcome has not come back yet.
+    pub mirror_attempt_in_flight: bool,
 }
 
 impl Default for State {
@@ -170,6 +235,10 @@ impl Default for State {
 
             mirror_addr_field: String::new(),
             mirror_connected: false,
+
+            tcp_retry: Retry::default(),
+            mirror_retry: Retry::default(),
+            mirror_attempt_in_flight: false,
         }
     }
 }
@@ -486,6 +555,10 @@ fn mirror_send(
         return;
     };
     match active.packets.try_send(packet.to_string()) {
+        // The writer thread has gone: the mirror dropped or never connected,
+        // and its Disconnected event is on the way. That is not lag, so say
+        // nothing, and the event clears the mirror.
+        Err(crossbeam::channel::TrySendError::Disconnected(_)) => {}
         Ok(()) => {
             if active.lagging {
                 let note = format!(
@@ -498,7 +571,7 @@ fn mirror_send(
                 active.dropped = 0;
             }
         }
-        Err(_) => {
+        Err(crossbeam::channel::TrySendError::Full(_)) => {
             active.dropped += 1;
             // One line per episode. At 160 packets a second, reporting each
             // drop would push everything else out of the capped event log.
@@ -554,6 +627,19 @@ fn send_packet_and_debug(stream: &mut TcpStream, packet: &str) -> Result<()> {
         .flush()
         .map_err(|e| anyhow!("flush failed: {}", e))?;
     Ok(())
+}
+
+/// Report that a write to the TCP peer failed, so the GUI shows the drop and
+/// can reap this thread. Returns the error for the thread to exit with.
+fn tcp_link_lost(
+    child_bichannel: &mut ChildBiChannel<ToTcpThreadMessage, FromTcpThreadMessage>,
+    error: anyhow::Error,
+) -> Result<()> {
+    let reason = format!("TCP connection lost: {}", error);
+    human_log("TCP", &reason);
+    let _ = child_bichannel.set_is_conn_to_endpoint(false);
+    let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Disconnected(reason.clone()));
+    bail!(reason)
 }
 
 // --- State impl -------------------------------------------------------------
@@ -858,10 +944,15 @@ impl State {
         self.tcp_bichannel = Some(tcp_bichannel);
         
         let tcp_thread_handle = spawn(move || {
-            let mut stream = match TcpStream::connect(address) {
+            let mut stream = match TcpStream::connect(&address) {
+                // Disconnect TCP was pressed while the connect was under way:
+                // the connection is not wanted, so drop it and go quietly.
+                Ok(_) if child_bichannel.is_killswitch_engaged() => return Ok(()),
                 Ok(stream) => {
-                    human_log("TCP", "Successfully connected to iMotions server.");
+                    human_log("TCP", &format!("Successfully connected to {}.", address));
                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                    let _ = child_bichannel
+                        .send_to_parent(FromTcpThreadMessage::Connected(address.clone()));
                     stream
                 }
                 Err(e) => {
@@ -897,16 +988,18 @@ impl State {
                             }
 
                             for packet in packets_for_fields(&fields) {
-                                let res = send_packet_and_debug(&mut stream, &packet);
-                                let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
+                                // The first write after the peer closes can
+                                // still succeed; the ones after it fail, and
+                                // that is how a drop is noticed.
+                                if let Err(e) = send_packet_and_debug(&mut stream, &packet) {
+                                    return tcp_link_lost(&mut child_bichannel, e);
+                                }
                                 mirror_send(&mut mirror, &packet, &mut child_bichannel);
                             }
                         }
                         ToTcpThreadMessage::SendRaw(packet) => {
-                            let res = send_packet_and_debug(&mut stream, &packet);
-                            let _ = child_bichannel.set_is_conn_to_endpoint(res.is_ok());
-                            if let Err(e) = res {
-                                human_log("TCP", &format!("Test packet failed: {}", e));
+                            if let Err(e) = send_packet_and_debug(&mut stream, &packet) {
+                                return tcp_link_lost(&mut child_bichannel, e);
                             }
                             // The mirror gets the test packet too, so the button
                             // checks both links at once.
@@ -942,6 +1035,193 @@ impl State {
         // does not keep showing the old error.
         self.error_message = None;
         Ok(())
+    }
+
+    /// Connect the outputs given on the command line, and keep them connected:
+    /// each one is retried until it connects, and again after it drops, driven
+    /// by `Message::Update` (#276, docs/adr/0005). Pressing Disconnect TCP or
+    /// Disconnect mirror, or connecting that output by hand, stops the retrying
+    /// for it. With no outputs given this does nothing.
+    pub fn keep_connected(&mut self, outputs: crate::cli::StartupConnections) {
+        self.tcp_retry = Retry::with_target(outputs.tcp);
+        self.mirror_retry = Retry::with_target(outputs.mirror);
+        self.mirror_attempt_in_flight = false;
+
+        // Show the addresses in the boxes, so Connect TCP and Connect mirror
+        // work on them if retrying is stopped.
+        if let Some(address) = self.tcp_retry.target.clone() {
+            self.tcp_addr_field = address.clone();
+            if let Err(e) = self.tcp_connect(address) {
+                self.log_event(format!("TCP connect failed: {}", e));
+            }
+        }
+        if let Some(address) = self.mirror_retry.target.clone() {
+            self.mirror_addr_field = address;
+        }
+    }
+
+    /// The command-line TCP address, while it is not connected and so is being
+    /// waited for.
+    pub fn tcp_waiting_for(&self) -> Option<&str> {
+        self.tcp_retry
+            .target
+            .as_deref()
+            .filter(|_| !self.is_tcp_connected())
+    }
+
+    /// The command-line mirror address, while it is not connected and so is
+    /// being waited for.
+    pub fn mirror_waiting_for(&self) -> Option<&str> {
+        self.mirror_retry
+            .target
+            .as_deref()
+            .filter(|_| !self.mirror_connected)
+    }
+
+    /// The Instructor pressed Connect TCP: they have taken the output over by
+    /// hand, so a later drop is not retried to the command-line address.
+    pub fn take_over_tcp(&mut self) {
+        self.tcp_retry.clear();
+    }
+
+    /// The Instructor pressed Connect mirror. See `take_over_tcp`.
+    pub fn take_over_mirror(&mut self) {
+        self.mirror_retry.clear();
+        self.mirror_attempt_in_flight = false;
+    }
+
+    /// Disconnect TCP: stop retrying, the mirror's too since it rides on the
+    /// TCP connection, and drop the connection if there is one. Works between
+    /// attempts, when there is no thread to disconnect.
+    pub fn press_disconnect_tcp(&mut self) {
+        let was_retrying = self.tcp_retry.target.is_some();
+        self.tcp_retry.clear();
+        self.mirror_retry.clear();
+        self.mirror_attempt_in_flight = false;
+        if was_retrying {
+            self.log_event("No longer retrying TCP or the mirror".into());
+        }
+        if self.tcp_thread_handle.is_some() {
+            if let Err(e) = self.tcp_disconnect() {
+                self.log_event(format!("TCP disconnect failed: {}", e));
+            }
+        } else if !was_retrying {
+            self.log_event("TCP disconnect failed: TCP thread does not exist.".into());
+        }
+    }
+
+    /// Disconnect mirror: stop retrying it and close it. TCP is untouched.
+    pub fn press_disconnect_mirror(&mut self) {
+        if self.mirror_retry.target.is_some() {
+            self.log_event("No longer retrying the Python mirror".into());
+        }
+        self.mirror_retry.clear();
+        self.mirror_attempt_in_flight = false;
+        if let Err(e) = self.mirror_disconnect() {
+            self.log_event(format!("Python mirror disconnect failed: {}", e));
+        }
+    }
+
+    /// The TCP thread connected.
+    pub fn on_tcp_connected(&mut self, address: String) {
+        self.log_event(format!("TCP connected to {}", address));
+        self.tcp_connected = true;
+        self.tcp_retry.restart();
+    }
+
+    /// The TCP thread reported that it failed to connect or lost its
+    /// connection, and has exited.
+    ///
+    /// With a command-line target the run of failures gets one log line and no
+    /// error banner, since the status line already says the relay is waiting.
+    /// A connection that was up is retried at once, so iMotions loses as little
+    /// as possible; failed attempts wait `RECONNECT_INTERVAL` between them.
+    pub fn on_tcp_lost(&mut self, reason: String) {
+        if self.tcp_retry.target.is_some() {
+            if self.tcp_connected {
+                self.tcp_retry.retry_now();
+            } else {
+                self.tcp_retry.retry_later();
+            }
+            if self.tcp_retry.note_once() {
+                self.log_event(format!(
+                    "TCP disconnected: {}. Retrying until it connects",
+                    reason
+                ));
+            }
+        } else {
+            self.log_event(format!("TCP disconnected: {}", reason));
+            self.error_message = Some(reason);
+        }
+        // The thread has exited. Clear it so Connect TCP works again without
+        // pressing Disconnect TCP first.
+        self.reap_tcp_thread();
+    }
+
+    /// The mirror's writer thread connected.
+    pub fn on_mirror_connected(&mut self, address: String) {
+        self.log_event(format!("Python mirror connected to {}", address));
+        self.mirror_connected = true;
+        self.mirror_attempt_in_flight = false;
+        self.mirror_retry.restart();
+    }
+
+    /// The mirror failed to connect, dropped, or was closed. Retried like the
+    /// TCP output, without the error banner, which the mirror never had.
+    pub fn on_mirror_lost(&mut self, reason: String) {
+        if self.mirror_retry.target.is_some() {
+            if self.mirror_connected {
+                self.mirror_retry.retry_now();
+            } else {
+                self.mirror_retry.retry_later();
+            }
+            if self.mirror_retry.note_once() {
+                self.log_event(format!(
+                    "Python mirror stopped: {}. Retrying until it connects",
+                    reason
+                ));
+            }
+        } else {
+            self.log_event(format!("Python mirror stopped: {}", reason));
+        }
+        self.mirror_connected = false;
+        self.mirror_attempt_in_flight = false;
+    }
+
+    /// Start whichever retries are due. Called on every `Message::Update`.
+    ///
+    /// The TCP retry is a new `tcp_connect`, started when no TCP thread exists.
+    /// The mirror retry is a new `SetMirror` to the live TCP thread. Between
+    /// attempts the TCP thread holds no mirror at all, so nothing is queued for
+    /// a mirror that is down and nothing reports it as lagging, and each
+    /// attempt connects on its own writer thread, so the iMotions stream is
+    /// never held up (docs/adr/0003).
+    pub fn retry_outputs(&mut self) {
+        let now = Instant::now();
+
+        if self.tcp_thread_handle.is_none() && self.tcp_retry.is_due(now) {
+            if let Some(address) = self.tcp_retry.target.clone() {
+                self.tcp_retry.retry_now();
+                if let Err(e) = self.tcp_connect(address) {
+                    self.log_event(format!("TCP connect failed: {}", e));
+                }
+            }
+        }
+
+        if self.mirror_retry.is_due(now)
+            && !self.mirror_connected
+            && !self.mirror_attempt_in_flight
+            && self.is_tcp_connected()
+        {
+            if let (Some(address), Some(bichannel)) =
+                (self.mirror_retry.target.clone(), self.tcp_bichannel.as_mut())
+            {
+                match bichannel.send_to_child(ToTcpThreadMessage::SetMirror(Some(address))) {
+                    Ok(()) => self.mirror_attempt_in_flight = true,
+                    Err(_) => self.mirror_retry.retry_later(),
+                }
+            }
+        }
     }
 
     /// Point the mirror at `address`, so the Python side receives a copy of
@@ -984,6 +1264,8 @@ impl State {
         // The mirror lives in that thread, so it goes down with it. Without
         // this the GUI keeps claiming the mirror is connected.
         self.mirror_connected = false;
+        self.tcp_connected = false;
+        self.reset_mirror_attempts();
         
         if !was_connected {
             spawn(move || {
@@ -1007,8 +1289,16 @@ impl State {
         }
         self.tcp_bichannel = None;
         self.tcp_connected = false;
-        // The mirror lived in that thread, so it is gone with it.
+        // The mirror lived in that thread, so it is gone with it. A new TCP
+        // thread gets a fresh mirror attempt.
         self.mirror_connected = false;
+        self.reset_mirror_attempts();
+    }
+
+    /// A new TCP thread gets a fresh mirror attempt, at once.
+    fn reset_mirror_attempts(&mut self) {
+        self.mirror_attempt_in_flight = false;
+        self.mirror_retry.restart();
     }
 
     pub fn is_tcp_connected(&self) -> bool {

@@ -127,7 +127,7 @@ Then, in order:
    - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
 4. Press `Connect TCP`.
-5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
+5. Press `Check TCP Connection Status` to refresh the status line. It is also updated when the connection is made or lost, but this button is the way to refresh it.
 6. Start X-Plane. Flight data now flows automatically.
 
 > The `Send Packet` button sends one test packet of zeros, for example `E;1;PilotDataSync;;;;;AltitudeSync;0;0`, and shows the time it was sent next to the button. The sample is the first dataref toggle that is enabled, so the packet always matches a `<Sample>` in the generated `iMotions.xml`. It is a connection check and needs TCP connected, not X-Plane. Avoid pressing it during a recording, since iMotions receives the zeros as a real sample. The live data stream is automatic and does not need this button.
@@ -135,7 +135,8 @@ Then, in order:
 Two more behaviors that catch people out:
 
 - The eight dataref toggles do not affect what is sent over TCP. All eight values are always transmitted. The toggles control only which `<Sample>` entries appear in the generated `iMotions.xml`.
-- Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again.
+- Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again, unless the relay was started with `--tcp` (see below), which reconnects by itself.
+- A TCP connection made by clicking now shows a drop too. If iMotions or the listener goes away, the event log says `TCP disconnected` and `Connect TCP` works again. Only outputs given on the command line are retried.
 
 ### Sending to iMotions and Python at the same time
 
@@ -154,6 +155,23 @@ Reconnecting opens a new connection, and the logger starts a new `flight_id` for
 With no iMotions to record to, skip the mirror and point `Connect TCP` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
 
 `Send Packet` goes to both destinations, which makes it a check of both links. It also means the logger writes a row of zeros, so avoid it mid-recording.
+
+### Starting with the outputs already connected
+
+Two optional options connect the relay's outputs when it starts, so nobody has to find the right box and button:
+
+```bash
+cd relay
+cargo run -- --tcp <iMotions ip:port> --mirror 127.0.0.1:5001   # iMotions, and the Python side as the mirror
+cargo run -- --tcp 127.0.0.1:5001                               # no iMotions: straight to the Python listener
+```
+
+(With a built relay, the same options follow `relay`.) Addresses are a literal IP and port, as in the boxes. `--mirror` needs `--tcp`, because the mirror copies the TCP stream. `relay --help` prints the usage.
+
+- Each output given is retried until it connects, and again after it drops, a connection that was up at once. A listener that starts late, or is restarted mid-Flight, is picked up with no clicks, and the relay window says it is waiting for the address and retrying. The relay itself keeps running, because the plugin cannot reconnect to a relay that has restarted (`docs/adr/0005`).
+- While the mirror is down the iMotions stream is not held up, and the event log gets one line for the whole run of failed attempts, not one per attempt.
+- `Disconnect TCP` stops the retrying, and the mirror's with it. `Disconnect mirror` stops only the mirror's. Pressing `Connect TCP` or `Connect mirror` yourself takes that output over: it is connected as the button always did, and is not retried to the command-line address afterwards.
+- Without options nothing changes: the relay waits for you to click.
 
 ## 3. iMotions
 
