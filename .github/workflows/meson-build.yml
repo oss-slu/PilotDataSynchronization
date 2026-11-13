@@ -18,8 +18,16 @@ on:
   # Lets release.yml reuse this build instead of repeating its steps.
   workflow_call:
 
+# Minimum permissions for SBOM generation and attestation:
+#   contents: read           - check out the repository
+#   id-token: write          - OIDC token for Sigstore signing (actions/attest)
+#   attestations: write      - store the attestation on GitHub
+#   artifact-metadata: write - link the attestation to the uploaded artifact
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   build-on-windows:
@@ -72,6 +80,51 @@ jobs:
       #  with:
       #    name: Windows_Meson_Testlog
       #    path: builddir/meson-logs/testlog.txt
+
+      # --- Supply-chain security: SBOM generation, preservation, attestation ---
+      # Scans the plugin tree after the build so that both the build output and
+      # the dependency manifests (e.g. baton's Cargo.lock) are in scope.
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: xplane_plugin
+          format: spdx-json
+          output-file: pilot-data-sync-sbom.spdx.json
+          syft-version: v1.52.0
+          upload-artifact: false
+
+      - name: Summarize SBOM contents
+        shell: python
+        run: |
+          import json, os
+          with open("pilot-data-sync-sbom.spdx.json", encoding="utf-8") as f:
+              sbom = json.load(f)
+          packages = sorted(
+              {(p.get("name", ""), p.get("versionInfo", "")) for p in sbom.get("packages", [])}
+          )
+          lines = [
+              "## SBOM summary",
+              "",
+              f"**{len(packages)} packages** cataloged in `pilot-data-sync-sbom.spdx.json`",
+              "",
+              "| Package | Version |",
+              "|---|---|",
+          ]
+          lines += [f"| {name} | {version} |" for name, version in packages]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: pilot-data-sync-sbom
+          path: pilot-data-sync-sbom.spdx.json
+
+      - name: Attest SBOM provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest@v4
+        with:
+          subject-path: pilot-data-sync-sbom.spdx.json
 
 
   # build-on-ubuntu:
