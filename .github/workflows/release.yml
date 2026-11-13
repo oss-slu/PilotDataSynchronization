@@ -20,22 +20,16 @@ jobs:
   publish:
     name: Publish the GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download the plugin
+      - name: Download the plugin and relay
         uses: actions/download-artifact@v4
         with:
-          name: PilotDataSync-plugin
           path: release-files
-
-      - name: Download the relay
-        uses: actions/download-artifact@v4
-        with:
-          name: relay
-          path: release-files
+          merge-multiple: true
 
       - name: Create the release
         env:
