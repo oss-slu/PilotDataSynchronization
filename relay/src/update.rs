@@ -7,7 +7,8 @@ use chrono::Local;
 
 use crate::{
     message::FromTcpThreadMessage, message::FromIpcThreadMessage, message::ToTcpThreadMessage,
-    state::build_test_packet, state::IMOTIONS_ADDR_HINT, Message, State,
+    state::build_test_packet, state::IMOTIONS_ADDR_HINT, state::RECONNECT_INTERVAL, Message,
+    State,
 };
 
 fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
@@ -79,7 +80,19 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.tcp_connected = true;
                     }
                     FromTcpThreadMessage::Disconnected(reason) => {
-                        state.log_event(format!("TCP disconnected: {}", reason));
+                        // An output given on the command line is retried
+                        // until it connects, so log the first failure of a run
+                        // and not every attempt.
+                        if state.tcp_target.is_none() {
+                            state.log_event(format!("TCP disconnected: {}", reason));
+                        } else if !state.tcp_retry_noted {
+                            state.tcp_retry_noted = true;
+                            state.log_event(format!(
+                                "TCP disconnected: {}. Retrying every {} ms until it connects",
+                                reason,
+                                RECONNECT_INTERVAL.as_millis()
+                            ));
+                        }
                         state.error_message = Some(reason);
                         state.tcp_connected = false;
                         // The thread has exited. Clear it so Connect TCP works
@@ -95,16 +108,31 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                     FromTcpThreadMessage::MirrorConnected(address) => {
                         state.log_event(format!("Python mirror connected to {}", address));
                         state.mirror_connected = true;
+                        state.mirror_retry_noted = false;
+                        state.on_mirror_attempt_finished();
                     }
                     FromTcpThreadMessage::MirrorDisconnected(reason) => {
-                        state.log_event(format!("Python mirror stopped: {}", reason));
+                        // Same as the TCP side: one line per run of failures.
+                        if state.mirror_target.is_none() {
+                            state.log_event(format!("Python mirror stopped: {}", reason));
+                        } else if !state.mirror_retry_noted {
+                            state.mirror_retry_noted = true;
+                            state.log_event(format!(
+                                "Python mirror stopped: {}. Retrying every {} ms until it connects",
+                                reason,
+                                RECONNECT_INTERVAL.as_millis()
+                            ));
+                        }
                         state.mirror_connected = false;
+                        state.on_mirror_attempt_finished();
                     }
                     FromTcpThreadMessage::MirrorLagging(reason) => {
                         state.log_event(reason);
                     }
                 }
             }
+
+            state.retry_outputs();
 
             Task::none()
         }
@@ -149,8 +177,17 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::DisconnectTcp => {
-            if let Err(e) = state.tcp_disconnect() {
-                state.log_event(format!("TCP disconnect failed: {}", e));
+            // Stop retrying first, so a press between attempts, when there is
+            // no thread to disconnect, still holds.
+            let was_retrying = state.tcp_target.is_some();
+            state.stop_retrying_tcp();
+            if was_retrying {
+                state.log_event("No longer retrying TCP or the mirror".into());
+            }
+            if state.tcp_thread_handle.is_some() || !was_retrying {
+                if let Err(e) = state.tcp_disconnect() {
+                    state.log_event(format!("TCP disconnect failed: {}", e));
+                }
             }
             Task::none()
         }
@@ -214,6 +251,10 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         M::DisconnectMirror => {
+            if state.mirror_target.is_some() {
+                state.log_event("No longer retrying the Python mirror".into());
+            }
+            state.stop_retrying_mirror();
             if let Err(e) = state.mirror_disconnect() {
                 state.log_event(format!("Python mirror disconnect failed: {}", e));
             }
@@ -1094,5 +1135,317 @@ mod tests {
             Some("Connect TCP before sending a test packet")
         );
         assert!(state.last_send_timestamp.is_none());
+    }
+
+    // --- #276: outputs given on the command line stay connected -------------
+
+    use crate::cli::StartupConnections;
+    use crate::state::RECONNECT_INTERVAL;
+    use std::io::ErrorKind;
+
+    fn tcp_only(addr: &str) -> StartupConnections {
+        StartupConnections {
+            tcp: Some(addr.to_string()),
+            mirror: None,
+        }
+    }
+
+    fn tcp_and_mirror(tcp: &str, mirror: &str) -> StartupConnections {
+        StartupConnections {
+            tcp: Some(tcp.to_string()),
+            mirror: Some(mirror.to_string()),
+        }
+    }
+
+    // Sends one sample if a TCP thread exists to take it, as baton data would
+    // be forwarded, and does nothing while the relay is between connections.
+    fn offer_sample(state: &mut State, altitude: &str) {
+        if let Some(bichannel) = state.tcp_bichannel.as_mut() {
+            let _ = bichannel.send_to_child(ToTcpThreadMessage::Send(format!(
+                "{altitude};120;90;500;2;3;91;1.0"
+            )));
+        }
+    }
+
+    // Keeps the relay ticking, and samples flowing, until `listener` accepts a
+    // connection from it. Telemetry keeps arriving during a real flight, and a
+    // dropped peer is only noticed when a write to it fails.
+    fn tick_until_accepted(state: &mut State, listener: &TcpListener) -> Option<TcpStream> {
+        listener.set_nonblocking(true).expect("set_nonblocking failed");
+        for i in 0..1000 {
+            offer_sample(state, &format!("{}", 100 + i));
+            let _ = update(state, Message::Update);
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).expect("set_nonblocking failed");
+                    return Some(stream);
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => sleep(StdDuration::from_millis(10)),
+                Err(e) => panic!("accept failed: {e}"),
+            }
+        }
+        None
+    }
+
+    // Ticks with samples flowing until `condition` holds.
+    fn tick_with_samples_until(state: &mut State, mut condition: impl FnMut(&State) -> bool) -> bool {
+        for i in 0..1000 {
+            offer_sample(state, &format!("{}", 500 + i));
+            let _ = update(state, Message::Update);
+            if condition(state) {
+                return true;
+            }
+            sleep(StdDuration::from_millis(10));
+        }
+        false
+    }
+
+    // Ticks for several retry intervals and reports whether anything connected
+    // to `listener` in that time.
+    fn anything_connects_within_a_few_retries(state: &mut State, listener: &TcpListener) -> bool {
+        listener.set_nonblocking(true).expect("set_nonblocking failed");
+        let deadline = Instant::now() + RECONNECT_INTERVAL * 4;
+        while Instant::now() < deadline {
+            offer_sample(state, "1");
+            let _ = update(state, Message::Update);
+            match listener.accept() {
+                Ok(_) => return true,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => sleep(StdDuration::from_millis(10)),
+                Err(e) => panic!("accept failed: {e}"),
+            }
+        }
+        false
+    }
+
+    // Reads lines until one contains `marker`, so packets sent before it (or
+    // lost while reconnecting) do not matter.
+    fn read_until_contains(stream: &TcpStream, marker: &str) -> Option<String> {
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(5)))
+            .expect("set_read_timeout failed");
+        let mut reader = BufReader::new(stream);
+        for _ in 0..2000 {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => return None,
+                Ok(_) if line.contains(marker) => return Some(line),
+                Ok(_) => {}
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn no_startup_outputs_leaves_the_relay_waiting_for_clicks() {
+        let mut state = State::default();
+        state.keep_connected(StartupConnections::default());
+        pump_update(&mut state, 5);
+        assert!(state.tcp_thread_handle.is_none(), "connected with no --tcp");
+        assert!(state.tcp_bichannel.is_none());
+        assert!(!state.mirror_connected);
+    }
+
+    // The launcher starts the relay before the listener may be ready.
+    #[test]
+    fn a_tcp_output_that_starts_later_is_connected_without_clicks() {
+        let addr = closed_port_addr();
+        let mut state = State::default();
+        state.keep_connected(tcp_only(&addr));
+
+        // A few failed attempts first.
+        pump_update(&mut state, 30);
+        assert!(!state.is_tcp_connected());
+
+        let listener = TcpListener::bind(&addr).expect("bind failed");
+        let stream = tick_until_accepted(&mut state, &listener).expect("relay never connected");
+        assert!(
+            pump_until(&mut state, |s| s.is_tcp_connected()),
+            "connection not shown as connected"
+        );
+
+        offer_sample(&mut state, "4321");
+        assert!(
+            read_until_contains(&stream, "AltitudeSync;4321;4321").is_some(),
+            "the listener never received the sample"
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // The main case for the launchers: the listener on --tcp is restarted
+    // mid-flight, and the relay must pick it up without touching X-Plane.
+    #[test]
+    fn a_tcp_output_reconnects_after_the_listener_restarts() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.keep_connected(tcp_only(&addr));
+
+        let first = tick_until_accepted(&mut state, &listener).expect("relay never connected");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()));
+
+        // The listener goes away mid-flight.
+        drop(first);
+        drop(listener);
+        assert!(
+            tick_with_samples_until(&mut state, |s| !s.is_tcp_connected()),
+            "relay never noticed the listener had gone"
+        );
+
+        // The listener comes back on the same address.
+        let listener = TcpListener::bind(&addr).expect("rebind failed");
+        let second = tick_until_accepted(&mut state, &listener).expect("relay never reconnected");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()));
+
+        offer_sample(&mut state, "8765");
+        assert!(
+            read_until_contains(&second, "AltitudeSync;8765;8765").is_some(),
+            "the restarted listener never received the sample"
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // With iMotions on --tcp and the listener on --mirror: the listener can
+    // start late, and iMotions is never held up while the mirror waits
+    // (docs/adr/0003).
+    #[test]
+    fn a_mirror_output_that_starts_later_gets_copies_and_imotions_never_waits() {
+        let (imotions, imotions_addr) = listener_on_free_port();
+        let python_addr = closed_port_addr();
+        let mut state = State::default();
+        state.keep_connected(tcp_and_mirror(&imotions_addr, &python_addr));
+
+        let imotions_stream =
+            tick_until_accepted(&mut state, &imotions).expect("iMotions never connected");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()));
+
+        // The mirror is still retrying; iMotions gets every sample regardless.
+        pump_update(&mut state, 30);
+        assert!(!state.mirror_connected);
+        offer_sample(&mut state, "1111");
+        assert!(
+            read_until_contains(&imotions_stream, "AltitudeSync;1111;1111").is_some(),
+            "iMotions was held up by a mirror that is not there"
+        );
+
+        let python = TcpListener::bind(&python_addr).expect("bind failed");
+        let python_stream =
+            tick_until_accepted(&mut state, &python).expect("the mirror never connected");
+        assert!(
+            pump_until(&mut state, |s| s.mirror_connected),
+            "mirror never shown as connected"
+        );
+
+        offer_sample(&mut state, "2222");
+        assert!(read_until_contains(&python_stream, "AltitudeSync;2222;2222").is_some());
+        assert!(read_until_contains(&imotions_stream, "AltitudeSync;2222;2222").is_some());
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn a_mirror_output_reconnects_after_python_restarts_mid_flight() {
+        let (imotions, imotions_addr) = listener_on_free_port();
+        let (python, python_addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.keep_connected(tcp_and_mirror(&imotions_addr, &python_addr));
+
+        let imotions_stream =
+            tick_until_accepted(&mut state, &imotions).expect("iMotions never connected");
+        let first = tick_until_accepted(&mut state, &python).expect("the mirror never connected");
+        assert!(pump_until(&mut state, |s| s.mirror_connected));
+
+        // Python goes away mid-flight: closed console window, or a crash.
+        drop(first);
+        drop(python);
+        assert!(
+            tick_with_samples_until(&mut state, |s| !s.mirror_connected),
+            "relay never noticed Python had gone"
+        );
+        assert!(state.is_tcp_connected(), "iMotions went down with the mirror");
+
+        // Python is started again on the same address. No clicks.
+        let python = TcpListener::bind(&python_addr).expect("rebind failed");
+        let second = tick_until_accepted(&mut state, &python).expect("the mirror never came back");
+        assert!(pump_until(&mut state, |s| s.mirror_connected));
+
+        offer_sample(&mut state, "3333");
+        assert!(read_until_contains(&second, "AltitudeSync;3333;3333").is_some());
+        assert!(
+            read_until_contains(&imotions_stream, "AltitudeSync;3333;3333").is_some(),
+            "iMotions stopped receiving while the mirror reconnected"
+        );
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // Retrying must not fight the Instructor: Disconnect means stop.
+    #[test]
+    fn pressing_disconnect_tcp_stops_the_retrying() {
+        let addr = closed_port_addr();
+        let mut state = State::default();
+        state.keep_connected(tcp_only(&addr));
+        pump_update(&mut state, 30);
+
+        let _ = update(&mut state, Message::DisconnectTcp);
+
+        let listener = TcpListener::bind(&addr).expect("bind failed");
+        assert!(
+            !anything_connects_within_a_few_retries(&mut state, &listener),
+            "the relay kept retrying after Disconnect TCP"
+        );
+    }
+
+    #[test]
+    fn pressing_disconnect_mirror_stops_the_mirror_retrying_but_keeps_tcp() {
+        let (imotions, imotions_addr) = listener_on_free_port();
+        let python_addr = closed_port_addr();
+        let mut state = State::default();
+        state.keep_connected(tcp_and_mirror(&imotions_addr, &python_addr));
+        let _imotions_stream =
+            tick_until_accepted(&mut state, &imotions).expect("iMotions never connected");
+        pump_update(&mut state, 30);
+
+        let _ = update(&mut state, Message::DisconnectMirror);
+
+        let python = TcpListener::bind(&python_addr).expect("bind failed");
+        assert!(
+            !anything_connects_within_a_few_retries(&mut state, &python),
+            "the mirror kept retrying after Disconnect mirror"
+        );
+        assert!(state.is_tcp_connected(), "Disconnect mirror dropped iMotions");
+
+        let _ = state.tcp_disconnect();
+    }
+
+    // A connection made by clicking now shows the drop too, so Connect TCP
+    // works again, but it is not retried: only command-line outputs are.
+    #[test]
+    fn a_clicked_tcp_connection_shows_the_drop_and_is_not_retried() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        // What Connect TCP does, minus saving the address to the user's list.
+        state.tcp_connect(addr.clone()).expect("tcp_connect failed");
+        let first = tick_until_accepted(&mut state, &listener).expect("never connected");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()));
+
+        drop(first);
+        drop(listener);
+        assert!(
+            tick_with_samples_until(&mut state, |s| s.tcp_thread_handle.is_none()),
+            "the dead connection was kept"
+        );
+        assert!(!state.is_tcp_connected());
+        assert!(
+            state.event_log.iter().any(|e| e.contains("TCP disconnected")),
+            "the drop is missing from the event log: {:?}",
+            state.event_log
+        );
+
+        let listener = TcpListener::bind(&addr).expect("rebind failed");
+        assert!(
+            !anything_connects_within_a_few_retries(&mut state, &listener),
+            "a clicked connection was retried"
+        );
     }
 }

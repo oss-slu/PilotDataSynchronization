@@ -117,7 +117,8 @@ Then, in order:
 Two more behaviors that catch people out:
 
 - The eight dataref toggles do not affect what is sent over TCP. All eight values are always transmitted. The toggles control only which `<Sample>` entries appear in the generated `iMotions.xml`.
-- Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again.
+- Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again, unless the relay was started with `--tcp` (see below), which reconnects by itself.
+- A TCP connection made by clicking now shows a drop too. If iMotions or the listener goes away, the event log says `TCP disconnected` and `Connect TCP` works again. Only outputs given on the command line are retried.
 
 ### Sending to iMotions and Python at the same time
 
@@ -136,6 +137,23 @@ Reconnecting opens a new connection, and the logger starts a new `flight_id` for
 With no iMotions to record to, skip the mirror and point `Connect TCP` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
 
 `Send Packet` goes to both destinations, which makes it a check of both links. It also means the logger writes a row of zeros, so avoid it mid-recording.
+
+### Starting with the outputs already connected
+
+Two optional options connect the relay's outputs when it starts, so nobody has to find the right box and button:
+
+```bash
+cd relay
+cargo run -- --tcp <iMotions ip:port> --mirror 127.0.0.1:5001   # iMotions, and the Python side as the mirror
+cargo run -- --tcp 127.0.0.1:5001                               # no iMotions: straight to the Python listener
+```
+
+(With a built relay, the same options follow `relay`.) Addresses are a literal IP and port, as in the boxes. `--mirror` needs `--tcp`, because the mirror copies the TCP stream. `relay --help` prints the usage.
+
+- Each output given is retried every half second until it connects, and again after it drops. A listener that starts late, or is restarted mid-Flight, is picked up with no clicks, and the relay window says it is waiting and retrying. The relay itself keeps running, because the plugin cannot reconnect to a relay that has restarted (`docs/adr/0005`).
+- While the mirror is down the iMotions stream is not held up, and the event log gets one line for the whole run of failed attempts, not one per attempt.
+- `Disconnect TCP` stops the retrying, and the mirror's with it. `Disconnect mirror` stops only the mirror's. The Instructor can still use the buttons as before, but a button press does not start retrying.
+- Without options nothing changes: the relay waits for you to click.
 
 ## 3. iMotions
 
