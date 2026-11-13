@@ -2,8 +2,8 @@
 // "Hello, World" plugin code found here:
 // https://developer.x-plane.com/code-sample/hello-world-sdk-3/
 
-#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <ctime>
 #include <iostream>
 #include <memory>
@@ -53,8 +53,8 @@ static XPLMWindowID g_window;
 // DataRef Identifiers (use lowercase variable names consistently)
 // The flightmodel datarefs are in meters and meters per second, so they are
 // converted to feet and knots. The pilot datarefs are already in feet and
-// knots. Both send sites need these, so they live here rather than in one of
-// them: the two halves of a pair must arrive in the same unit (#184).
+// knots. Both read_sample() and the window's display need these, so they live
+// here: the two halves of a pair must arrive in the same unit (#184).
 static const float msToFeetRate = 3.28084f;
 static const float msToKnotsRate = 1.94384f;
 
@@ -81,11 +81,8 @@ static XPLMDataRef gforceVerticalRef;
 // by the cxx crate interface and acts like a normal pointer.
 rust::cxxbridge1::Box<Baton> baton = new_baton_handle();
 
-// Throttling mechanism to limit send frequency
-static std::chrono::steady_clock::time_point last_send_time =
-    std::chrono::steady_clock::now();
-static const int SEND_INTERVAL_MS =
-    50; // Send every 50ms (20 Hz) instead of every frame
+// How often the flight loop sends a sample: every 50ms, 20 Hz
+static const int SEND_INTERVAL_MS = 50;
 
 // Callbacks we will register when we create our window
 void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon);
@@ -121,6 +118,88 @@ std::string get_current_timestamp() {
   return buf;
 }
 
+// Read one sample for the relay: both halves of every value, flightmodel
+// first, in the order the relay turns into iMotions entries:
+//  [Altitude, Airspeed, VerticalVelocity, Heading, Roll, Pitch, Yaw,
+//  G-Force]
+//
+// Note vertical velocity comes before heading. The old pilot-only payload
+// sent heading third and the relay reordered it; the paired payload is in
+// entry order instead, so the relay pairs straight through. Sending 16
+// values is what lets FlightModel* and Pilot* differ at all (#184).
+//
+// The pilot datarefs are already in feet and knots; the flightmodel half is
+// converted into the same units so the two are comparable. Yaw and G-Force
+// have no pilot-side DataRef, so both halves carry the flightmodel value
+// (vertical G) and stay equal by design.
+vector<float> read_sample() {
+  float flightmodelYaw = XPLMGetDataf(yawFlightmodelRef);
+  float flightmodelGVert = XPLMGetDataf(gforceVerticalRef);
+  return {
+      XPLMGetDataf(elevationFlightmodelRef) * msToFeetRate,
+      XPLMGetDataf(elevationPilotRef),
+      XPLMGetDataf(airspeedFlightmodelRef) * msToKnotsRate,
+      XPLMGetDataf(airspeedPilotRef),
+      XPLMGetDataf(verticalVelocityFlightmodelRef),
+      XPLMGetDataf(verticalVelocityPilotRef),
+      XPLMGetDataf(headingFlightmodelRef),
+      XPLMGetDataf(headingPilotRef),
+      XPLMGetDataf(rollFlightmodelRef),
+      XPLMGetDataf(rollPilotRef),
+      XPLMGetDataf(pitchFlightmodelRef),
+      XPLMGetDataf(pitchPilotRef),
+      flightmodelYaw,
+      flightmodelYaw,
+      flightmodelGVert,
+      flightmodelGVert,
+  };
+}
+
+// Send one sample to the relay and record it in Log.txt. Used by the flight
+// loop and by the window's Send Packet button.
+void send_sample() {
+  vector<float> send_to_baton = read_sample();
+
+  {
+    char dbg[320];
+    std::snprintf(dbg, sizeof(dbg),
+                  "[PDS PLUGIN] Send -> alt=%.3f/%.3f air=%.3f/%.3f "
+                  "vv=%.3f/%.3f hdg=%.3f/%.3f (flightmodel/pilot)\n",
+                  send_to_baton[0], send_to_baton[1], send_to_baton[2],
+                  send_to_baton[3], send_to_baton[4], send_to_baton[5],
+                  send_to_baton[6], send_to_baton[7]);
+    XPLMDebugString(dbg);
+  }
+  baton->send(send_to_baton);
+}
+
+// Send a sample every SEND_INTERVAL_MS for as long as the plugin is enabled.
+// X-Plane runs flight loops whether or not the window is drawn, so data keeps
+// flowing with "Positional Flight Data" closed or off-screen (#274). It used
+// to be sent from the draw callback, and a window that was never drawn sent
+// nothing at all.
+float send_flight_loop(float in_elapsed_since_last_call,
+                       float in_elapsed_since_last_flight_loop, int in_counter,
+                       void *in_refcon) {
+  send_sample();
+
+  return SEND_INTERVAL_MS / 1000.0f;
+}
+
+// Write one monitor's bounds to Log.txt. Both XPLMGetAllMonitorBoundsGlobal
+// and XPLMGetAllMonitorBoundsOS call back with this signature; in_refcon
+// names which coordinates the bounds are in.
+void log_monitor_bounds(int in_monitor_index, int in_left, int in_top,
+                        int in_right, int in_bottom, void *in_refcon) {
+  char line[200];
+  std::snprintf(
+      line, sizeof(line),
+      "[PDS PLUGIN] Monitor %d (%s): left=%d top=%d right=%d bottom=%d\n",
+      in_monitor_index, static_cast<const char *>(in_refcon), in_left, in_top,
+      in_right, in_bottom);
+  XPLMDebugString(line);
+}
+
 // Update the mouse handler to detect button clicks
 int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
                   void *in_refcon) {
@@ -128,58 +207,7 @@ int mouse_handler(XPLMWindowID in_window_id, int x, int y, int is_down,
     // Button bounds are set in draw_pilotdatasync_plugin
     if (x >= button_left && x <= button_right && y >= button_bottom &&
         y <= button_top) {
-      // Gather data as in draw_pilotdatasync_plugin. The pilot datarefs are
-      // already in feet and knots, so no conversion is applied.
-      float currentPilotElevation = XPLMGetDataf(elevationPilotRef);
-      float currentPilotAirspeed = XPLMGetDataf(airspeedPilotRef);
-      float currentPilotHeading = XPLMGetDataf(headingPilotRef);
-      float currentPilotVerticalVelocity =
-          XPLMGetDataf(verticalVelocityPilotRef);
-
-      // New fields
-      float currentPilotRoll = XPLMGetDataf(rollPilotRef);
-      float currentPilotPitch = XPLMGetDataf(pitchPilotRef);
-      // Yaw pilot DataRef isn't available; use flightmodel yaw as fallback
-      float currentPilotYaw = XPLMGetDataf(yawFlightmodelRef);
-      // Use vertical (normal) g for the "Pilot G" value to preserve previous
-      // single-G field behavior
-      float currentPilotGForce = XPLMGetDataf(gforceVerticalRef);
-
-      // The flightmodel half, converted into the pilot half's units so the
-      // two are comparable.
-      float currentFlightmodelElevation =
-          XPLMGetDataf(elevationFlightmodelRef) * msToFeetRate;
-      float currentFlightmodelAirspeed =
-          XPLMGetDataf(airspeedFlightmodelRef) * msToKnotsRate;
-      float currentFlightmodelVerticalVelocity =
-          XPLMGetDataf(verticalVelocityFlightmodelRef);
-      float currentFlightmodelHeading = XPLMGetDataf(headingFlightmodelRef);
-      float currentFlightmodelRoll = XPLMGetDataf(rollFlightmodelRef);
-      float currentFlightmodelPitch = XPLMGetDataf(pitchFlightmodelRef);
-      float currentFlightmodelYaw = XPLMGetDataf(yawFlightmodelRef);
-      float currentFlightmodelGForce = XPLMGetDataf(gforceVerticalRef);
-
-      // Both halves of every value, flightmodel first, in the relay's
-      // iMotions entry order. See the comment on the draw callback's send.
-      std::vector<float> send_to_baton = {
-          currentFlightmodelElevation,
-          currentPilotElevation,
-          currentFlightmodelAirspeed,
-          currentPilotAirspeed,
-          currentFlightmodelVerticalVelocity,
-          currentPilotVerticalVelocity,
-          currentFlightmodelHeading,
-          currentPilotHeading,
-          currentFlightmodelRoll,
-          currentPilotRoll,
-          currentFlightmodelPitch,
-          currentPilotPitch,
-          currentFlightmodelYaw,
-          currentPilotYaw,
-          currentFlightmodelGForce,
-          currentPilotGForce,
-      };
-      baton->send(send_to_baton);
+      send_sample();
 
       last_send_timestamp = get_current_timestamp();
     }
@@ -261,6 +289,26 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   XPLMSetWindowPositioningMode(g_window, xplm_WindowPositionFree, -1);
   XPLMSetWindowTitle(g_window, "Positional Flight Data");
 
+  // Record where the window ended up, and where the monitors are, so a window
+  // nobody can see can be found from Log.txt (#274). The window and the
+  // "global" monitor lines share X-Plane's coordinates, but X-Plane lists only
+  // the monitors it runs full-screen on there. The "OS" lines list every
+  // monitor, in the operating system's pixels.
+  int window_left, window_top, window_right, window_bottom;
+  XPLMGetWindowGeometry(g_window, &window_left, &window_top, &window_right,
+                        &window_bottom);
+  char placed[200];
+  std::snprintf(placed, sizeof(placed),
+                "[PDS PLUGIN] Window placed at left=%d top=%d right=%d "
+                "bottom=%d, inside screen bounds left=%d top=%d right=%d "
+                "bottom=%d\n",
+                window_left, window_top, window_right, window_bottom, left, top,
+                right, bottom);
+  XPLMDebugString(placed);
+  XPLMGetAllMonitorBoundsGlobal(log_monitor_bounds,
+                                const_cast<char *>("global"));
+  XPLMGetAllMonitorBoundsOS(log_monitor_bounds, const_cast<char *>("OS"));
+
   return g_window != NULL;
 }
 
@@ -269,10 +317,15 @@ PLUGIN_API void XPluginStop() {
   g_window = NULL;
 }
 
-PLUGIN_API void XPluginDisable(void) { baton->stop(); }
+PLUGIN_API void XPluginDisable(void) {
+  XPLMUnregisterFlightLoopCallback(send_flight_loop, NULL);
+  baton->stop();
+}
 
 PLUGIN_API int XPluginEnable(void) {
   baton->start();
+  XPLMRegisterFlightLoopCallback(send_flight_loop, SEND_INTERVAL_MS / 1000.0f,
+                                 NULL);
 
   return 1;
 }
@@ -435,57 +488,4 @@ void draw_pilotdatasync_plugin(XPLMWindowID in_window_id, void *in_refcon) {
       (last_send_timestamp.empty() ? "Never" : last_send_timestamp);
   XPLMDrawString(col_text, button_right + 10, button_bottom + 8,
                  (char *)ts_label.c_str(), NULL, xplmFont_Proportional);
-
-  // THROTTLE SENDING TO PREVENT SOCKET OVERFLOW
-  auto now = std::chrono::steady_clock::now();
-  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - last_send_time)
-                        .count();
-
-  if (elapsed_ms >= SEND_INTERVAL_MS) {
-    // Send flight data to Relay via Baton. Both halves of every value,
-    // flightmodel first, in the order the relay turns into iMotions entries:
-    //  [Altitude, Airspeed, VerticalVelocity, Heading, Roll, Pitch, Yaw,
-    //  G-Force]
-    //
-    // Note vertical velocity comes before heading. The old pilot-only payload
-    // sent heading third and the relay reordered it; the paired payload is in
-    // entry order instead, so the relay pairs straight through. Sending 16
-    // values is what lets FlightModel* and Pilot* differ at all (#184).
-    //
-    // Yaw and G-Force have no pilot-side DataRef, so both halves carry the
-    // flightmodel value and stay equal by design.
-    vector<float> send_to_baton = {
-        currentFlightmodelElevation,
-        currentPilotElevation,
-        currentFlightmodelAirspeed,
-        currentPilotAirspeed,
-        currentFlightmodelVerticalVelocity,
-        currentPilotVerticalVelocity,
-        currentFlightmodelHeading,
-        currentPilotHeading,
-        currentFlightmodelRoll,
-        currentPilotRoll,
-        currentFlightmodelPitch,
-        currentPilotPitch,
-        currentFlightmodelYaw,
-        currentPilotYaw,
-        currentFlightmodelGVert,
-        currentPilotG,
-    };
-
-    {
-      char dbg[320];
-      std::snprintf(dbg, sizeof(dbg),
-                    "[PDS PLUGIN] Draw send -> alt=%.3f/%.3f air=%.3f/%.3f "
-                    "vv=%.3f/%.3f hdg=%.3f/%.3f (flightmodel/pilot)\n",
-                    send_to_baton[0], send_to_baton[1], send_to_baton[2],
-                    send_to_baton[3], send_to_baton[4], send_to_baton[5],
-                    send_to_baton[6], send_to_baton[7]);
-      XPLMDebugString(dbg);
-    }
-    baton->send(send_to_baton);
-
-    last_send_time = now;
-  }
 }

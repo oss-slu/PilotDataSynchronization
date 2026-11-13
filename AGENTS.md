@@ -27,7 +27,6 @@ CI is in `.github/workflows/` (`meson-build.yml`, `super-linter.yml`). Run `meso
 - Hardware-bound: anything needing live X-Plane or iMotions cannot be verified by an agent. Say so rather than claiming it works.
 - Data in `inference/data/` was collected before #196, so `altitude` and `velocity` are mis-scaled (divide by 3.28084 and 1.94384). See `docs/telemetry_schema.md`.
 - `yaw` is true heading, effectively a duplicate of `heading`.
-- The 20 Hz send on Windows and Linux lives in the plugin window's draw callback.
 - Heading deviation needs wrapped angular difference, and floored modulo is Python-only; do not port the formula to C++ or Rust as written.
 - `rust-toolchain.toml` pins the toolchain to 1.80.0, so `cargo` in a fresh clone downloads it rather than using your default stable.
 

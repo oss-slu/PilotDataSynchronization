@@ -12,8 +12,9 @@ and the DataRef reference in [xplane_plugin/docs/key_datarefs.md](../xplane_plug
 
 ## 1. What the plugin outputs today
 
-The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (throttled to one
-send per 50ms) and streams them through Baton → Relay → `inference/pilot_inference/capture/data_logger.py`, which
+The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (an X-Plane flight
+loop sends one sample every 50ms, whether or not the plugin's window is shown)
+and streams them through Baton → Relay → `inference/pilot_inference/capture/data_logger.py`, which
 writes one CSV row per complete sample.
 
 Current CSV output (`inference/data/session_flight_data.csv`, one file per
