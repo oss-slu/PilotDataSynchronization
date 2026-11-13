@@ -74,6 +74,7 @@ uv run python -m pilot_inference.performance.generate_synthetic_pilots
 uv run python -m pilot_inference.performance.compute_features --input data/synthetic_pilot_telemetry.csv
 uv run python -m pilot_inference.performance.cluster_pilots
 uv run python -m pilot_inference.performance.cluster_pilots --k 3 --truth data/synthetic_pilot_tiers.csv
+uv run python -m pilot_inference.performance.evaluate
 
 # Live groups during a flight (replaces the capture logger for that flight)
 uv run python -m pilot_inference.performance.live_groups --brief briefs/example_level_holds.csv --pilot-id pilot-07
@@ -97,6 +98,7 @@ itself, which does not reconnect on its own.
 | 2a   | `pilot_inference.performance.generate_synthetic_pilots` | (Optional, no hardware needed) Generates synthetic pilots in 3 hidden skill tiers, with targets | none                                                                                | `data/synthetic_pilot_telemetry.csv`, `data/synthetic_pilot_tiers.csv`                  |
 | 2    | `pilot_inference.performance.compute_features`    | Computes deviation features per flight and per pilot from telemetry that carries targets      | Telemetry CSV with `pilot_id`, `flight_id` and `target_*` columns (only 2a produces these today) | `data/flight_features.csv`, `data/pilot_features.csv`                                   |
 | 3    | `pilot_inference.performance.cluster_pilots`      | Sweeps k, or with `--k` forms performance groups                                              | `data/pilot_features.csv`                                                           | Sweep: console only. `--k`: `data/pilot_clusters.csv`, `data/group_centres.csv`          |
+| 4    | `pilot_inference.performance.evaluate`            | Tests the groups: held-out pilot, consistency against a shuffled null, synthetic recovery, sensitivity, interpretation | `data/flight_features.csv`, or synthetic pilots when `--flights` is omitted | `results/metrics.json`, tables and figures under `results/` |
 
 ### Deviation features
 
@@ -141,6 +143,24 @@ of its members in raw units (ft, deg, ft/min, kts). For synthetic pilots, `--tru
 the adjusted Rand index against the hidden tiers; the file must list each pilot once. The
 synthetic tiers overlap, so this is below 1: the default seed gives 0.79, and generator seeds 0 to
 11 range from 0.37 to 1.00.
+
+### Testing the groups
+
+`pilot_inference.performance.evaluate` runs every test in #272 and writes tables, figures and
+`results/metrics.json`:
+
+```bash
+uv run python -m pilot_inference.performance.evaluate
+uv run python -m pilot_inference.performance.evaluate --flights data/flight_features.csv --k 3
+```
+
+With no `--flights` it builds a synthetic cohort, where the hidden tiers give a right answer to
+score against. That is the only mode with tests, because the client's Prepar3D flights are not in
+the repository yet (#228, #270).
+
+`metrics.json` carries a `not_built` section naming what was *not* measured and why, so a reader
+cannot mistake a missing measurement for a measurement of zero. The write-up it feeds is
+`docs/results/prepar3d-clustering-fall-2026.md`.
 
 ### Live groups
 
