@@ -173,6 +173,31 @@ def test_synthetic_pilots_are_grouped_by_their_hidden_tier():
     assert np.mean(scores) >= 0.7
 
 
+def test_pilots_mixed_across_tiers_are_recovered_less_well_but_above_chance():
+    """
+    #224: by default every metric of a pilot sits in that pilot's tier, so
+    nothing tests the mixed pilots a real cohort will contain. A fifth of the
+    cohort with one or two metrics from another tier drops the mean from about
+    0.78 to about 0.57, hence its own bar rather than the one above.
+
+    The share matters. Measured over seeds 0 to 11: 0.78 at none mixed, 0.57
+    at a fifth, 0.36 at a third, 0.18 at a half, 0.08 at all. Past roughly a
+    fifth the hidden tier stops being a coherent label at all -- a pilot who
+    is tier 1 on altitude and tier 3 on heading is not really in one tier --
+    so a looser bar on a heavily mixed cohort would be measuring nothing.
+    """
+    scores = []
+    for seed in range(12):
+        telemetry, truth = generate_pilots(seed=seed, mixed_share=0.2)
+        _, pilots = compute_features(telemetry)
+        assignments, _ = fit(pilots, k=3)
+        scores.append(truth_agreement(assignments, truth))
+
+    mean = np.mean(scores)
+    assert mean >= 0.4, f"mixed cohorts should still beat chance clearly, got {mean:.3f}"
+    assert mean < 0.7, f"if this reaches the unmixed bar, mixing is not doing anything ({mean:.3f})"
+
+
 def test_nan_feature_fails_naming_pilot_and_metric():
     pilots = make_pilots(
         [
