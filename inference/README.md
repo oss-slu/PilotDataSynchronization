@@ -71,6 +71,7 @@ uv run python -m pilot_inference.capture.data_logger --port 5001 --pilot-id pilo
 
 # Performance groups, without hardware
 uv run python -m pilot_inference.performance.generate_synthetic_pilots
+uv run python -m pilot_inference.performance.compare_feature_sets
 uv run python -m pilot_inference.performance.compute_features --input data/synthetic_pilot_telemetry.csv
 uv run python -m pilot_inference.performance.cluster_pilots
 uv run python -m pilot_inference.performance.cluster_pilots --k 3 --truth data/synthetic_pilot_tiers.csv
@@ -121,6 +122,33 @@ instead.
 A flight with no valid target for a metric gets NaN for it and a warning, and its other metrics
 are kept. A pilot's feature averages over the flights that have it; a pilot with none gets NaN and
 a warning. Rows with a null `pilot_id` or `flight_id` raise an error.
+
+### Steady pilots versus wobbly ones
+
+By default a synthetic pilot's steady bias and its wobble come from one scale, so they rise and
+fall together and a pilot who sits 200 ft low while flying smoothly cannot be generated.
+`--independent-share` draws them separately for a share of pilots:
+
+```bash
+uv run python -m pilot_inference.performance.generate_synthetic_pilots --independent-share 0.5
+```
+
+The default is 0, so existing cohorts and the numbers in ADR 0002 are unchanged. `truth` gains a
+`bias_over_wobble` column: 1.0 for a pilot with shared scales, above 1 for steadily off target,
+below 1 for on target but oscillating. It is the generator's own number rather than one derived
+from the telemetry, so a measurement using it is not circular.
+
+`pilot_inference.performance.compare_feature_sets` uses that to test the claim ADR 0002 could only
+argue structurally — that `mad` alone cannot tell those two pilots apart:
+
+```bash
+uv run python -m pilot_inference.performance.compare_feature_sets
+```
+
+It prints two comparisons. Tier recovery, which cannot settle the question because both kinds of
+pilot share a tier; and the same two feature sets scored on steady-versus-oscillating *within* a
+tier, which can. See ADR 0002's Evidence section for the result. Reproducing the whole Evidence
+table, every feature set and both scales, is #231.
 
 ### Forming the groups
 
