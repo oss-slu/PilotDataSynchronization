@@ -123,6 +123,33 @@ A flight with no valid target for a metric gets NaN for it and a warning, and it
 are kept. A pilot's feature averages over the flights that have it; a pilot with none gets NaN and
 a warning. Rows with a null `pilot_id` or `flight_id` raise an error.
 
+### Pilots good at one factor and poor at another
+
+By default every metric of a pilot stays inside that pilot's tier: the per-metric ranges of
+adjacent tiers do not overlap, so a pilot who is tier 1 on altitude and tier 3 on heading cannot
+be generated. `--mixed-share` takes one or two metrics of a share of pilots from a different
+tier:
+
+```bash
+uv run python -m pilot_inference.performance.generate_synthetic_pilots --mixed-share 0.2
+```
+
+The default is 0, so existing cohorts and the ADR 0002 numbers are unchanged. `truth` gains
+`mixed_metrics`, the count taken from elsewhere. The pilot's tier in `truth` is still its main
+tier, the one the other metrics come from, so `--truth` is unaffected.
+
+Mixing makes the cohort much harder to recover. Mean adjusted Rand index against the hidden tier,
+k = 3, 15 pilots, seeds 0 to 11:
+
+| Mixed share | 0 | 0.2 | 0.33 | 0.5 | 1.0 |
+| --- | --- | --- | --- | --- | --- |
+| Recovery | 0.78 | 0.57 | 0.36 | 0.18 | 0.08 |
+
+Past about a fifth, the hidden tier stops being a coherent label: a pilot drawn half from tier 1
+and half from tier 3 is not really in either. So small shares test mixed pilots usefully, and
+large ones mostly measure the label falling apart. `test_clustering.py` keeps the unmixed bar and
+adds a separate, looser one at a fifth.
+
 ### Steady pilots versus wobbly ones
 
 By default a synthetic pilot's steady bias and its wobble come from one scale, so they rise and

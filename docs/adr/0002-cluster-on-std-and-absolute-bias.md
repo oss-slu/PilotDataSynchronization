@@ -26,6 +26,8 @@ Per-seed scores for the chosen option run from 0.37 to 1.00, so differences of a
 
 Two limits. The generator scales deviations multiplicatively, which is the assumption the log scale encodes, so this shows that log handles that structure and not that real pilots have it. And the overlap was set after trying a few settings, not derived from real flights.
 
+A third, added with #224: every metric of a pilot in these cohorts sits inside that pilot's tier, because the per-metric ranges of adjacent tiers do not overlap. No pilot here is tier 1 on altitude and tier 3 on heading, though real cohorts will contain them. `--mixed-share` generates such pilots, and they cost a lot of recovery: 0.78 unmixed, 0.57 at a fifth mixed, 0.36 at a third, 0.08 when every pilot is. Past about a fifth the hidden tier is no longer a coherent label for a pilot, so those figures measure the label breaking down as much as the features. The feature comparisons above were not rerun on mixed cohorts for that reason.
+
 An earlier generator kept the tiers' scale bands apart. On it the chosen features and both `mad` options scored 1.00 on either scale, so it could not compare them, while the per-pilot variant scored 0.87 on log and 0.41 on linear. Figures from before the tiers overlapped do not apply here.
 
 ### Steady versus oscillating pilots (#230)

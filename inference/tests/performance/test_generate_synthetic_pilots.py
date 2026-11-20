@@ -25,7 +25,7 @@ def test_truth_is_separate_with_three_equal_tiers():
     telemetry, truth = generate_pilots(n_pilots=15, seed=1, flight_seconds=5)
 
     assert "tier" not in telemetry.columns
-    assert sorted(truth.columns) == ["bias_over_wobble", "pilot_id", "tier"]
+    assert sorted(truth.columns) == ["bias_over_wobble", "mixed_metrics", "pilot_id", "tier"]
     assert truth["pilot_id"].is_unique
     assert set(truth["pilot_id"]) == set(telemetry["pilot_id"])
     assert truth["tier"].value_counts().to_dict() == {1: 5, 2: 5, 3: 5}

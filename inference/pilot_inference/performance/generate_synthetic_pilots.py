@@ -5,12 +5,18 @@ Each synthetic pilot belongs to one of 3 hidden skill tiers (1 holds targets
 best, 3 worst) and flies 2 to 4 flights at 20 Hz, each with its own constant
 targets. Per metric, a flight's deviation is a steady bias with a random sign
 plus time-correlated AR(1) wobble. The tier sets the size of both, scaled per
-pilot and metric so a pilot can be better at altitude than at heading.
+pilot and metric, though by default only within that tier: the per-metric
+ranges of adjacent tiers do not overlap, so every metric of a pilot stays in
+its own tier and a pilot who is tier 1 on altitude and tier 3 on heading
+cannot be generated (#224).
 
 By default bias and wobble share one scale per pilot and metric, so they rise
 and fall together. --independent-share draws them separately for a share of
 pilots, which is the only way to produce a pilot who sits steadily off target
 while flying smoothly, or one who is on target but oscillates (#230).
+
+--mixed-share takes one or two metrics of a share of pilots from a different
+tier's scale, so cohorts can contain the mixed pilots real ones will (#224).
 
 Writes telemetry in post-#196 units (ft, kts) that compute_features.py
 accepts, and the true tiers to a separate file that clustering may compare
@@ -43,6 +49,12 @@ BIAS_VARIATION = (0.7, 1.3)
 # 0 keeps every existing cohort and the ADR 0002 evidence unchanged; the
 # comparison in compare_feature_sets.py passes a non-zero share.
 DEFAULT_INDEPENDENT_SHARE = 0.0
+# Share of pilots with one or two metrics drawn from another tier's scale.
+# 0 keeps every metric of a pilot inside its own tier, which is what the
+# cohorts behind ADR 0002 and the recovery test assume.
+DEFAULT_MIXED_SHARE = 0.0
+# How many of a pilot's four metrics come from elsewhere when it is mixed.
+MIXED_METRICS = (1, 2)
 # AR(1) coefficient per sample; at 20 Hz a wobble lasts a few seconds.
 WOBBLE_PERSISTENCE = 0.98
 
@@ -92,6 +104,7 @@ def generate_pilots(
     seed: int = 0,
     flight_seconds: int = 120,
     independent_share: float = DEFAULT_INDEPENDENT_SHARE,
+    mixed_share: float = DEFAULT_MIXED_SHARE,
 ):
     """
     Returns (telemetry, truth).
@@ -112,25 +125,52 @@ def generate_pilots(
     tier; what changes is that the two can now disagree within a metric.
     Pilots are chosen by position so the share is spread across tiers rather
     than landing on the best or worst pilots.
+
+    mixed_share is the fraction of pilots with one or two metrics drawn from
+    a different tier's scale, so a pilot can be tier 1 on altitude and tier 3
+    on heading. Their tier in truth is still their main tier, the one the
+    other metrics come from, so --truth is unaffected. truth gains
+    mixed_metrics, the count taken from elsewhere, which is 0 for everyone
+    when mixed_share is 0.
     """
     if not 0.0 <= independent_share <= 1.0:
         raise ValueError(f"independent_share must be 0 to 1, got {independent_share}")
+    if not 0.0 <= mixed_share <= 1.0:
+        raise ValueError(f"mixed_share must be 0 to 1, got {mixed_share}")
 
     rng = np.random.default_rng(seed)
     n_samples = flight_seconds * HZ
     independent = independent_pilots(n_pilots, independent_share)
+    mixed = independent_pilots(n_pilots, mixed_share)
 
     flights, truth = [], []
     for i in range(n_pilots):
         pilot_id = f"P{i + 1:02d}"
         tier = TIERS[i * len(TIERS) // n_pilots]
+        # Which metrics, if any, come from somewhere other than this pilot's
+        # tier. Drawn before the scales so the rng use does not depend on
+        # whether a pilot is independent as well as mixed.
+        tier_for = {metric: tier for metric in METRICS}
+        if i in mixed:
+            borrowed = rng.choice(
+                np.array(METRICS), size=int(rng.integers(*MIXED_METRICS, endpoint=True)),
+                replace=False,
+            )
+            others = [t for t in TIERS if t != tier]
+            for metric in borrowed:
+                tier_for[str(metric)] = int(rng.choice(others))
+
         # Multiplies deviation size, so larger is worse.
-        bias_scale = {m: TIER_SCALE[tier] * rng.uniform(*METRIC_VARIATION) for m in METRICS}
+        bias_scale = {
+            m: TIER_SCALE[tier_for[m]] * rng.uniform(*METRIC_VARIATION) for m in METRICS
+        }
         if i in independent:
             # A second draw, so a pilot can be steadily off target while flying
             # smoothly, or on target but oscillating. With one draw the two
             # always move together and neither case exists (#230).
-            wobble_scale = {m: TIER_SCALE[tier] * rng.uniform(*METRIC_VARIATION) for m in METRICS}
+            wobble_scale = {
+                m: TIER_SCALE[tier_for[m]] * rng.uniform(*METRIC_VARIATION) for m in METRICS
+            }
         else:
             wobble_scale = bias_scale
 
@@ -141,6 +181,7 @@ def generate_pilots(
                 "bias_over_wobble": float(
                     np.mean([bias_scale[m] / wobble_scale[m] for m in METRICS])
                 ),
+                "mixed_metrics": sum(1 for m in METRICS if tier_for[m] != tier),
             }
         )
 
@@ -175,6 +216,15 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--flight-seconds", type=int, default=120, help="Length of each flight")
     parser.add_argument(
+        "--mixed-share",
+        type=float,
+        default=DEFAULT_MIXED_SHARE,
+        help=(
+            "Fraction of pilots with one or two metrics drawn from a different tier, "
+            "so cohorts contain pilots good at one factor and poor at another"
+        ),
+    )
+    parser.add_argument(
         "--independent-share",
         type=float,
         default=DEFAULT_INDEPENDENT_SHARE,
@@ -199,7 +249,11 @@ def main() -> None:
 
     try:
         telemetry, truth = generate_pilots(
-            args.pilots, args.seed, args.flight_seconds, args.independent_share
+            args.pilots,
+            args.seed,
+            args.flight_seconds,
+            args.independent_share,
+            args.mixed_share,
         )
     except ValueError as e:
         parser.error(str(e))

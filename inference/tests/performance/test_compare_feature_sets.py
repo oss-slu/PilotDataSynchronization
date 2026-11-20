@@ -258,3 +258,49 @@ def test_the_generator_command_refuses_a_bad_share(tmp_path, monkeypatch):
         generator.main()
 
     assert exit_info.value.code == 2
+
+
+# --- mixed-tier pilots (#224) ---------------------------------------------
+
+
+def test_no_pilot_is_mixed_by_default():
+    """The recovery bar in test_clustering.py and ADR 0002 both assume this."""
+    _, truth = generate_pilots(n_pilots=9, seed=0, flight_seconds=5)
+
+    assert (truth["mixed_metrics"] == 0).all()
+
+
+def test_mixed_pilots_take_one_or_two_metrics_from_elsewhere():
+    _, truth = generate_pilots(n_pilots=9, seed=0, flight_seconds=5, mixed_share=1.0)
+
+    assert truth["mixed_metrics"].between(1, 2).all()
+
+
+def test_a_mixed_pilot_keeps_its_main_tier_so_truth_still_works():
+    _, truth = generate_pilots(n_pilots=9, seed=0, flight_seconds=5, mixed_share=1.0)
+
+    assert set(truth["tier"]) <= {1, 2, 3}
+    assert truth["tier"].value_counts().to_dict() == {1: 3, 2: 3, 3: 3}
+
+
+def test_the_mixed_share_is_spread_across_tiers():
+    _, truth = generate_pilots(n_pilots=9, seed=0, flight_seconds=5, mixed_share=1 / 3)
+
+    mixed = truth[truth["mixed_metrics"] > 0]
+    assert len(mixed) == 3
+    assert mixed["tier"].nunique() == 3
+
+
+def test_a_mixed_share_outside_zero_to_one_is_refused():
+    with pytest.raises(ValueError, match="mixed_share"):
+        generate_pilots(n_pilots=6, seed=0, flight_seconds=5, mixed_share=-0.1)
+
+
+def test_mixing_and_independent_scales_compose():
+    """They are separate knobs and must not interfere."""
+    _, truth = generate_pilots(
+        n_pilots=9, seed=0, flight_seconds=5, independent_share=1.0, mixed_share=1.0
+    )
+
+    assert (truth["mixed_metrics"] > 0).all()
+    assert (truth["bias_over_wobble"] != 1.0).all()
