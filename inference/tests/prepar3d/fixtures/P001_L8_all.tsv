@@ -1,0 +1,7 @@
+Timestamp		Altitude MSL,ft	Flaps position percent,percent	Heading (true),deg	Nose gear,percent	Indicated Airspeed,kts	Engine 2 N2,percent	Vertical speed,fpm	Bank,deg	Pitch,deg
+12:00:00	9999	1100	0	190	100	0	0	0	0	0	900	901	902
+12:00:01	9999	1500	0	190	100	90	0	700	2	5	910	911	912
+12:00:02	9999	3100	0	190	100	110	0	0	1	0	920	921	922
+12:00:03	9999	3100	0	40	100	110	0	0	3	0	930	931	932
+12:00:04	9999	3100	0	220	100	112	0	-50	2	-1	940	941	942
+12:00:05	9999	1200	0	0	100	70	0	-600	1	-3	950	951	952

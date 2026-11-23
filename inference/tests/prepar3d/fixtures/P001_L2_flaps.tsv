@@ -1,0 +1,7 @@
+Timestamp	Altitude MSL,ft	Flaps position percent,percent	Heading (true),deg	Indicated Airspeed,kts	Vertical speed,fpm	Bank,deg	Pitch,deg
+12:00:00	1100	0	190	0	0	0	0
+12:00:01	1500	0	190	90	700	2	5
+12:00:02	3100	0	190	110	0	1	0
+12:00:03	3100	0	40	110	0	3	0
+12:00:04	3100	0	220	112	-50	2	-1
+12:00:05	1200	0	0	70	-600	1	-3

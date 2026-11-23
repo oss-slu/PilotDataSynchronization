@@ -69,3 +69,7 @@ inference/briefs/replay.csv
 # Both spellings, because the folder name is case-sensitive on Linux and macOS
 inference/data/Client/*
 inference/data/client/*
+
+# Tables, figures and saved models from a run. Anything built from client data
+# is itself client data: a per-Flight plot is one pilot's flight path.
+inference/results/

@@ -14,12 +14,15 @@ inference/
   briefs/                       instructions with targets, for flights we fly ourselves
   data/                         input and output CSVs (not code)
     prepared/                   train/test splits written by event_classification
+    client/                     NOT TRACKED: the client's Prepar3D sample, under IRB
   models/                       trained models (not tracked; train_model.py writes them)
+  results/                      NOT TRACKED: tables and figures from a run
   pilot_inference/              the package
     angles.py                   wrapped angular difference, shared
     paths.py                    where data/ and models/ are
     capture/                    data_logger.py, replay.py
     performance/                features, clustering, synthetic pilots, live groups and their CLIs
+    prepar3d/                   the client's sample: load, clean, legs, features
     event_classification/       OUT OF SCOPE: labeler, Random Forest, evaluation
   tests/                        mirrors pilot_inference/
 ```
@@ -198,6 +201,46 @@ uv run python -m pilot_inference.capture.replay --input data/replay_pilots.csv -
 `replay` sends a telemetry CSV in the relay's packet format at 20 Hz (`--hz`), so either listener
 reads it like a live flight. It needs a single flight, so pick one with `--flight`.
 
+## The client's Prepar3D sample
+
+`pilot_inference/prepar3d/` turns the client's 19 de-identified Prepar3D flights into the same
+per-Flight deviation features the synthetic pipeline produces, so a clustering model can train on
+real flights.
+
+The data is under an IRB protocol and is not in the repo. Copy the exports from the team's Drive
+folder into `inference/data/client/raw/` first. That folder and `inference/results/` are
+gitignored. Never commit anything derived from client data, a per-Flight plot included.
+
+```
+uv run python -m pilot_inference.prepar3d.build_features
+```
+
+That runs the whole pipeline and writes `data/client/features/flight_features.csv` (one row per
+Flight), a cleaned CSV per Flight next to it, a per-Flight report, and one actual-against-target
+plot per Flight under `results/`. It exits non-zero if any Flight has a NaN in the core four
+features, which means no Leg was detected in it.
+
+The four steps, each importable on its own:
+
+- `load.py` parses one TSV **by header name**. The 19 files use 8 column layouts, so vertical
+  speed sits in column 15, 16 or 17 depending on the file and positional parsing returns the
+  wrong quantity without failing. Declared units are checked rather than assumed.
+- `clean.py` trims each Flight to takeoff through final landing, because only 22 to 31 minutes of
+  a 77 to 163 minute recording is airborne and ground time does not count. Time gaps and
+  vertical-speed spikes are flagged, never dropped.
+- `legs.py` detects Legs and attaches the scenario's Targets from
+  `briefs/prepar3d_scenario.csv`. Altitude is scored only in level holds at 3,100 ft; the
+  approach legs are scored for heading alone. Every tolerance is a parameter.
+- `build_features.py` is the CLI. The deviation maths is reused from `performance/features.py`,
+  wrapped heading difference included.
+
+The scenario sets no airspeed Target, so `airspeed_std` is the spread within the holds and there
+is no airspeed bias.
+
+`metadata.py` normalises the client's pilot demographics, including the phrases "All Six Ratings"
+and "No data". Metadata is not a clustering feature (ADR 0001); it is only used afterwards to
+interpret the groups.
+
 ## Tests
 
 ```
@@ -207,8 +250,13 @@ uv run pytest
 
 `tests/` mirrors the package: `tests/capture/` (the logger and replay), `tests/performance/`
 (deviation features, the synthetic pilot generator, performance groups including recovering the
-synthetic tiers end to end, and live groups from replayed packets to a saved CSV), `tests/event_classification/` (the labeler's heading change), and `tests/test_angles.py`
+synthetic tiers end to end, and live groups from replayed packets to a saved CSV),
+`tests/prepar3d/` (the eight header layouts, trimming, Leg detection and the feature table),
+`tests/event_classification/` (the labeler's heading change), and `tests/test_angles.py`
 for the angle helper.
+
+`tests/prepar3d/fixtures/` holds one small TSV per header layout. Every number in them is made
+up. No client data is committed anywhere.
 
 ## Out of scope: event classification
 
