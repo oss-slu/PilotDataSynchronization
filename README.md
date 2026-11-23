@@ -27,6 +27,19 @@ Then:
 
 Start the components in this order: iMotions (or the mock server) → relay → X-Plane. The relay is a TCP client, and any flight data that arrives before its TCP connection is up is discarded.
 
+## Download the built files
+
+Lab PCs do not need to build anything. Download `PilotDataSync.xpl` and `relay.exe` from the repo's [GitHub Releases page](https://github.com/oss-slu/PilotDataSynchronization/releases).
+
+- `PilotDataSync.xpl` goes into X-Plane's `Resources/plugins/PilotDataSync/win_x64/` folder. See [1. X-Plane plugin](#1-x-plane-plugin).
+- `relay.exe` can live anywhere. Run it by double-clicking it. It needs no VC++ redistributable. Double-clicking it opens a console window next to the relay window, where its diagnostic messages go (see [2. Relay](#2-relay)).
+
+> Not yet confirmed on a clean lab PC. The DLLs that `relay.exe` loads were checked, and none is part of the VC++ redistributable, but no one has run it on a PC without the redistributable installed. If you try it on one, please confirm it and delete this note.
+
+Build from source only when you want to change the code, or while no release has been published yet. A release is published by pushing a `v*` tag, such as `v0.1.0`.
+
+To try a branch on the lab PC before it merges, open its CI run under the repo's Actions tab. Every run keeps both files as workflow artifacts.
+
 ## Prerequisites
 
 | Tool | Version | Needed for | Notes |
@@ -83,7 +96,12 @@ Once X-Plane loads the plugin, it connects on its own:
 - baton starts automatically and begins retrying its connection to the relay.
 - There is no menu item, no hotkey, and no button to press to start sending.
 
-> On Windows and Linux, data flows only while the plugin window is being drawn. The 20 Hz send lives inside that window's draw callback, so closing or hiding "Positional Flight Data" stops the stream completely. (macOS uses a flight-loop callback instead and is unaffected.)
+The plugin sends at up to 20 Hz from an X-Plane flight loop, for as long as it is enabled; at a low frame rate a send waits for the next frame, so the rate drops. The window only displays the values, so closing it, or a window that never appears, does not stop the stream. It cannot be reopened without restarting X-Plane, but nothing depends on it.
+
+On Windows and Linux the plugin also writes to X-Plane's `Log.txt` (in the X-Plane folder). The macOS build does not.
+
+- Every sample it sends, from the flight loop or the window's `Send Packet` button, adds a `[PDS PLUGIN] Send ->` line.
+- If the window does not appear, search for `[PDS PLUGIN] Window placed at` and compare it with the `[PDS PLUGIN] Monitor ... (global)` lines after it, which use the same coordinates. X-Plane lists only the monitors it runs full-screen on there, so in windowed mode there are none. The `(OS)` lines list every monitor, in the operating system's own pixels.
 
 baton retries the relay connection about 20 times across roughly 90 seconds, then gives up permanently. If the relay was not running during that window, disable and re-enable the plugin in X-Plane. Starting the relay afterwards will not recover the connection on its own.
 
@@ -154,10 +172,22 @@ The file is written to your Downloads folder as `iMotions.xml` (`%USERPROFILE%\D
 The `Id="PilotDataSync"` is what ties the definition to the live stream. Every packet the relay sends carries the same source name:
 
 ```
-E;1;PilotDataSync;;;;;AltitudeSync;1250.5;1250.5
+E;1;PilotDataSync;;;;;AltitudeSync;1248.2;1250.5
 ```
 
-Packets are semicolon-delimited and CRLF-terminated. The value appears twice because each sample carries both a `FlightModel*` and a `Pilot*` field.
+Packets are semicolon-delimited and CRLF-terminated. Two values appear because
+each sample carries both a `FlightModel*` and a `Pilot*` field, in that order:
+the aircraft's true state and the pilot's instrument reading, which differ by
+the simulated sensor error. Anything reading the stream for pilot performance
+wants the second value.
+
+`yaw` and `g_force` are exceptions. Neither has a pilot-side DataRef, so the
+plugin sends the flightmodel value in both halves and the two are always equal.
+
+Before #184 the plugin sent the pilot half only and the relay copied it into
+both fields, so the two values were always identical. A relay running against
+an older plugin still behaves that way, since it has nothing else to put
+there.
 
 ### Which port iMotions listens on
 
@@ -208,8 +238,8 @@ In the relay's window:
 | Symptom | Cause | What to do |
 |---|---|---|
 | `Connect TCP` fails and the status stays `false` | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect TCP` again. `Disconnect TCP` first is no longer needed |
-| `:( No Baton Connection` | The plugin is not loaded, or its window is closed | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
-| Data stops part-way through a flight | The "Positional Flight Data" window was closed or hidden (Windows/Linux only) | Reopen it |
+| `:( No Baton Connection` | The plugin is not loaded or not enabled | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
+| `:) Baton Connected!` but no data reaches the relay | An old plugin build is installed. Before #274 the plugin sent only while its window was drawn | On Windows or Linux, search X-Plane's `Log.txt` for `[PDS PLUGIN] Send ->`. If there are none, close X-Plane, rebuild the plugin and copy the new `PilotDataSync.xpl` over the installed one |
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |
 | The plugin never connects, even after the relay is started | baton gave up after roughly 90 seconds of retries and does not re-arm | Disable and re-enable the plugin in X-Plane |
 | `meson setup` fails while downloading subprojects | The X-Plane SDK and GoogleTest are fetched over the network | Check connectivity or proxy settings, then re-run `meson setup build` |
@@ -306,7 +336,7 @@ A quick way to confirm your toolchain is healthy. For the full walkthrough, see 
 - Labeling pipeline successfully processed over 16k rows, though some flight phase labels are still missing  
 - Final validation still requires a full real-time flight session with X-Plane + iMotions connected  
 
-Note: the file `toml .rust-toolchain.toml` at the repository root is not currently in effect. `rustup` only reads `rust-toolchain.toml` (or `rust-toolchain`), so the leading `toml ` in the filename means the toolchain is not pinned locally or in CI. Both use the default stable toolchain. Renaming the file would activate the `channel = "1.80.0"` pin inside it, which has not been tested against the current dependencies.
+Note: `rust-toolchain.toml` at the repository root pins the toolchain to `1.80.0`. `rustup` reads it automatically, so the first `cargo` command in a fresh clone downloads that toolchain along with the `rustfmt` and `clippy` components and the `x86_64-pc-windows-gnu` target. This applies locally and in CI. The pin is verified against the current dependencies: relay, `src/server` and baton all build and pass their tests on 1.80.0.
 
 # Team
 

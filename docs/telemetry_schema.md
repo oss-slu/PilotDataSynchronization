@@ -12,8 +12,9 @@ and the DataRef reference in [xplane_plugin/docs/key_datarefs.md](../xplane_plug
 
 ## 1. What the plugin outputs today
 
-The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (throttled to one
-send per 50ms) and streams them through Baton → Relay → `inference/pilot_inference/capture/data_logger.py`, which
+The plugin reads pilot-side cockpit DataRefs at up to 20 Hz (an X-Plane flight
+loop sends one sample every 50ms, whether or not the plugin's window is shown)
+and streams them through Baton → Relay → `inference/pilot_inference/capture/data_logger.py`, which
 writes one CSV row per complete sample.
 
 Current CSV output (`inference/data/session_flight_data.csv`, one file per
@@ -38,6 +39,40 @@ Most values are pilot-side instrument readings (subject to simulated sensor
 error), not the aircraft's raw physical state — see note 2 in
 `key_datarefs.md`. `yaw` and `g_force` are exceptions: both come from
 `sim/flightmodel/*` DataRefs rather than a pilot-side instrument.
+
+### The paired wire payload (#184)
+
+The plugin sends 16 values per sample, not 8: both halves of every value,
+flightmodel first, in the order the relay turns into iMotions entries.
+
+| position | 0, 1 | 2, 3 | 4, 5 | 6, 7 | 8, 9 | 10, 11 | 12, 13 | 14, 15 |
+|---|---|---|---|---|---|---|---|---|
+| value | altitude | airspeed | vertical speed | heading | roll | pitch | yaw | g force |
+
+Each pair becomes one iMotions entry carrying two values, `FlightModel*` then
+`Pilot*`, for example `E;1;PilotDataSync;;;;;AltitudeSync;1248.2;1250.5`.
+`data_logger.py` records the second value, because the dataset is defined as
+pilot-side readings (see GLOSSARY.md, "Pilot reading").
+
+Note the order: vertical speed comes before heading. The older pilot-only
+payload sent heading third and the relay reordered it on the way out; the
+paired payload is in entry order so the relay pairs straight through.
+
+The flightmodel half is converted into the pilot half's units in the plugin,
+since `sim/flightmodel/position/elevation` is metres and
+`sim/flightmodel/position/true_airspeed` is metres per second while the pilot
+DataRefs are already feet and knots. Airspeed also differs in kind, not only in
+sensor error: the flightmodel half is true airspeed and the pilot half is
+indicated, so the gap between them grows with altitude.
+
+`yaw` and `g_force` have no pilot-side DataRef, so both halves carry the
+flightmodel value and are always equal.
+
+**Older plugins send 8 values.** The relay still accepts 8 (and 4) and fills
+the flightmodel half with a copy of the pilot value, because it has nothing
+else to put there. Data captured that way cannot be used to compare the two
+halves, in the same way that pre-#196 data cannot be used at face value for
+`altitude` and `velocity`.
 
 **Older data has mis-scaled `altitude` and `velocity` (fixed in #196):** before
 #196, the plugin multiplied `altitude_ft_pilot` (already feet) by 3.28084 and
@@ -65,8 +100,11 @@ outliers, but they are not part of the deviation metric set.
 - The plugin only reads and sends **actual** instrument values. There is no
   DataRef read, UI control, or CSV column for a *designated/target* value for
   altitude, heading, vertical speed, or airspeed.
-- Nothing in `relay/`, `data_logger.py`, or the `inference/` scripts defines
-  or stores a target value either.
+- Nothing in `relay/` or `data_logger.py` defines or stores a target value
+  either. The one exception is a flight we fly ourselves: there we are the
+  instructor, and `live_groups.py` takes the targets from a **Brief** we wrote
+  and writes them into its CSV (docs/adr/0004, `inference/README.md`). The
+  client's own targets are still missing.
 
 To satisfy the client's requirement, the pipeline needs a source of target
 values per flight (or per flight segment), one of:
@@ -78,9 +116,9 @@ values per flight (or per flight segment), one of:
    some parameters (e.g. autopilot altitude/heading bugs) that could stand in
    for "designated" values when the autopilot is being used as the reference.
 
-Until one of these is implemented, `target_*` columns in section 4 will be
-unpopulated (`NaN`) and deviation cannot be computed from real data — only
-from synthetic data where targets are generated. **Flag this to the client
+Until one of these is implemented for the client's flights, `target_*`
+columns in section 4 will be unpopulated (`NaN`) for her data, and deviation
+can only be computed from synthetic data or from flights we brief ourselves. **Flag this to the client
 directly:** ask whether "designated" means an instructor-assigned briefing
 target, an autopilot bug setting, or something else, since the schema and
 ingestion path differ depending on the answer.
@@ -91,20 +129,20 @@ ingestion path differ depending on the answer.
 
 | Field | Type | Units | Source | Status |
 |---|---|---|---|---|
-| `timestamp` | ISO-8601 string, UTC | — | data_logger.py | exists |
-| `pilot_id` | string | — | `data_logger.py` | exists, see capture-point note below |
-| `flight_id` | string | — | `data_logger.py` | exists, see capture-point note below |
+| `timestamp` | ISO-8601 string, UTC | — | `data_logger.py` or `live_groups.py` | exists |
+| `pilot_id` | string | — | `data_logger.py` or `live_groups.py` | exists, see capture-point note below |
+| `flight_id` | string | — | `data_logger.py` or `live_groups.py` | exists, see capture-point note below |
 | `altitude` | float | ft MSL | plugin | exists |
-| `target_altitude` | float | ft MSL | scenario/autopilot (TBD, see §3) | **missing** |
+| `target_altitude` | float | ft MSL | our **Brief**, via `live_groups.py`; client's source TBD (§3) | ours only; client's **missing** |
 | `altitude_deviation` | float | ft | computed | derived, see §5 |
 | `heading` | float | deg magnetic | plugin | exists |
-| `target_heading` | float | deg magnetic | scenario/autopilot (TBD) | **missing** |
+| `target_heading` | float | deg magnetic | our **Brief**, via `live_groups.py`; client's source TBD | ours only; client's **missing** |
 | `heading_deviation` | float | deg | computed | derived, see §5 |
 | `vertical_speed` | float | ft/min | plugin | exists |
-| `target_vertical_speed` | float | ft/min | scenario/autopilot (TBD) | **missing** |
+| `target_vertical_speed` | float | ft/min | our **Brief**, via `live_groups.py`; client's source TBD | ours only; client's **missing** |
 | `vertical_speed_deviation` | float | ft/min | computed | derived, see §5 |
 | `velocity` (airspeed) | float | kts (indicated) | plugin | exists |
-| `target_airspeed` | float | kts | scenario/autopilot (TBD) | **missing** |
+| `target_airspeed` | float | kts | our **Brief**, via `live_groups.py`; client's source TBD | ours only; client's **missing** |
 | `airspeed_deviation` | float | kts | computed | derived, see §5 |
 | `roll` | float | deg | plugin | exists (extra, not part of deviation set) |
 | `pitch` | float | deg | plugin | exists (extra) |
@@ -119,7 +157,11 @@ anyway. `data_logger.py` takes `--pilot-id` and `--flight-id` and writes them
 into every row, which leaves the plugin, baton, and relay untouched. When
 `--flight-id` is omitted, a UTC timestamp is generated for each relay
 connection. When `--pilot-id` is omitted, rows are written as `unknown` and
-cannot be grouped per pilot.
+cannot be grouped per pilot. `live_groups.py`, which replaces the logger for a
+flight we brief, takes the same two arguments and also writes the `target_*`
+columns, blank where a target is not being scored (its **Settle window**). Its
+generated flight id is one per run rather than per connection, so a mirror
+reconnect continues the same flight.
 
 ### 4b. Pilot metadata table (one row per pilot, joined on `pilot_id`)
 

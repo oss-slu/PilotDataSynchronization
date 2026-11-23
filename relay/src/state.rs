@@ -63,6 +63,23 @@ const MIRROR_WRITE_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 /// rather than make iMotions wait.
 const MIRROR_QUEUE_CAPACITY: usize = 256;
 
+/// How much the kernel may hold on the mirror socket on our behalf.
+///
+/// `MIRROR_QUEUE_CAPACITY` bounds only the queue in front of the writer
+/// thread. Behind it the socket's own send buffer is a second queue, and the
+/// Linux default is about 2.5 MB. Measured on loopback, that and the reader's
+/// buffer together swallow some 37,000 packets -- close to four minutes of
+/// stream -- before a write blocks, so a mirror that stopped reading minutes
+/// ago still takes writes, `MIRROR_WRITE_TIMEOUT` never fires, nothing is
+/// reported, and the bound in front of the writer is decoration.
+///
+/// Asking for 32 KiB brings that down to about 3,200 packets, or twenty
+/// seconds. Linux doubles the request, so the buffer is really 64 KiB; what
+/// matters is that it is tens of kilobytes rather than megabytes. It costs no
+/// throughput: 50,000 packets to a reader that keeps up take the same 45 ms
+/// either way.
+const MIRROR_SEND_BUFFER: usize = 32 * 1024;
+
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
 pub(crate) struct State {
@@ -179,13 +196,48 @@ fn normalize_baton_payload(raw: &str) -> Vec<String> {
         .collect()
 }
 
+/// One iMotions entry per flight value, in the order the relay sends them.
+///
+/// "Event" here is one iMotions entry, not a Sample in the GLOSSARY sense,
+/// which is a whole set of telemetry values.
+const IMOTIONS_EVENTS: [&str; 8] = [
+    "AltitudeSync",
+    "AirspeedSync",
+    "VerticalVelocitySync",
+    "HeadingSync",
+    "RollSync",
+    "PitchSync",
+    "YawSync",
+    "GForceSync",
+];
+
 /// The iMotions packets one baton sample turns into, in send order.
 ///
 /// Pulled out of the TCP thread so the mapping can be tested without a socket,
 /// and so both destinations are written the same bytes from one list rather
 /// than each building its own.
+///
+/// Every iMotions entry carries two values, `FlightModel*` then `Pilot*`. A
+/// 16-field sample has both, paired. The 4- and 8-field shapes are what older
+/// plugins send: they carry the pilot half only, so the flightmodel half is
+/// filled with the same number and the two cannot be compared (#184).
 fn packets_for_fields(fields: &[String]) -> Vec<String> {
+    // Legacy duplication: one value standing in for both halves. Only for the
+    // field counts that predate the paired payload.
     let pair = |value: &String| vec![value.clone(), value.clone()];
+
+    // The paired payload: both halves of every value, flightmodel first, in
+    // iMotions event order. Spelled out rather than left to the generic branch
+    // at the end so a test pins the order and the halves cannot quietly swap.
+    if fields.len() == IMOTIONS_EVENTS.len() * 2 {
+        return IMOTIONS_EVENTS
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                build_imotions_packet(name, &[fields[i * 2].clone(), fields[i * 2 + 1].clone()])
+            })
+            .collect();
+    }
 
     if fields.len() == 4 {
         let (alt, air, head, vv) = (&fields[0], &fields[1], &fields[2], &fields[3]);
@@ -213,18 +265,7 @@ fn packets_for_fields(fields: &[String]) -> Vec<String> {
     }
 
     // Anything else: take the fields two at a time, in event order, and stop
-    // when they run out. "Event" here is one iMotions entry, not a Sample in
-    // the GLOSSARY sense, which is a whole set of telemetry values.
-    const IMOTIONS_EVENTS: [&str; 8] = [
-        "AltitudeSync",
-        "AirspeedSync",
-        "VerticalVelocitySync",
-        "HeadingSync",
-        "RollSync",
-        "PitchSync",
-        "YawSync",
-        "GForceSync",
-    ];
+    // when they run out.
     let mut packets = Vec::new();
     let mut idx = 0usize;
     for name in IMOTIONS_EVENTS {
@@ -425,6 +466,9 @@ fn connect_mirror(address: &str) -> Result<TcpStream> {
     let stream = TcpStream::connect_timeout(&addr, MIRROR_CONNECT_TIMEOUT)?;
     stream.set_write_timeout(Some(MIRROR_WRITE_TIMEOUT))?;
     stream.set_nodelay(true)?;
+    // Without this the write timeout above is unreachable in practice: see
+    // MIRROR_SEND_BUFFER.
+    socket2::SockRef::from(&stream).set_send_buffer_size(MIRROR_SEND_BUFFER)?;
     Ok(stream)
 }
 
@@ -641,44 +685,41 @@ impl State {
         if self.ipc_thread_handle.is_some() {
             bail!("IPC thread already exists.")
         }
+        // Bind the listener on the calling thread. Doing it inside the spawned
+        // thread meant a bind failure had no way back to the caller: the thread
+        // reported `Ok(())`, `ipc_thread_handle` was set for a thread that owned
+        // no listener, and the guard above then rejected every later retry.
+        let printname = "baton.sock";
+        let name = if GenericNamespaced::is_supported() {
+            printname.to_ns_name::<GenericNamespaced>()?
+        } else {
+            let mut path = std::env::temp_dir();
+            path.push(printname);
+            path.to_fs_name::<GenericFilePath>()?
+        };
+
+        println!("[RELAY] listening on socket: {:?}", name.borrow());
+
+        let listener = ListenerOptions::new()
+            .name(name)
+            .create_sync()
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::AddrInUse => anyhow!(
+                    "{} is already in use. Another relay instance may still be running.",
+                    printname
+                ),
+                _ => anyhow!("Failed to create listener: {}", e),
+            })?;
+
+        listener
+            .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
+            .map_err(|e| anyhow!("Error setting non-blocking mode on listener: {}", e))?;
+
+        human_log("IPC", &format!("Server running at {}", printname));
+
         let (ipc_bichannel, mut child_bichannel) =
             bichannel::create_bichannels::<ToIpcThreadMessage, FromIpcThreadMessage>();
         let ipc_thread_handle = spawn(move || {
-            let printname = "baton.sock";
-            let name = if GenericNamespaced::is_supported() {
-                printname.to_ns_name::<GenericNamespaced>().unwrap()
-            } else {
-                let mut path = std::env::temp_dir();
-                path.push(printname);
-                path.to_fs_name::<GenericFilePath>().unwrap()
-            };
-
-            println!("[RELAY] listening on socket: {:?}", name.borrow());
-            
-            let opts = ListenerOptions::new().name(name.clone());
-            let listener = match opts.create_sync() {
-                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    human_log("IPC", &format!(
-                        "Could not start server because the socket file is occupied. Check if {} is in use.",
-                        printname
-                    ));
-                    return Ok(());
-                }
-                Ok(l) => {
-                    println!("[OK] Successfully created named pipe listener");
-                    l
-                }
-                Err(e) => {
-                    eprintln!("[ERROR] Failed to create listener: {} (kind: {:?})", e, e.kind());
-                    return Err(anyhow!("Failed to create listener: {}", e));
-                }
-            };
-            
-            listener
-                .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Both)
-                .expect("Error setting non-blocking mode on listener");
-            
-            human_log("IPC", &format!("Server running at {}", printname));
             let mut buffer = String::with_capacity(256);
             
             while !child_bichannel.is_killswitch_engaged() {
@@ -1035,6 +1076,70 @@ mod tests {
         // the other way round. Pin that, it is easy to "tidy" and break.
         assert_eq!(packets[2], "E;1;PilotDataSync;;;;;VerticalVelocitySync;500;500\r\n");
         assert_eq!(packets[3], "E;1;PilotDataSync;;;;;HeadingSync;90;90\r\n");
+    }
+
+    // The point of #184: both halves reach iMotions, so the instrument reading
+    // and the aircraft's true state can be compared.
+    #[test]
+    fn sixteen_fields_pair_flightmodel_with_pilot() {
+        let packets = packets_for_fields(&fields(&[
+            "1000", "1001", // altitude: flightmodel, pilot
+            "120", "121", // airspeed
+            "500", "501", // vertical velocity
+            "90", "91", // heading
+            "2", "3", // roll
+            "4", "5", // pitch
+            "91", "91", // yaw: no pilot DataRef exists, so both are flightmodel
+            "1.0", "1.1", // g force
+        ]));
+
+        assert_eq!(packets.len(), 8);
+        assert_eq!(
+            packets[0],
+            "E;1;PilotDataSync;;;;;AltitudeSync;1000;1001\r\n"
+        );
+        assert_eq!(
+            packets[1],
+            "E;1;PilotDataSync;;;;;AirspeedSync;120;121\r\n"
+        );
+        // Vertical velocity before heading, as in the 8-field shape. The pairs
+        // are in event order, which is not baton's old field order.
+        assert_eq!(
+            packets[2],
+            "E;1;PilotDataSync;;;;;VerticalVelocitySync;500;501\r\n"
+        );
+        assert_eq!(packets[3], "E;1;PilotDataSync;;;;;HeadingSync;90;91\r\n");
+        assert_eq!(
+            packets[7],
+            "E;1;PilotDataSync;;;;;GForceSync;1.0;1.1\r\n"
+        );
+    }
+
+    // The regression #184 describes: with only the pilot half, the flightmodel
+    // field is a copy, so nothing can be compared. Pinned so the legacy shape
+    // is not mistaken for correct behaviour.
+    #[test]
+    fn eight_fields_still_duplicate_because_the_flightmodel_half_is_absent() {
+        let packets = packets_for_fields(&fields(&[
+            "1000", "120", "90", "500", "2", "3", "91", "1.0",
+        ]));
+
+        for packet in &packets {
+            let values: Vec<&str> = packet
+                .trim_end()
+                .split(';')
+                .skip(8)
+                .collect();
+            assert_eq!(
+                values.len(),
+                2,
+                "every entry carries two values: {packet:?}"
+            );
+            assert_eq!(
+                values[0], values[1],
+                "the 8-field shape has no flightmodel half to send: {packet:?}"
+            );
+        }
     }
 
     #[test]

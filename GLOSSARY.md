@@ -64,6 +64,10 @@ _Avoid_: Core metrics, KPIs
 A set of pilots whose **Deviation features** resemble each other. Groups are not ranked.
 _Avoid_: Tier (a **Synthetic pilot**'s known level is its **Hidden tier**, a different thing), skill level, class
 
+**Reference cohort**:
+The pilots whose **Deviation features** form the **Performance groups**, held fixed so a pilot outside them can be placed in a group.
+_Avoid_: Training set, baseline, reference group
+
 **Segment**:
 One of the seven phases of a **Flight**, from takeoff through landing.
 _Avoid_: Phase, section, leg (the five-value **Flight phase** in the out-of-scope section and a **Leg** are different things)
@@ -73,8 +77,16 @@ A stretch of the route flown on one heading, such as the 190Â° climb or the 220Â
 _Avoid_: Segment (the client's seven phases), phase
 
 **Instruction**:
-The timestamped moment a pilot is told a new **Target**, such as "change heading to 20". Instructions are standardized across pilots.
+A directive to the pilot that sets new **Targets** from the moment it is given, such as "change heading to 20". Targets it does not mention carry over from the one before. The client's instructions are standardized across pilots.
 _Avoid_: Command, prompt, target change
+
+**Brief**:
+The ordered list of **Instructions** for a **Flight**, each with the **Targets** it sets. The client's scenario briefing is one; so is one we write for a flight we fly ourselves.
+_Avoid_: Script, scenario, flight plan, briefing
+
+**Settle window**:
+The time after an **Instruction** during which the **Targets** it changes are not scored, so the turn or level-off it causes does not count as **Deviation**. Targets it leaves alone, or restates at the same value, are scored throughout.
+_Avoid_: Grace period, transition, buffer
 
 ### Pilots and flights
 
@@ -93,7 +105,7 @@ _Avoid_: Pilot profile, demographics
 ### Synthetic pilots
 
 **Synthetic pilot**:
-A generated pilot with generated flights, built to deviate by a known amount, used to check that **Performance groups** find real differences before real pilots are available.
+A generated pilot with generated flights, built to deviate by a known amount, used to check that **Performance groups** find real differences, and as the **Reference cohort**, before real pilots are available.
 _Avoid_: Test pilot, fake pilot, mock pilot
 
 **Hidden tier**:
@@ -120,14 +132,16 @@ _Avoid_: Fake data, dummy data, mock data
 
 - A **Pilot** flies many **Flights**; a **Flight** produces many **Samples**.
 - A **Sample** has one value per telemetry field, and one **Deviation** per **Flight dynamics factor** once a **Target** exists.
-- A **Flight** is divided into **Segments**, and is also flown as a sequence of **Legs**. An **Instruction** sets a new **Target** from that moment on.
-- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone.
+- A **Flight** is divided into **Segments**, and is also flown as a sequence of **Legs**. A **Brief** lists its **Instructions** in order.
+- An **Instruction** sets new **Targets** from the moment it is given. The targets it changes are not scored during its **Settle window**.
+- A **Pilot** falls into exactly one **Performance group**, decided by their **Deviation features** alone. A pilot outside the **Reference cohort** is placed in the nearest group without changing the groups.
 - **Pilot metadata** is compared against **Performance groups** after they are formed; it does not form them.
 - Out of scope: a **Sample** receives exactly one **Flight event label**, and a **Flight phase** is a kind of **Flight event label**.
 
 ## Flagged ambiguities
 
 - **Pilot rating** is the type of certification, not a performance score (client, see `docs/client_meeting_notes.md`). Whether it means the same as certification level, or an extra rating such as instrument, is still unclear.
-- **Target** source is the **Instruction**: the client gives standardized, timestamped instructions during the flight, and iMotions holds the timestamps. None have been shared and no targets are captured yet, and the heading reference (true vs. magnetic) is unresolved.
+- **Target** source is the **Instruction**: the client gives standardized, timestamped instructions during the flight, and iMotions holds the timestamps. Her **Brief** and timestamps have not been shared, so targets exist only for flights we brief ourselves. The heading reference for her routes (true vs. magnetic) is unresolved.
+- Climbs are not settled: whether altitude **Deviation** counts while the pilot climbs to a new altitude **Target**, or only after level-off. A climb outlasts a **Settle window**. Our level-hold **Briefs** avoid the question; the client's scenario does not.
 - **Leg** and **Segment** may or may not line up. The client's seven **Segments** are unknown until she shares them, so how they map to our **Legs** is open.
 - **Segment** names and boundaries are unknown until the client shares her seven-phase segmentation, which she marks by hand from the iMotions audio and video. Detecting **Instructions** automatically, for example from the eye tracker's audio, is later work; today the client segments by hand.
