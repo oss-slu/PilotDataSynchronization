@@ -1,4 +1,5 @@
 mod bichannel;
+mod listener;
 mod message;
 mod state;
 mod update;
@@ -18,7 +19,9 @@ use iced::{
 
 fn main() -> iced::Result {
     iced::application("RELAY", update, view)
-        .window_size((450.0, 300.0))
+        // Taller than it was: the window clipped its own content well before
+        // the listener panel was added to it.
+        .window_size((560.0, 820.0))
         .exit_on_close_request(false)
         .subscription(subscribe)
         .run_with(|| {

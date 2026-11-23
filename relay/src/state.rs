@@ -127,6 +127,13 @@ pub(crate) struct State {
     // Mirror destination: the Python side reads the same packets iMotions gets
     pub mirror_addr_field: String,
     pub mirror_connected: bool,
+
+    // The pilot_inference listener the relay runs for the operator (#285), so
+    // a Flight needs no terminal. The relay outlives it (docs/adr/0005).
+    pub listener: crate::listener::Listener,
+    pub pilot_id_field: String,
+    pub flight_id_field: String,
+    pub inference_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for State {
@@ -170,6 +177,11 @@ impl Default for State {
 
             mirror_addr_field: String::new(),
             mirror_connected: false,
+
+            listener: crate::listener::Listener::default(),
+            pilot_id_field: String::new(),
+            flight_id_field: String::new(),
+            inference_dir: crate::listener::find_inference_dir(),
         }
     }
 }

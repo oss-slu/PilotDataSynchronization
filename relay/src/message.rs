@@ -41,6 +41,12 @@ pub(crate) enum Message {
     DisconnectMirror,
 
     SendPacket,
+
+    // Listener panel (#285): run the capture logger from the relay window
+    PilotIdFieldUpdate(String),
+    FlightIdFieldUpdate(String),
+    StartListener,
+    StopListener,
 }
 
 pub(crate) enum ToIpcThreadMessage {}

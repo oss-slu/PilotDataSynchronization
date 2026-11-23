@@ -38,6 +38,14 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         M::Update => {
             state.elapsed_time += Duration::from_millis(10);
 
+            // Collect whatever the listener has printed, and notice if it has
+            // exited. Uses the tick the window already runs on.
+            let was_running = state.listener.status.is_running();
+            state.listener.poll();
+            if was_running && !state.listener.status.is_running() {
+                state.log_event(state.listener.status.describe());
+            }
+
             // compute active baton connection using centralized helpers
             let ipc_conn_flag = state.is_ipc_connected();
             let recent_packet = state
@@ -247,6 +255,70 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
             Task::none()
+        }
+
+        M::PilotIdFieldUpdate(value) => {
+            state.pilot_id_field = value;
+            Task::none()
+        }
+
+        M::FlightIdFieldUpdate(value) => {
+            state.flight_id_field = value;
+            Task::none()
+        }
+
+        M::StartListener => {
+            start_listener(state);
+            Task::none()
+        }
+
+        M::StopListener => {
+            state.listener.stop();
+            state.log_event("Listener stopped".into());
+            Task::none()
+        }
+    }
+}
+
+/// Start the capture logger for the ids in the panel.
+///
+/// Every failure here is one the operator can act on, so each becomes the
+/// error banner rather than a status the panel leaves them to interpret.
+fn start_listener(state: &mut State) {
+    let Some(inference_dir) = state.inference_dir.clone() else {
+        let msg = "Cannot find the inference folder next to the relay. Start the listener                    from a terminal, or run the relay from the repository."
+            .to_string();
+        state.error_message = Some(msg.clone());
+        state.log_event(msg);
+        return;
+    };
+
+    let command = match crate::listener::capture_command(
+        &inference_dir,
+        &state.pilot_id_field,
+        &state.flight_id_field,
+        crate::listener::DEFAULT_LISTENER_PORT,
+    ) {
+        Ok(command) => command,
+        Err(e) => {
+            let msg = e.to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+            return;
+        }
+    };
+
+    let described = command.display();
+    match state.listener.start(command) {
+        Ok(()) => {
+            state.error_message = None;
+            state.log_event(format!("Listener started: {described}"));
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.listener.status = crate::listener::ListenerStatus::Failed(msg.clone());
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
         }
     }
 }
@@ -1081,6 +1153,67 @@ mod tests {
             Some("Enable at least one dataref toggle to send a test packet")
         );
         assert!(state.last_send_timestamp.is_none());
+    }
+
+    #[test]
+    fn the_id_fields_hold_what_was_typed() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::PilotIdFieldUpdate("P004".into()));
+        let _ = update(&mut state, Message::FlightIdFieldUpdate("P004-T1".into()));
+        assert_eq!(state.pilot_id_field, "P004");
+        assert_eq!(state.flight_id_field, "P004-T1");
+    }
+
+    #[test]
+    fn starting_a_listener_without_a_pilot_id_says_so_and_starts_nothing() {
+        let mut state = State::default();
+        state.flight_id_field = "P004-T1".into();
+
+        let _ = update(&mut state, Message::StartListener);
+
+        assert!(
+            state
+                .error_message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Pilot id is required"),
+            "{:?}",
+            state.error_message
+        );
+        assert!(!state.listener.status.is_running());
+    }
+
+    #[test]
+    fn a_flight_id_that_would_escape_the_data_folder_is_refused() {
+        let mut state = State::default();
+        state.pilot_id_field = "P004".into();
+        state.flight_id_field = "../../etc/passwd".into();
+
+        let _ = update(&mut state, Message::StartListener);
+
+        assert!(state.error_message.is_some());
+        assert!(!state.listener.status.is_running());
+    }
+
+    #[test]
+    fn stopping_a_listener_that_never_started_is_harmless() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::StopListener);
+        assert!(!state.listener.status.is_running());
+    }
+
+    /// The relay has to survive the listener, because the plugin cannot
+    /// reconnect to a relay that restarted (docs/adr/0005, #255, #256).
+    #[test]
+    fn listener_errors_leave_the_relay_connections_alone() {
+        let mut state = State::default();
+        state.tcp_connected = true;
+        state.pilot_id_field = String::new();
+
+        let _ = update(&mut state, Message::StartListener);
+        let _ = update(&mut state, Message::StopListener);
+
+        assert!(state.tcp_connected);
     }
 
     #[test]

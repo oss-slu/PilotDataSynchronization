@@ -3,7 +3,9 @@
 //! Each UI element is produced by a small focused function to improve readability,
 //! testability and maintainability. The `view` function composes those elements.
 
-use iced::widget::{button, column, container, pick_list, row, text, text_input, toggler};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, toggler,
+};
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
@@ -47,6 +49,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     // Second destination, read by the Python side
     elements.push(mirror_row(state));
 
+    // The listener the relay runs, so a Flight needs no terminal
+    elements.push(listener_panel(state));
+
     // Metrics (if enabled)
     elements.push(metrics_block(state));
 
@@ -56,7 +61,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     // XML download / card
     elements.push(xml_download_popup(state));
 
-    column(elements).into()
+    // Scrollable, so a small screen or a long event log cannot hide the
+    // controls underneath them.
+    scrollable(column(elements).spacing(5).padding(10)).into()
 }
 
 fn spawn_error_message(state: &State) -> Option<UIElement> {
@@ -259,6 +266,68 @@ fn mirror_row(state: &State) -> UIElement {
     ]
     .spacing(5)
     .into()
+}
+
+/// How many lines of listener output the window shows.
+const LISTENER_OUTPUT_VISIBLE: usize = 4;
+
+/// The listener panel: ids, a start/stop button, and the listener's own output.
+///
+/// It sits under the mirror controls because that is the order things happen
+/// in: the listener reads the mirror port.
+fn listener_panel(state: &State) -> UIElement {
+    let running = state.listener.status.is_running();
+
+    let mut rows: Vec<UIElement> = vec![
+        text(state.listener.status.describe()).into(),
+        row![
+            text("Pilot").size(12),
+            text_input("P004", &state.pilot_id_field)
+                .on_input(Message::PilotIdFieldUpdate),
+            text("Flight").size(12),
+            text_input("P004-T1", &state.flight_id_field)
+                .on_input(Message::FlightIdFieldUpdate),
+            listener_button(running),
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into(),
+    ];
+
+    // Say this before a start fails rather than after, since the fix is to
+    // run the relay from the repository or start the listener by hand.
+    if state.inference_dir.is_none() {
+        rows.push(
+            text("No inference folder found next to the relay, so the listener cannot start here.")
+                .size(12)
+                .into(),
+        );
+    }
+
+    let output = state.listener.recent_output(LISTENER_OUTPUT_VISIBLE);
+    if !output.is_empty() {
+        rows.extend(
+            output
+                .into_iter()
+                .map(|line| -> UIElement { text(line.to_string()).size(12).into() }),
+        );
+    }
+
+    container(column(rows).spacing(5))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
+}
+
+/// Start and stop are one button, because they are one decision and the panel
+/// should never offer both at once.
+fn listener_button(running: bool) -> UIElement<'static> {
+    if running {
+        button("Stop listener").on_press(Message::StopListener).into()
+    } else {
+        button("Start listener").on_press(Message::StartListener).into()
+    }
 }
 
 /// XML download card or opener button depending on `state.card_open`
