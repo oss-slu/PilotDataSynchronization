@@ -17,6 +17,7 @@ from pilot_inference.prepar3d.build_features import (
     EXTENDED_FEATURES,
     airspeed_spread,
     build,
+    checked_output,
     plot_flight,
     run,
 )
@@ -270,6 +271,45 @@ def test_a_run_reports_a_flight_that_produced_no_leg(tmp_path):
 
     report = pd.read_csv(args.report)
     assert "never airborne" in report.loc[report["flight_id"] == "P003-T1", "note"].iloc[0]
+
+
+def test_the_default_output_paths_are_accepted():
+    from pilot_inference.prepar3d.build_features import CLIENT_DIR, RESULTS_DIR
+
+    assert checked_output(CLIENT_DIR / "features" / "flight_features.csv", "--out")
+    assert checked_output(RESULTS_DIR / "prepar3d_plots", "--plots-dir")
+
+
+def test_an_output_path_outside_the_repository_is_accepted(tmp_path):
+    assert checked_output(tmp_path / "out.csv", "--out") == (tmp_path / "out.csv").resolve()
+
+
+def test_writing_client_data_into_the_tracked_tree_is_refused():
+    """The repository is public and the exports are under an IRB protocol."""
+    from pilot_inference.paths import INFERENCE_DIR
+
+    with pytest.raises(ValueError, match="must never reach the tracked tree"):
+        checked_output(INFERENCE_DIR / "data" / "flight_features.csv", "--out")
+
+
+def test_a_traversal_out_of_the_client_folder_is_refused():
+    from pilot_inference.prepar3d.build_features import CLIENT_DIR
+
+    with pytest.raises(ValueError, match="must never reach the tracked tree"):
+        checked_output(CLIENT_DIR / ".." / ".." / ".." / "relay" / "leak.csv", "--out")
+
+
+def test_a_bad_output_path_fails_before_anything_is_written(tmp_path):
+    from pilot_inference.paths import INFERENCE_DIR
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    write_export(raw / "P001_T1.tsv", a_whole_flight())
+    args = cli_args(tmp_path, raw, report=INFERENCE_DIR / "briefs" / "leak.csv")
+    with pytest.raises(ValueError):
+        run(args)
+    assert not (INFERENCE_DIR / "briefs" / "leak.csv").exists()
+    assert not args.out.exists()
 
 
 def test_a_run_whose_tolerances_detect_nothing_exits_nonzero(tmp_path):

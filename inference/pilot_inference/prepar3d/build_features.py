@@ -55,12 +55,41 @@ from pilot_inference.prepar3d.load import load_folder
 
 CLIENT_DIR = DATA_DIR / "client"
 RESULTS_DIR = INFERENCE_DIR / "results"
+REPO_ROOT = INFERENCE_DIR.parent
 SCENARIO = INFERENCE_DIR / "briefs" / "prepar3d_scenario.csv"
 
 # The four the model trains on, per docs/adr/0002.
 CORE_FEATURES = ("altitude_std", "altitude_abs_bias", "heading_std", "heading_abs_bias")
 # Plus three, kept separate so Issue 2 can train on either set.
 EXTENDED_FEATURES = ("vertical_speed_std", "vertical_speed_abs_bias", "airspeed_std")
+
+
+def checked_output(path: Path, option: str) -> Path:
+    """
+    Resolve an output path, refusing one that writes into the tracked tree.
+
+    Everything this CLI writes is derived from the client's exports, which are
+    under an IRB protocol, and the repository is public. `inference/data/client/`
+    and `inference/results/` are gitignored; the rest of the repository is not.
+    A mistyped `--out` is the easy way to put a pilot's flight path somewhere it
+    can be committed, so the path is checked once, before any of it is written.
+
+    Paths outside the repository are the operator's own business and are
+    allowed, which is also what lets a run write to a temporary folder.
+    """
+    resolved = Path(path).expanduser().resolve()
+    root = REPO_ROOT.resolve()
+    if resolved != root and root not in resolved.parents:
+        return resolved
+    for allowed in (CLIENT_DIR.resolve(), RESULTS_DIR.resolve()):
+        if resolved == allowed or allowed in resolved.parents:
+            return resolved
+    raise ValueError(
+        f"{option} points at {resolved}, inside the repository but outside the "
+        f"gitignored {CLIENT_DIR} and {RESULTS_DIR}. This CLI writes client data, "
+        f"which must never reach the tracked tree. Write it outside the "
+        f"repository instead, or into one of those two folders."
+    )
 
 
 def airspeed_spread(samples: pd.DataFrame) -> pd.DataFrame:
@@ -192,6 +221,15 @@ def plot_flight(samples: pd.DataFrame, path: Path, scenario) -> bool:
 
 
 def run(args) -> int:
+    # Before anything is read, so a bad path fails on an empty folder rather
+    # than after a run has already written half its output.
+    args.out = checked_output(args.out, "--out")
+    args.report = checked_output(args.report, "--report")
+    if args.clean_dir:
+        args.clean_dir = checked_output(args.clean_dir, "--clean-dir")
+    if args.plots_dir:
+        args.plots_dir = checked_output(args.plots_dir, "--plots-dir")
+
     scenario = load_scenario(args.scenario)
     flights = load_folder(args.raw_dir)
 
