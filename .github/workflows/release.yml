@@ -16,6 +16,13 @@ jobs:
   build:
     name: Build the plugin and relay
     uses: ./.github/workflows/meson-build.yml
+    # A called workflow can only use permissions its caller grants, and
+    # meson-build.yml asks for these to sign and store the SBOM attestation.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
   publish:
     name: Publish the GitHub Release
