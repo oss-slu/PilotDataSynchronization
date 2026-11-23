@@ -1,0 +1,5 @@
+# The Prepar3D fixtures stand in for the client's exports, which are CRLF and
+# latin-1. Git normalises line endings in text files, which would quietly turn
+# them into LF and stop them exercising the loader's `\r` handling anywhere but
+# a Windows working copy. Keep their bytes exactly as written.
+inference/tests/prepar3d/fixtures/*.tsv -text

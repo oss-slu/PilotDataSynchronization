@@ -1,0 +1,27 @@
+# Scenario flown in the client's Prepar3D sample, from the client meeting
+# (docs/client_meeting_notes.md). Contains no client data.
+#
+# IFR day: 1,000 ft overcast, 3 mi visibility. Cessna 172 with a G1000.
+# Depart KOJC, climb to 3,100 ft, proceed to K81 for an instrument approach,
+# alternate KIXD. Every file shows two circuits: climbs on 190 and 40, and
+# approach legs on 220 and 0.
+#
+# Headings here are true, which is what the data carries. No magnetic
+# conversion is applied (#236 concerns the live X-Plane path, not this sample).
+#
+# Scoring rules this file encodes:
+#  - Altitude is scored only in level holds at level_altitude_ft. Climb legs
+#    are climbing and approach legs are descending, so neither is scored for
+#    altitude. The approach altitudes come from the approach chart, which we
+#    do not have, so approach altitude stays unscored.
+#  - Heading is scored on any leg held within tolerance of a scenario heading,
+#    including the approach legs, where it is the final approach course.
+#  - There is no airspeed target. airspeed_std is reported as spread within
+#    the holds, with no bias.
+key,value
+scenario_heading,190
+scenario_heading,40
+scenario_heading,220
+scenario_heading,0
+level_altitude_ft,3100
+level_vertical_speed_fpm,0

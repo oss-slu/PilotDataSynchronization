@@ -1,0 +1,7 @@
+Timestamp	Altitude MSL,ft	Heading (true),deg	Indicated Airspeed,kts	Vertical speed,fpm	Bank,deg	Pitch,deg
+12:00:00	1100	190	0	0	0	0	900	901
+12:00:01	1500	190	90	700	2	5	910	911
+12:00:02	3100	190	110	0	1	0	920	921
+12:00:03	3100	40	110	0	3	0	930	931
+12:00:04	3100	220	112	-50	2	-1	940	941
+12:00:05	1200	0	70	-600	1	-3	950	951

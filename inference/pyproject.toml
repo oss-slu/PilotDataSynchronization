@@ -8,6 +8,9 @@ dependencies = [
     "numpy>=1.23.0,<3.0.0",
     "scikit-learn>=1.2.0,<2.0.0",
     "joblib>=1.2.0,<2.0.0",
+    # The actual-against-target plots the Prepar3D pipeline writes, which are
+    # how a Flight's detected Legs get checked before anything trains on them.
+    "matplotlib>=3.6.0,<4.0.0",
 ]
 
 [build-system]
