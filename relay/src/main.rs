@@ -1,4 +1,5 @@
 mod bichannel;
+mod events;
 mod listener;
 mod message;
 mod state;

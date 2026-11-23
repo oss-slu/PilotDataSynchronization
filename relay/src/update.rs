@@ -277,6 +277,39 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.log_event("Listener stopped".into());
             Task::none()
         }
+
+        M::ListenerModeSelected(mode) => {
+            // Changing it under a running listener would mislead: the panel
+            // would describe one thing while another was recording.
+            if state.listener.status.is_running() {
+                state.error_message =
+                    Some("Stop the listener before changing what it runs.".into());
+            } else {
+                state.listener_mode = mode;
+            }
+            Task::none()
+        }
+
+        M::BriefFieldUpdate(value) => {
+            state.brief_field = value;
+            Task::none()
+        }
+
+        M::GiveInstruction => {
+            // live_groups reads one line per instruction, which is what
+            // pressing Enter at its console does.
+            match state.listener.send_line("") {
+                Ok(()) => {
+                    state.error_message = None;
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    state.error_message = Some(msg.clone());
+                    state.log_event(msg);
+                }
+            }
+            Task::none()
+        }
     }
 }
 
@@ -293,12 +326,23 @@ fn start_listener(state: &mut State) {
         return;
     };
 
-    let command = match crate::listener::capture_command(
-        &inference_dir,
-        &state.pilot_id_field,
-        &state.flight_id_field,
-        crate::listener::DEFAULT_LISTENER_PORT,
-    ) {
+    let built = match state.listener_mode {
+        crate::listener::ListenerMode::Capture => crate::listener::capture_command(
+            &inference_dir,
+            &state.pilot_id_field,
+            &state.flight_id_field,
+            crate::listener::DEFAULT_LISTENER_PORT,
+        ),
+        crate::listener::ListenerMode::LiveGroups => crate::listener::live_groups_command(
+            &inference_dir,
+            std::path::Path::new(state.brief_field.trim()),
+            &state.pilot_id_field,
+            &state.flight_id_field,
+            crate::listener::DEFAULT_LISTENER_PORT,
+        ),
+    };
+
+    let command = match built {
         Ok(command) => command,
         Err(e) => {
             let msg = e.to_string();
@@ -1214,6 +1258,67 @@ mod tests {
         let _ = update(&mut state, Message::StopListener);
 
         assert!(state.tcp_connected);
+    }
+
+    #[test]
+    fn the_mode_cannot_be_changed_under_a_running_listener() {
+        use crate::listener::{ListenerMode, ListenerStatus};
+
+        let mut state = State::default();
+        state.listener.status = ListenerStatus::Running;
+
+        let _ = update(&mut state, Message::ListenerModeSelected(ListenerMode::LiveGroups));
+
+        assert_eq!(state.listener_mode, ListenerMode::Capture);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Stop the listener"));
+    }
+
+    #[test]
+    fn the_mode_changes_while_nothing_is_running() {
+        use crate::listener::ListenerMode;
+
+        let mut state = State::default();
+        let _ = update(&mut state, Message::ListenerModeSelected(ListenerMode::LiveGroups));
+        assert_eq!(state.listener_mode, ListenerMode::LiveGroups);
+    }
+
+    #[test]
+    fn live_groups_without_a_brief_says_which_file_is_missing() {
+        use crate::listener::ListenerMode;
+
+        let mut state = State::default();
+        state.listener_mode = ListenerMode::LiveGroups;
+        state.pilot_id_field = "P004".into();
+        state.flight_id_field = "P004-T1".into();
+        state.brief_field = "briefs/does_not_exist.csv".into();
+
+        let _ = update(&mut state, Message::StartListener);
+
+        let error = state.error_message.unwrap_or_default();
+        assert!(error.contains("No brief at"), "{error}");
+        assert!(!state.listener.status.is_running());
+    }
+
+    #[test]
+    fn giving_an_instruction_with_no_listener_says_so() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::GiveInstruction);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("nothing to tell"));
+    }
+
+    #[test]
+    fn the_brief_field_holds_what_was_typed() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::BriefFieldUpdate("briefs/x.csv".into()));
+        assert_eq!(state.brief_field, "briefs/x.csv");
     }
 
     #[test]

@@ -47,6 +47,9 @@ pub(crate) enum Message {
     FlightIdFieldUpdate(String),
     StartListener,
     StopListener,
+    ListenerModeSelected(crate::listener::ListenerMode),
+    BriefFieldUpdate(String),
+    GiveInstruction,
 }
 
 pub(crate) enum ToIpcThreadMessage {}

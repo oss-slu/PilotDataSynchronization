@@ -9,6 +9,7 @@ use iced::widget::{
 use iced::{Element, Length};
 use iced_aw::{helpers::card, style};
 
+use crate::listener::ListenerMode;
 use crate::state::{IMOTIONS_ADDR_HINT, MIRROR_ADDR_HINT};
 use crate::{Message, State};
 
@@ -25,6 +26,9 @@ pub(crate) fn view(state: &State) -> UIElement {
     if let Some(err) = spawn_error_message(state) {
         elements.push(err);
     }
+
+    // The whole path, so one glance says where it is broken
+    elements.push(chain_strip(state));
 
     // Informational text
     elements.push(elapsed_time_element(state));
@@ -271,6 +275,100 @@ fn mirror_row(state: &State) -> UIElement {
 /// How many lines of listener output the window shows.
 const LISTENER_OUTPUT_VISIBLE: usize = 4;
 
+/// One line per hop, so a broken Flight is read rather than deduced.
+///
+/// The order is the order the data travels, and each line says what is wrong
+/// in terms of the thing to go and do, because the people running this are
+/// researchers rather than developers.
+fn chain_strip(state: &State) -> UIElement {
+    let plugin = if state.active_baton_connection {
+        "X-Plane plugin: connected".to_string()
+    } else {
+        "X-Plane plugin: waiting. Start X-Plane, or if it is already running,          re-enable the plugin in Plugin Admin"
+            .to_string()
+    };
+
+    let imotions = if state.tcp_connected {
+        format!("iMotions: connected to {}", state.tcp_addr_field)
+    } else {
+        "iMotions: not connected. Type the address and press Connect TCP".to_string()
+    };
+
+    let listener = if state.listener.status.is_running() {
+        match (state.listener.live.ready(), state.listener_mode) {
+            (true, _) => format!(
+                "Listener: {} recording {}",
+                state.listener_mode, state.listener.live.flight_id
+            ),
+            (false, mode) => format!("Listener: {mode} starting"),
+        }
+    } else if state.mirror_connected {
+        "Listener: a mirror is connected, but the relay did not start it".to_string()
+    } else {
+        "Listener: not running".to_string()
+    };
+
+    container(
+        column![
+            text("Flight path").size(14),
+            text(plugin).size(12),
+            text(imotions).size(12),
+            text(listener).size(12),
+        ]
+        .spacing(2),
+    )
+    .padding(10)
+    .width(Length::Fill)
+    .style(container::rounded_box)
+    .into()
+}
+
+/// The live groups block: what the Instructor reads while flying.
+fn live_groups_block(state: &State) -> Vec<UIElement> {
+    let live = &state.listener.live;
+    let mut rows: Vec<UIElement> = Vec::new();
+
+    if let Some(agreement) = live.agreement {
+        rows.push(
+            text(format!(
+                "Reference cohort fitted, agreement with the hidden tiers {agreement:.2}"
+            ))
+            .size(12)
+            .into(),
+        );
+    }
+    if let Some(note) = &live.note {
+        rows.push(text(note.clone()).size(12).into());
+    }
+
+    if let Some(status) = &live.status {
+        // The headline carries the group, so it is the biggest thing here.
+        rows.push(text(status.headline()).size(16).into());
+        if let Some(settling) = status.settling_text() {
+            rows.push(text(settling).size(12).into());
+        }
+        for line in status.feature_lines() {
+            rows.push(text(line).size(12).into());
+        }
+    }
+
+    if let Some(next) = &live.next_instruction {
+        rows.push(
+            row![
+                button("Give instruction").on_press(Message::GiveInstruction),
+                text(format!("next: {next}")).size(12),
+            ]
+            .spacing(5)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    } else if live.ready() {
+        rows.push(text("No instructions left in the brief.").size(12).into());
+    }
+
+    rows
+}
+
 /// The listener panel: ids, a start/stop button, and the listener's own output.
 ///
 /// It sits under the mirror controls because that is the order things happen
@@ -279,7 +377,17 @@ fn listener_panel(state: &State) -> UIElement {
     let running = state.listener.status.is_running();
 
     let mut rows: Vec<UIElement> = vec![
-        text(state.listener.status.describe()).into(),
+        row![
+            text(state.listener.status.describe()),
+            pick_list(
+                ListenerMode::ALL,
+                Some(state.listener_mode),
+                Message::ListenerModeSelected,
+            ),
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into(),
         row![
             text("Pilot").size(12),
             text_input("P004", &state.pilot_id_field)
@@ -293,6 +401,20 @@ fn listener_panel(state: &State) -> UIElement {
         .align_y(iced::Alignment::Center)
         .into(),
     ];
+
+    if state.listener_mode == ListenerMode::LiveGroups {
+        rows.push(
+            row![
+                text("Brief").size(12),
+                text_input("briefs/example_level_holds.csv", &state.brief_field)
+                    .on_input(Message::BriefFieldUpdate),
+            ]
+            .spacing(5)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+        rows.extend(live_groups_block(state));
+    }
 
     // Say this before a start fails rather than after, since the fix is to
     // run the relay from the repository or start the listener by hand.

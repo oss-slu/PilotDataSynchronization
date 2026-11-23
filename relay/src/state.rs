@@ -131,8 +131,10 @@ pub(crate) struct State {
     // The pilot_inference listener the relay runs for the operator (#285), so
     // a Flight needs no terminal. The relay outlives it (docs/adr/0005).
     pub listener: crate::listener::Listener,
+    pub listener_mode: crate::listener::ListenerMode,
     pub pilot_id_field: String,
     pub flight_id_field: String,
+    pub brief_field: String,
     pub inference_dir: Option<std::path::PathBuf>,
 }
 
@@ -179,8 +181,12 @@ impl Default for State {
             mirror_connected: false,
 
             listener: crate::listener::Listener::default(),
+            listener_mode: crate::listener::ListenerMode::Capture,
             pilot_id_field: String::new(),
             flight_id_field: String::new(),
+            // A brief that exists in the repo, so Live groups can be tried
+            // without hunting for a file first.
+            brief_field: "briefs/example_level_holds.csv".to_string(),
             inference_dir: crate::listener::find_inference_dir(),
         }
     }

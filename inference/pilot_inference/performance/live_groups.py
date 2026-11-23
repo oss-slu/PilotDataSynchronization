@@ -36,6 +36,7 @@ from pilot_inference.capture.data_logger import (
     new_flight_id,
     parse_packet,
 )
+from pilot_inference.events import emit
 from pilot_inference.paths import DATA_DIR
 from pilot_inference.performance.clustering import (
     FEATURE_COLUMNS,
@@ -258,35 +259,182 @@ def describe_groups(reference: CohortGroups) -> str:
     return "\n".join(lines)
 
 
+def status_payload(
+    flight: LiveFlight, reference: CohortGroups, min_scored: float, at: datetime
+) -> dict:
+    """
+    Everything a status line says, as data rather than a sentence.
+
+    `status_line` formats this, and `--json` sends it as it is, so the console
+    and the relay's window can never drift apart (see pilot_inference.events).
+
+    `state` is one of:
+        waiting         no instruction has been given yet
+        nothing_scored  an instruction is in force, but no sample counts yet
+        scoring         there are features; `group` is None until enough time
+                        is scored, and `provisional` says which
+    """
+    if flight.current is None:
+        return {"state": "waiting", "given": 0, "total": len(flight.brief)}
+
+    settling = flight.settling(at)
+    payload = {
+        "state": "nothing_scored",
+        "given": flight.given,
+        "total": len(flight.brief),
+        "settling": sorted(settling),
+        "settling_all": len(settling) == len(METRICS),
+        "scored_seconds": float(flight.scored_seconds),
+        "min_scored": float(min_scored),
+        "provisional": True,
+        "group": None,
+        "features": {},
+    }
+
+    with warnings.catch_warnings():
+        # A metric with nothing scored yet warns; the payload already says so.
+        warnings.simplefilter("ignore", UserWarning)
+        pilots = flight.pilot_features()
+    if pilots is None:
+        return payload
+
+    payload["state"] = "scoring"
+    payload["features"] = {
+        metric: {
+            "std": float(pilots[f"{metric}_std"].iloc[0]),
+            "abs_bias": float(pilots[f"{metric}_abs_bias"].iloc[0]),
+        }
+        for metric in METRICS
+    }
+    enough = flight.scored_seconds >= min_scored
+    complete = not pilots[FEATURE_COLUMNS].isna().to_numpy().any()
+    if enough and complete:
+        payload["provisional"] = False
+        payload["group"] = int(reference.assign(pilots)["group"].iloc[0])
+    return payload
+
+
 def status_line(
     flight: LiveFlight, reference: CohortGroups, min_scored: float, at: datetime
 ) -> str:
     """One console line: where the brief is, how much is scored, and the group if there is one."""
-    if flight.current is None:
+    return format_status(status_payload(flight, reference, min_scored, at))
+
+
+def format_status(payload: dict) -> str:
+    """The console sentence for one status payload."""
+    if payload["state"] == "waiting":
         return "Waiting for the first instruction. Press Enter as you give it."
-    progress = f"instruction {flight.given}/{len(flight.brief)}"
-    settling = flight.settling(at)
-    if len(settling) == len(METRICS):
+
+    progress = f"instruction {payload['given']}/{payload['total']}"
+    settling = payload["settling"]
+    if payload["settling_all"]:
         progress += " (settling)"
     elif settling:
         progress += f" (settling {', '.join(settling)})"
-    scored = f"scored {flight.scored_seconds:.0f}s"
-    with warnings.catch_warnings():
-        # A metric with nothing scored yet warns; the line already says so.
-        warnings.simplefilter("ignore", UserWarning)
-        pilots = flight.pilot_features()
-    if pilots is None:
+
+    if payload["state"] == "nothing_scored":
         return f"{progress}, nothing scored yet"
+
+    scored = f"scored {payload['scored_seconds']:.0f}s"
     features = ", ".join(
-        f"{metric} std {pilots[f'{metric}_std'].iloc[0]:.1f} "
-        f"|bias| {pilots[f'{metric}_abs_bias'].iloc[0]:.1f}"
-        for metric in METRICS
+        f"{metric} std {values['std']:.1f} |bias| {values['abs_bias']:.1f}"
+        for metric, values in payload["features"].items()
     )
-    if flight.scored_seconds < min_scored or pilots[FEATURE_COLUMNS].isna().to_numpy().any():
-        group = f"provisional, {min_scored:.0f}s scored needed for a group"
+    if payload["provisional"]:
+        group = f"provisional, {payload['min_scored']:.0f}s scored needed for a group"
     else:
-        group = f"group {reference.assign(pilots)['group'].iloc[0]}"
+        group = f"group {payload['group']}"
     return f"{progress}, {scored}, {group} | {features}"
+
+
+class ConsoleReporter:
+    """What someone reading a terminal sees. Unchanged from before --json."""
+
+    def fitting(self, *, k, pilots, seed):
+        print(f"Fitting {k} groups on {pilots} synthetic pilots (seed {seed})...")
+
+    def cohort(self, *, reference, agreement):
+        print(
+            "Performance groups of the synthetic reference cohort "
+            "(a demonstration, not a measurement):"
+        )
+        print(describe_groups(reference))
+        print(f"  agreement with the synthetic pilots' hidden tiers (adjusted Rand): {agreement:.2f}")
+
+    def started(self, *, host, port, pilot_id, flight_id, csv, instructions_csv, brief, unnamed):
+        print(f"Listening for the relay on {host}:{port}")
+        print(f"Pilot {pilot_id}, flight {flight_id}")
+        print(f"Writing samples to {csv} and instructions to {instructions_csv}")
+        if unnamed:
+            print("Pass --pilot-id to label these rows, or they cannot be grouped per pilot.")
+        print(f"Brief: {len(brief)} instruction(s).")
+        print("Press Enter as you give each one, q then Enter to stop.")
+        print(f"  next: {brief[0].text}")
+
+    def status(self, payload, at):
+        print(f"[{at.astimezone():%H:%M:%S}] {format_status(payload)}")
+
+    def instruction(self, *, given, total, text, settling, next_text):
+        print(f"Instruction {given}/{total} given: {text}")
+        if not settling:
+            print("  no target changed, so nothing settles")
+        # Group by whole seconds left, since an earlier window may still be running.
+        left = {metric: math.ceil(seconds) for metric, seconds in settling.items()}
+        for seconds in sorted(set(left.values()), reverse=True):
+            names = ", ".join(m for m, value in left.items() if value == seconds)
+            print(f"  {names} scored again in {seconds}s")
+        if next_text is not None:
+            print(f"  next: {next_text}")
+
+    def exhausted(self):
+        print("No instructions left in the brief. The last one stays in force; q to stop.")
+
+    def stopped(self, *, scored_seconds, given):
+        print(f"Stopped. {scored_seconds:.0f}s scored over {given} instruction(s).")
+
+
+class JsonReporter:
+    """The same events as data, for the relay's window (#285)."""
+
+    def fitting(self, *, k, pilots, seed):
+        emit("fitting", k=k, cohort_pilots=pilots, seed=seed)
+
+    def cohort(self, *, reference, agreement):
+        emit("cohort", agreement=float(agreement), description=describe_groups(reference))
+
+    def started(self, *, host, port, pilot_id, flight_id, csv, instructions_csv, brief, unnamed):
+        emit(
+            "started",
+            host=host,
+            port=port,
+            pilot_id=pilot_id,
+            flight_id=flight_id,
+            csv=str(csv),
+            instructions_csv=str(instructions_csv),
+            total=len(brief),
+            next=brief[0].text,
+            unnamed_pilot=unnamed,
+        )
+
+    def status(self, payload, at):
+        emit("status", at=at.astimezone().isoformat(), **payload)
+
+    def instruction(self, *, given, total, text, settling, next_text):
+        emit(
+            "instruction",
+            given=given,
+            total=total,
+            text=text,
+            settling={metric: math.ceil(seconds) for metric, seconds in settling.items()},
+            next=next_text,
+        )
+
+    def exhausted(self):
+        emit("error", message="No instructions left in the brief. The last one stays in force.")
+
+    def stopped(self, *, scored_seconds, given):
+        emit("stopped", scored_seconds=float(scored_seconds), given=given)
 
 
 def print_status(
@@ -296,13 +444,15 @@ def print_status(
     min_scored: float,
     interval: float,
     stop: threading.Event,
+    reporter=None,
 ) -> None:
+    reporter = reporter or ConsoleReporter()
     while not stop.wait(interval):
         # Copy under the lock, recompute outside it, so the recorder is never held up.
         with lock:
             snapshot = flight.snapshot()
-        line = status_line(snapshot, reference, min_scored, now())
-        print(f"[{now().astimezone():%H:%M:%S}] {line}")
+        payload = status_payload(snapshot, reference, min_scored, now())
+        reporter.status(payload, now())
 
 
 def instruction_row(flight: LiveFlight, instruction: Instruction, at: datetime) -> dict:
@@ -350,6 +500,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-scored", type=float, default=60.0, help="Scored seconds before naming a group"
     )
     parser.add_argument("--interval", type=float, default=5.0, help="Seconds between status lines")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Report events as one JSON object per line instead of console text, "
+        "for a program running this one (see pilot_inference.events).",
+    )
     parser.add_argument("--k", type=int, default=3, help="Number of performance groups")
     parser.add_argument("--seed", type=int, default=0, help="Seed for the synthetic reference cohort")
     parser.add_argument(
@@ -370,11 +526,11 @@ def main(argv=None) -> None:
         settle=timedelta(seconds=args.settle),
     )
 
-    print(f"Fitting {args.k} groups on {args.cohort_pilots} synthetic pilots (seed {args.seed})...")
+    reporter = JsonReporter() if args.json else ConsoleReporter()
+
+    reporter.fitting(k=args.k, pilots=args.cohort_pilots, seed=args.seed)
     reference, agreement = reference_cohort(args.cohort_pilots, args.k, args.seed)
-    print("Performance groups of the synthetic reference cohort (a demonstration, not a measurement):")
-    print(describe_groups(reference))
-    print(f"  agreement with the synthetic pilots' hidden tiers (adjusted Rand): {agreement:.2f}")
+    reporter.cohort(reference=reference, agreement=agreement)
 
     samples_log = CsvLog(args.csv, LIVE_CSV_FIELDS)
     instructions_log = CsvLog(instructions_path(args.csv), INSTRUCTION_FIELDS)
@@ -391,21 +547,23 @@ def main(argv=None) -> None:
         recorder,
         threading.Thread(
             target=print_status,
-            args=(flight, reference, lock, args.min_scored, args.interval, stop),
+            args=(flight, reference, lock, args.min_scored, args.interval, stop, reporter),
             daemon=True,
         ),
     ]
     for thread in threads:
         thread.start()
 
-    print(f"Listening for the relay on {args.host}:{args.port}")
-    print(f"Pilot {flight.pilot_id}, flight {flight.flight_id}")
-    print(f"Writing samples to {args.csv} and instructions to {instructions_log.path}")
-    if flight.pilot_id == DEFAULT_PILOT_ID:
-        print("Pass --pilot-id to label these rows, or they cannot be grouped per pilot.")
-    print(f"Brief: {len(brief)} instruction(s).")
-    print("Press Enter as you give each one, q then Enter to stop.")
-    print(f"  next: {brief[0].text}")
+    reporter.started(
+        host=args.host,
+        port=args.port,
+        pilot_id=flight.pilot_id,
+        flight_id=flight.flight_id,
+        csv=args.csv,
+        instructions_csv=instructions_log.path,
+        brief=brief,
+        unnamed=flight.pilot_id == DEFAULT_PILOT_ID,
+    )
 
     try:
         while True:
@@ -418,19 +576,16 @@ def main(argv=None) -> None:
                     row = instruction_row(flight, instruction, at)
                     settling = flight.settling(at)
             if instruction is None:
-                print("No instructions left in the brief. The last one stays in force; q to stop.")
+                reporter.exhausted()
                 continue
             instructions_log.write(row)
-            print(f"Instruction {flight.given}/{len(brief)} given: {instruction.text}")
-            if not settling:
-                print("  no target changed, so nothing settles")
-            # Group by whole seconds left, since an earlier window may still be running.
-            left = {metric: math.ceil(seconds) for metric, seconds in settling.items()}
-            for seconds in sorted(set(left.values()), reverse=True):
-                names = ", ".join(m for m, value in left.items() if value == seconds)
-                print(f"  {names} scored again in {seconds}s")
-            if flight.given < len(brief):
-                print(f"  next: {brief[flight.given].text}")
+            reporter.instruction(
+                given=flight.given,
+                total=len(brief),
+                text=instruction.text,
+                settling=settling,
+                next_text=brief[flight.given].text if flight.given < len(brief) else None,
+            )
     except (EOFError, KeyboardInterrupt):
         pass
     finally:
@@ -443,7 +598,7 @@ def main(argv=None) -> None:
         samples_log.close()
         instructions_log.close()
         with lock:
-            print(f"Stopped. {flight.scored_seconds:.0f}s scored over {flight.given} instruction(s).")
+            reporter.stopped(scored_seconds=flight.scored_seconds, given=flight.given)
 
 
 if __name__ == "__main__":
