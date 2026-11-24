@@ -19,8 +19,12 @@ from pilot_inference.performance.live_groups import (
     instructions_path,
     main,
     record_samples,
+    ConsoleReporter,
+    JsonReporter,
+    format_status,
     reference_cohort,
     status_line,
+    status_payload,
 )
 
 T0 = datetime(2026, 10, 26, 15, 0, tzinfo=timezone.utc)
@@ -272,3 +276,138 @@ def test_closing_the_listener_with_no_relay_returns():
     closer.start()
     closer.join(timeout=5)
     assert not closer.is_alive()
+
+
+# --- the status payload and the two reporters (#285) -------------------------
+
+
+def scored_flight(samples: int, settle=timedelta(0)) -> LiveFlight:
+    """A flight given its first instruction, then fed `samples` at 20 Hz."""
+    flight = LiveFlight([Instruction("hold", dict(HOLD))], "P004", "P004-T1", settle=settle)
+    flight.instruct(at(0))
+    telemetry = wobbly_flight(samples)
+    telemetry[["roll", "pitch", "yaw", "g_force"]] = 0.0
+    for i, values in enumerate(telemetry.to_dict("records")):
+        flight.add_sample(values, at(i * 0.05))
+    return flight
+
+
+def test_the_payload_says_it_is_waiting_before_any_instruction(reference):
+    flight = LiveFlight([Instruction("hold", dict(HOLD))], "P004", "P004-T1")
+    payload = status_payload(flight, reference, 60.0, at(0))
+    assert payload["state"] == "waiting"
+    assert payload["total"] == 1
+
+
+def test_the_console_line_is_built_from_the_payload(reference):
+    """Both outputs come from one place, so they cannot drift apart."""
+    flight = LiveFlight([Instruction("hold", dict(HOLD))], "P004", "P004-T1")
+    payload = status_payload(flight, reference, 60.0, at(0))
+    assert format_status(payload) == status_line(flight, reference, 60.0, at(0))
+
+
+def test_the_payload_reports_which_factors_are_settling(reference):
+    flight = LiveFlight(
+        [Instruction("hold", dict(HOLD))], "P004", "P004-T1", settle=timedelta(seconds=30)
+    )
+    flight.instruct(at(0))
+    payload = status_payload(flight, reference, 60.0, at(1))
+    assert payload["state"] == "nothing_scored"
+    assert payload["settling_all"] is True
+    assert sorted(payload["settling"]) == sorted(METRICS)
+
+
+def test_the_payload_withholds_a_group_until_enough_is_scored(reference):
+    flight = scored_flight(400)
+    payload = status_payload(flight, reference, 600.0, at(20))
+    assert payload["state"] == "scoring"
+    assert payload["provisional"] is True
+    assert payload["group"] is None
+    assert payload["scored_seconds"] > 0
+
+
+def test_the_payload_names_a_group_once_there_is_one(reference):
+    flight = scored_flight(2000)
+    payload = status_payload(flight, reference, 60.0, at(100))
+    assert payload["provisional"] is False
+    assert payload["group"] == int(reference.assign(flight.pilot_features())["group"].iloc[0])
+    assert set(payload["features"]) == set(METRICS)
+    for values in payload["features"].values():
+        assert "std" in values and "abs_bias" in values
+
+
+def test_the_json_reporter_writes_only_parseable_lines(reference, capsys):
+    import json
+
+    reporter = JsonReporter()
+    brief = [Instruction("first", dict(HOLD)), Instruction("second", {"heading": 360.0})]
+    reporter.fitting(k=3, pilots=15, seed=0)
+    reporter.cohort(reference=reference, agreement=0.79)
+    reporter.started(
+        host="127.0.0.1",
+        port=5001,
+        pilot_id="P004",
+        flight_id="P004-T1",
+        csv="data/live.csv",
+        instructions_csv="data/live_instructions.csv",
+        brief=brief,
+        unnamed=False,
+    )
+    reporter.instruction(
+        given=1, total=2, text="first", settling={"altitude": 30.0}, next_text="second"
+    )
+    reporter.stopped(scored_seconds=12.0, given=1)
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert [e["event"] for e in events] == [
+        "fitting",
+        "cohort",
+        "started",
+        "instruction",
+        "stopped",
+    ]
+    started = events[2]
+    assert started["total"] == 2
+    assert started["next"] == "first"
+    assert events[3]["settling"] == {"altitude": 30}
+
+
+def test_the_console_reporter_still_prints_what_it_always_did(reference, capsys):
+    reporter = ConsoleReporter()
+    brief = [Instruction("first", dict(HOLD)), Instruction("second", {"heading": 360.0})]
+    reporter.started(
+        host="127.0.0.1",
+        port=5001,
+        pilot_id="P004",
+        flight_id="P004-T1",
+        csv="data/live.csv",
+        instructions_csv="data/live_instructions.csv",
+        brief=brief,
+        unnamed=False,
+    )
+    reporter.instruction(
+        given=1, total=2, text="first", settling={"altitude": 30.0}, next_text="second"
+    )
+    reporter.stopped(scored_seconds=12.0, given=1)
+
+    out = capsys.readouterr().out
+    assert "Listening for the relay on 127.0.0.1:5001" in out
+    assert "Press Enter as you give each one, q then Enter to stop." in out
+    assert "  next: first" in out
+    assert "Instruction 1/2 given: first" in out
+    assert "  altitude scored again in 30s" in out
+    assert "Stopped. 12s scored over 1 instruction(s)." in out
+
+
+def test_the_console_reporter_warns_about_an_unnamed_pilot(reference, capsys):
+    ConsoleReporter().started(
+        host="127.0.0.1",
+        port=5001,
+        pilot_id="unknown",
+        flight_id="P004-T1",
+        csv="data/live.csv",
+        instructions_csv="data/live_instructions.csv",
+        brief=[Instruction("first", dict(HOLD))],
+        unnamed=True,
+    )
+    assert "Pass --pilot-id" in capsys.readouterr().out

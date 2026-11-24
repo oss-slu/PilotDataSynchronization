@@ -11,14 +11,47 @@ use crate::{
 };
 
 fn connect_tcp_with_validation_and_save(state: &mut State, address: String) {
+    connect_tcp_validated(state, address, true)
+}
+
+/// Connect, optionally remembering the address.
+///
+/// The test receiver's port is new every time it starts, so saving it would
+/// fill the saved list with ports that will never answer again. Nothing else
+/// has a reason not to be saved.
+fn connect_tcp_validated(state: &mut State, address: String, save: bool) {
     let trimmed = address.trim().to_string();
     match State::validate_tcp_addr(&trimmed, IMOTIONS_ADDR_HINT) {
         Ok(()) => {
             state.tcp_addr_validation_error = None;
-            state.tcp_addr_field = trimmed.clone();
-            if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
-                state.log_event(format!("Saving TCP address failed: {}", e));
+            if save {
+                if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
+                    state.log_event(format!("Saving TCP address failed: {}", e));
+                }
             }
+            // Pressing Connect again is how someone moves the relay to another
+            // address, so it reconnects rather than refusing with "TCP thread
+            // already exists", which reads like a fault in the relay. Not
+            // during a Flight: the mirror lives in that thread and would go
+            // down with it, in the middle of a recording.
+            if state.tcp_thread_handle.is_some() {
+                if state.listener.status.is_running() {
+                    let msg = "Stop the flight before connecting somewhere else. The listener is \
+                               sent a copy of this connection."
+                        .to_string();
+                    state.error_message = Some(msg.clone());
+                    state.log_event(msg);
+                    return;
+                }
+                let previous = state.tcp_addr_field.clone();
+                if let Err(e) = state.tcp_disconnect() {
+                    state.log_event(format!("TCP disconnect failed: {}", e));
+                }
+                if previous != trimmed {
+                    state.log_event(format!("Disconnected from {previous}"));
+                }
+            }
+            state.tcp_addr_field = trimmed.clone();
             if let Err(e) = state.tcp_connect(trimmed.clone()) {
                 state.log_event(format!("TCP connect failed: {}", e));
             }
@@ -37,6 +70,31 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         M::Update => {
             state.elapsed_time += Duration::from_millis(10);
+
+            // Collect whatever the listener has printed, and notice if it has
+            // exited. Uses the tick the window already runs on.
+            let was_running = state.listener.status.is_running();
+            state.listener.poll();
+            if was_running && !state.listener.status.is_running() {
+                state.log_event(state.listener.status.describe());
+            }
+
+            let was_setting_up = state.setup.status.is_running();
+            state.setup.poll();
+            if was_setting_up && !state.setup.status.is_running() {
+                state.log_event(match state.setup.status {
+                    crate::listener::ListenerStatus::Finished(Some(0)) => {
+                        "The Python side is set up. Start flight will work now.".to_string()
+                    }
+                    _ => format!("Setting up the Python side: {}", state.setup.status.describe()),
+                });
+            }
+
+            if let Some(receiver) = state.test_receiver.as_mut() {
+                receiver.poll();
+            }
+
+            pump_replay(state);
 
             // compute active baton connection using centralized helpers
             let ipc_conn_flag = state.is_ipc_connected();
@@ -97,7 +155,13 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.mirror_connected = true;
                     }
                     FromTcpThreadMessage::MirrorDisconnected(reason) => {
-                        state.log_event(format!("Python mirror stopped: {}", reason));
+                        // While the window is still connecting the mirror, a
+                        // refusal is the expected answer rather than news: the
+                        // listener has not finished starting Python. Logging
+                        // each attempt would bury the event log.
+                        if !state.mirror_arming() {
+                            state.log_event(format!("Python mirror stopped: {}", reason));
+                        }
                         state.mirror_connected = false;
                     }
                     FromTcpThreadMessage::MirrorLagging(reason) => {
@@ -106,9 +170,37 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
 
+            // The thread keeps the live answer, and a send that fails sets it
+            // without announcing anything. Reading it every tick is what keeps
+            // the strip honest in both directions: a connection that came up,
+            // and one that went down without a Disconnected message.
+            state.tcp_connected = state.is_tcp_connected();
+
+            // After the TCP messages, so a MirrorConnected that arrived this
+            // tick is already in hand and the arm can finish instead of
+            // retrying a connection that has already landed.
+            if state.mirror_arming() {
+                if state.listener.status.is_running() {
+                    if let Some(line) = state.poll_mirror_arm(Instant::now()) {
+                        state.log_event(line);
+                    }
+                } else if let Some(line) = state.disarm_mirror() {
+                    // What it was waiting for has gone, so waiting longer
+                    // cannot help.
+                    state.log_event(line);
+                }
+            }
+
             Task::none()
         }
         M::WindowCloseRequest(id) => {
+            // The listener is a child process, and closing the window does not
+            // end it by itself: it would keep running, keep holding the port,
+            // and keep writing to the CSV with nothing left to show for it.
+            // Measured on Windows, so this is not a precaution.
+            state.listener.stop();
+            state.setup.stop();
+
             if let Some(ref bichannel) = state.ipc_bichannel {
                 let _ = bichannel.killswitch_engage();
             }
@@ -144,13 +236,31 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }
-        M::SavedTcpAddrSelected(address) => {
+        M::SavedTcpAddrSelected(label) => {
+            // The picker shows a name beside the address, so what comes back
+            // is that name rather than something to connect to.
+            let Some(address) = state.tcp_addr_for_label(&label) else {
+                return Task::none();
+            };
             connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }
         M::DisconnectTcp => {
-            if let Err(e) = state.tcp_disconnect() {
-                state.log_event(format!("TCP disconnect failed: {}", e));
+            // The same reason Connect refuses mid Flight: the mirror lives in
+            // this thread, so the recording would end with it, and nobody
+            // pressing this asked for that.
+            if state.listener.status.is_running() {
+                let msg = "Stop the flight before disconnecting. The listener is sent a copy of \
+                           this connection."
+                    .to_string();
+                state.error_message = Some(msg.clone());
+                state.log_event(msg);
+                return Task::none();
+            }
+            let previous = state.tcp_addr_field.clone();
+            match state.tcp_disconnect() {
+                Ok(()) => state.log_event(format!("Disconnected from {previous}")),
+                Err(e) => state.log_event(format!("TCP disconnect failed: {}", e)),
             }
             Task::none()
         }
@@ -248,6 +358,409 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+
+        M::PilotIdFieldUpdate(value) => {
+            state.pilot_id_field = value;
+            Task::none()
+        }
+
+        M::FlightIdFieldUpdate(value) => {
+            state.flight_id_field = value;
+            Task::none()
+        }
+
+        M::ListenerModeSelected(mode) => {
+            // Changing it under a running listener would mislead: the panel
+            // would describe one thing while another was recording.
+            if state.listener.status.is_running() {
+                state.error_message =
+                    Some("Stop the listener before changing what it runs.".into());
+            } else {
+                state.listener_mode = mode;
+                // The two modes report different things, so what the last one
+                // said does not belong under the new one's heading.
+                state.listener.live = Default::default();
+            }
+            Task::none()
+        }
+
+        M::BriefFieldUpdate(value) => {
+            state.brief_field = value;
+            Task::none()
+        }
+
+        M::GiveInstruction => {
+            // live_groups reads one line per instruction, which is what
+            // pressing Enter at its console does.
+            match state.listener.send_line("") {
+                Ok(()) => {
+                    state.error_message = None;
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    state.error_message = Some(msg.clone());
+                    state.log_event(msg);
+                }
+            }
+            Task::none()
+        }
+
+        M::StartFlight => {
+            start_flight(state);
+            Task::none()
+        }
+
+        M::StopFlight => {
+            stop_flight(state);
+            Task::none()
+        }
+
+        M::UseTestReceiver => {
+            start_test_receiver(state);
+            Task::none()
+        }
+
+        M::StopTestReceiver => {
+            stop_test_receiver(state);
+            Task::none()
+        }
+
+        M::RecordingSelected(label) => {
+            select_recording(state, label);
+            Task::none()
+        }
+
+        M::ReplayFlightSelected(flight) => {
+            state.selected_replay_flight = Some(flight);
+            Task::none()
+        }
+
+        M::StartReplay => {
+            start_replay(state);
+            Task::none()
+        }
+
+        M::StopReplay => {
+            if let Some(replay) = state.replay.take() {
+                state.log_event(format!(
+                    "Replay stopped after {} of {} samples",
+                    replay.sent(),
+                    replay.total()
+                ));
+            }
+            Task::none()
+        }
+
+        M::SetUpPython => {
+            set_up_python(state);
+            Task::none()
+        }
+
+        M::ToggleAdvanced => {
+            state.show_advanced = !state.show_advanced;
+            Task::none()
+        }
+    }
+}
+
+/// Build the Python environment from the window.
+///
+/// `uv sync` in a terminal was the one step the window could not do, and a
+/// fresh clone cannot run a listener without it.
+fn set_up_python(state: &mut State) {
+    if state.setup.status.is_running() {
+        state.error_message = Some("The Python side is already being set up.".into());
+        return;
+    }
+    let Some(inference_dir) = state.inference_dir.clone() else {
+        let msg = "Cannot find the inference folder next to the relay. Run the relay from the \
+                   repository."
+            .to_string();
+        state.error_message = Some(msg.clone());
+        state.log_event(msg);
+        return;
+    };
+
+    let started = crate::listener::setup_command(&inference_dir)
+        .and_then(|command| state.setup.start(command));
+    match started {
+        Ok(()) => {
+            state.error_message = None;
+            state.log_event("Setting up the Python side, this takes a few minutes".into());
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+        }
+    }
+}
+
+/// Send whatever the replay owes, through the same door baton's samples use.
+///
+/// Paced here rather than on a thread of its own: the window already ticks at
+/// 100 Hz, which is five times what a replay needs, and nothing can outlive
+/// the window or race it this way.
+fn pump_replay(state: &mut State) {
+    let Some(replay) = state.replay.as_mut() else {
+        return;
+    };
+    let batch = replay.due(Instant::now());
+    if batch.is_empty() {
+        return;
+    }
+    let finished = replay.finished();
+    let description = replay.describe();
+
+    match state.tcp_bichannel.as_mut() {
+        Some(tcp_bi) => {
+            for payload in batch {
+                let _ = tcp_bi.send_to_child(ToTcpThreadMessage::Send(payload));
+            }
+        }
+        None => {
+            // Nothing to send to, and a replay that silently goes nowhere is
+            // worse than one that stops and says so.
+            state.replay = None;
+            let msg = "The replay stopped: there is no connection to send it to.".to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+            return;
+        }
+    }
+
+    if finished {
+        state.log_event(description);
+    }
+}
+
+/// Start a Flight: the listener, then the stream into it.
+///
+/// One button because it is one intention. Doing it by hand meant starting the
+/// listener, typing the mirror address, and knowing that the order mattered
+/// because the mirror is a client and the listener binds the port.
+fn start_flight(state: &mut State) {
+    if state.listener.status.is_running() {
+        state.error_message =
+            Some("A flight is already running. Stop it before starting another.".into());
+        return;
+    }
+
+    // What was typed is checked before the connection is. A missing pilot id
+    // has to be fixed either way, and naming it first means one error at a
+    // time instead of being sent to connect something and told again.
+    let command = match listener_command_for(state) {
+        Ok(command) => command,
+        Err(e) => {
+            let msg = e.to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+            return;
+        }
+    };
+
+    // The listener is sent a copy of the iMotions stream, so without one there
+    // is nothing to copy. Said here, with the way out, rather than left to be
+    // found later as a listener that recorded an empty file.
+    if !state.is_tcp_connected() {
+        let msg = "Connect iMotions first, or press Use a test receiver. The listener is sent a \
+                   copy of the iMotions stream, so there has to be a stream."
+            .to_string();
+        state.error_message = Some(msg.clone());
+        state.log_event(msg);
+        return;
+    }
+
+    let described = command.display();
+    if let Err(e) = state.listener.start(command) {
+        let msg = e.to_string();
+        state.listener.status = crate::listener::ListenerStatus::Failed(msg.clone());
+        state.error_message = Some(msg.clone());
+        state.log_event(msg);
+        return;
+    }
+    state.error_message = None;
+    state.log_event(format!("Listener started: {described}"));
+
+    // The listener binds the port and the mirror connects to it, so this can
+    // only succeed once Python is up. `arm_mirror` keeps trying, which is why
+    // the order is no longer something to remember.
+    state.arm_mirror(
+        format!("127.0.0.1:{}", crate::listener::DEFAULT_LISTENER_PORT),
+        Instant::now(),
+    );
+    state.log_event("Connecting the listener to the stream".into());
+}
+
+/// Stop a Flight: the listener, and the stream into it.
+fn stop_flight(state: &mut State) {
+    let was_running = state.listener.status.is_running();
+    state.listener.stop();
+    if let Err(e) = state.mirror_disconnect() {
+        state.log_event(format!("Python mirror disconnect failed: {}", e));
+    }
+    if was_running {
+        state.log_event("Flight stopped".into());
+    }
+}
+
+/// Stand in for iMotions on a local port, and point the relay at it.
+fn start_test_receiver(state: &mut State) {
+    if state.test_receiver.is_some() {
+        state.error_message = Some("The test receiver is already running.".into());
+        return;
+    }
+    match crate::receiver::TestReceiver::start() {
+        Ok(receiver) => {
+            let address = receiver.addr();
+            state.test_receiver = Some(receiver);
+            state.log_event(format!("Test receiver listening on {address}"));
+            state.error_message = None;
+
+            // Pressing this means using the receiver instead of whatever the
+            // relay is pointed at, and `tcp_connect` refuses a second thread.
+            // Without this the receiver would start and nothing would connect
+            // to it. The old address stays in Saved IPs, so going back is a
+            // click.
+            if state.tcp_thread_handle.is_some() {
+                let previous = state.tcp_addr_field.clone();
+                if let Err(e) = state.tcp_disconnect() {
+                    state.log_event(format!("TCP disconnect failed: {}", e));
+                }
+                state.log_event(format!("Disconnected from {previous} to use the test receiver"));
+            }
+
+            // Its port is new each time, so this one is not remembered.
+            connect_tcp_validated(state, address, false);
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+        }
+    }
+}
+
+/// Take the test receiver down, and the connection to it with it.
+fn stop_test_receiver(state: &mut State) {
+    let Some(receiver) = state.test_receiver.take() else {
+        return;
+    };
+    // Only if that is where the relay is pointed. Someone may have moved it to
+    // the real iMotions in the meantime, and that connection is not ours.
+    if state.tcp_addr_field == receiver.addr() && state.tcp_thread_handle.is_some() {
+        if let Err(e) = state.tcp_disconnect() {
+            state.log_event(format!("TCP disconnect failed: {}", e));
+        }
+    }
+    state.log_event(format!("Test receiver on {} stopped", receiver.addr()));
+    // Dropping it ends its thread and frees the port.
+    drop(receiver);
+}
+
+/// Pick a recording, and read the flights inside it.
+fn select_recording(state: &mut State, label: String) {
+    let Some(index) = state.recordings.iter().position(|r| r.label() == label) else {
+        return;
+    };
+    let path = state.recordings[index].path.clone();
+
+    // The flights are read now rather than at startup, because this means
+    // reading the whole file and these run to a hundred thousand rows.
+    match crate::replay::read_recording(&path) {
+        Ok(recording) => {
+            state.selected_replay_flight = recording.flights.first().cloned();
+            state.recordings[index] = recording;
+            state.selected_recording = Some(label);
+            state.error_message = None;
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+        }
+    }
+}
+
+/// Replay the selected flight in place of X-Plane.
+fn start_replay(state: &mut State) {
+    if state.replay.as_ref().is_some_and(|r| !r.finished()) {
+        state.error_message = Some("A replay is already running. Stop it first.".into());
+        return;
+    }
+    if !state.is_tcp_connected() {
+        let msg = "Connect iMotions or the test receiver first. A replay goes out the same way a \
+                   real flight does."
+            .to_string();
+        state.error_message = Some(msg.clone());
+        state.log_event(msg);
+        return;
+    }
+
+    let Some(label) = state.selected_recording.clone() else {
+        state.error_message = Some("Pick a recording to replay.".into());
+        return;
+    };
+    let Some(recording) = state.recordings.iter().find(|r| r.label() == label).cloned() else {
+        state.error_message = Some(format!("{label} is no longer in the data folder."));
+        return;
+    };
+    if !recording.flights.is_empty() && state.selected_replay_flight.is_none() {
+        state.error_message = Some("Pick which flight to replay.".into());
+        return;
+    }
+    let flight = state.selected_replay_flight.clone();
+
+    match crate::replay::payloads_for(&recording.path, flight.as_deref()) {
+        Ok(payloads) => {
+            let name = flight.unwrap_or_else(|| recording.label());
+            state.log_event(format!(
+                "Replaying {} samples of {name} at {} Hz, about {:.0}s",
+                payloads.len(),
+                crate::replay::DEFAULT_REPLAY_HZ,
+                payloads.len() as f64 / crate::replay::DEFAULT_REPLAY_HZ,
+            ));
+            state.replay = Some(crate::replay::Replay::new(
+                name,
+                payloads,
+                crate::replay::DEFAULT_REPLAY_HZ,
+            ));
+            state.error_message = None;
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.error_message = Some(msg.clone());
+            state.log_event(msg);
+        }
+    }
+}
+
+/// The command the panel's fields describe, or the reason there is none.
+///
+/// Every failure here is one the operator can act on, so each becomes the
+/// error banner rather than a status the panel leaves them to interpret.
+fn listener_command_for(state: &State) -> anyhow::Result<crate::listener::ListenerCommand> {
+    let Some(inference_dir) = state.inference_dir.clone() else {
+        anyhow::bail!(
+            "Cannot find the inference folder next to the relay. Run the relay from the \
+             repository, or start the listener from a terminal."
+        );
+    };
+
+    match state.listener_mode {
+        crate::listener::ListenerMode::Capture => crate::listener::capture_command(
+            &inference_dir,
+            &state.pilot_id_field,
+            &state.flight_id_field,
+            crate::listener::DEFAULT_LISTENER_PORT,
+        ),
+        crate::listener::ListenerMode::LiveGroups => crate::listener::live_groups_command(
+            &inference_dir,
+            std::path::Path::new(state.brief_field.trim()),
+            &state.pilot_id_field,
+            &state.flight_id_field,
+            crate::listener::DEFAULT_LISTENER_PORT,
+        ),
     }
 }
 
@@ -1084,6 +1597,145 @@ mod tests {
     }
 
     #[test]
+    fn the_id_fields_hold_what_was_typed() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::PilotIdFieldUpdate("P004".into()));
+        let _ = update(&mut state, Message::FlightIdFieldUpdate("P004-T1".into()));
+        assert_eq!(state.pilot_id_field, "P004");
+        assert_eq!(state.flight_id_field, "P004-T1");
+    }
+
+    #[test]
+    fn starting_a_flight_without_a_pilot_id_says_so_and_starts_nothing() {
+        let mut state = State::default();
+        state.flight_id_field = "P004-T1".into();
+
+        let _ = update(&mut state, Message::StartFlight);
+
+        assert!(
+            state
+                .error_message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Pilot id is required"),
+            "{:?}",
+            state.error_message
+        );
+        assert!(!state.listener.status.is_running());
+    }
+
+    #[test]
+    fn a_flight_id_that_would_escape_the_data_folder_is_refused() {
+        let mut state = State::default();
+        state.pilot_id_field = "P004".into();
+        state.flight_id_field = "../../etc/passwd".into();
+
+        let _ = update(&mut state, Message::StartFlight);
+
+        assert!(state.error_message.is_some());
+        assert!(!state.listener.status.is_running());
+    }
+
+    #[test]
+    fn stopping_a_flight_that_never_started_is_harmless() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::StopFlight);
+        assert!(!state.listener.status.is_running());
+    }
+
+    /// The relay has to survive the listener, because the plugin cannot
+    /// reconnect to a relay that restarted (docs/adr/0005, #255, #256).
+    #[test]
+    fn listener_errors_leave_the_relay_connections_alone() {
+        let mut state = State::default();
+        state.tcp_connected = true;
+        state.pilot_id_field = String::new();
+
+        let _ = update(&mut state, Message::StartFlight);
+        let _ = update(&mut state, Message::StopFlight);
+
+        assert!(state.tcp_connected);
+    }
+
+    #[test]
+    fn the_mode_cannot_be_changed_under_a_running_listener() {
+        use crate::listener::{ListenerMode, ListenerStatus};
+
+        let mut state = State::default();
+        state.listener.status = ListenerStatus::Running;
+
+        let _ = update(&mut state, Message::ListenerModeSelected(ListenerMode::LiveGroups));
+
+        assert_eq!(state.listener_mode, ListenerMode::Capture);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Stop the listener"));
+    }
+
+    #[test]
+    fn the_mode_changes_while_nothing_is_running() {
+        use crate::listener::ListenerMode;
+
+        let mut state = State::default();
+        let _ = update(&mut state, Message::ListenerModeSelected(ListenerMode::LiveGroups));
+        assert_eq!(state.listener_mode, ListenerMode::LiveGroups);
+    }
+
+    /// The two modes report different things, so the last flight's report must
+    /// not appear under the other one's heading.
+    #[test]
+    fn changing_the_mode_clears_what_the_last_one_reported() {
+        use crate::listener::ListenerMode;
+
+        let mut state = State::default();
+        state.listener.live.flight_id = "P004-T1".into();
+        state.listener.live.csv = "data/session_flight_data.csv".into();
+
+        let _ = update(&mut state, Message::ListenerModeSelected(ListenerMode::LiveGroups));
+
+        assert!(state.listener.live.flight_id.is_empty());
+        assert!(state.listener.live.csv.is_empty());
+        assert!(state.listener.live.status.is_none());
+    }
+
+    #[test]
+    fn live_groups_without_a_brief_says_which_file_is_missing() {
+        use crate::listener::ListenerMode;
+
+        let mut state = State::default();
+        state.listener_mode = ListenerMode::LiveGroups;
+        state.pilot_id_field = "P004".into();
+        state.flight_id_field = "P004-T1".into();
+        state.brief_field = "briefs/does_not_exist.csv".into();
+
+        let _ = update(&mut state, Message::StartFlight);
+
+        let error = state.error_message.unwrap_or_default();
+        assert!(error.contains("No brief at"), "{error}");
+        assert!(!state.listener.status.is_running());
+    }
+
+    #[test]
+    fn giving_an_instruction_with_no_listener_says_so() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::GiveInstruction);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("nothing to tell"));
+    }
+
+    #[test]
+    fn the_brief_field_holds_what_was_typed() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::BriefFieldUpdate("briefs/x.csv".into()));
+        assert_eq!(state.brief_field, "briefs/x.csv");
+    }
+
+    #[test]
     fn send_packet_without_tcp_reports_an_error() {
         let mut state = State::default();
 
@@ -1094,5 +1746,574 @@ mod tests {
             Some("Connect TCP before sending a test packet")
         );
         assert!(state.last_send_timestamp.is_none());
+    }
+
+    // --- Running a session without a terminal (#285) ----------------------
+
+    #[test]
+    fn a_flight_with_nowhere_to_send_says_what_to_connect() {
+        let mut state = State::default();
+        state.pilot_id_field = "P004".into();
+        state.flight_id_field = "P004-T1".into();
+
+        let _ = update(&mut state, Message::StartFlight);
+
+        let error = state.error_message.clone().unwrap_or_default();
+        assert!(error.contains("Connect iMotions first"), "{error}");
+        assert!(error.contains("test receiver"), "it should name the way out: {error}");
+        assert!(!state.listener.status.is_running(), "nothing should have started");
+        assert!(!state.mirror_arming());
+    }
+
+    /// A missing pilot id is reported before the connection is checked. The
+    /// other order sends the operator to connect something and then tells them
+    /// about the id, which is two trips for one mistake.
+    #[test]
+    fn what_was_typed_is_checked_before_the_connection_is() {
+        let mut state = State::default();
+        state.flight_id_field = "P004-T1".into();
+
+        let _ = update(&mut state, Message::StartFlight);
+
+        let error = state.error_message.clone().unwrap_or_default();
+        assert!(error.contains("Pilot id is required"), "{error}");
+    }
+
+    #[test]
+    fn stopping_a_flight_disarms_the_mirror() {
+        let mut state = State::default();
+        state.arm_mirror("127.0.0.1:5001".into(), Instant::now());
+        assert!(state.mirror_arming());
+
+        let _ = update(&mut state, Message::StopFlight);
+
+        assert!(!state.mirror_arming(), "the mirror was left trying to connect");
+    }
+
+    #[test]
+    fn the_individual_controls_are_hidden_until_they_are_asked_for() {
+        let mut state = State::default();
+        assert!(!state.show_advanced, "the plumbing should not be the first thing shown");
+
+        let _ = update(&mut state, Message::ToggleAdvanced);
+        assert!(state.show_advanced);
+        let _ = update(&mut state, Message::ToggleAdvanced);
+        assert!(!state.show_advanced);
+    }
+
+    #[test]
+    fn the_test_receiver_starts_and_the_relay_is_pointed_at_it() {
+        let mut state = State::default();
+
+        let _ = update(&mut state, Message::UseTestReceiver);
+
+        let address = state
+            .test_receiver
+            .as_ref()
+            .expect("no test receiver was started")
+            .addr();
+        assert_eq!(state.tcp_addr_field, address, "the address should be filled in");
+        assert!(
+            pump_until(&mut state, |s| s.is_tcp_connected()),
+            "the relay never connected to its own receiver"
+        );
+        assert!(
+            !state.saved_tcp_addrs.contains(&address),
+            "a throwaway port should not join the saved addresses"
+        );
+
+        let _ = update(&mut state, Message::StopTestReceiver);
+        assert!(state.test_receiver.is_none());
+        assert!(!state.is_tcp_connected(), "the connection to it should have gone too");
+    }
+
+    /// The Flight path strip reads `tcp_connected`, and nothing but a button
+    /// in the advanced panel ever set it true: the window said iMotions was
+    /// not connected while packets were arriving at the other end.
+    #[test]
+    fn the_window_notices_that_imotions_connected() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+
+        assert!(pump_until(&mut state, |s| s.tcp_connected), "the window never noticed");
+        assert!(
+            state.event_log.iter().any(|line| line.contains("TCP connected")),
+            "connecting was never reported: {:?}",
+            state.event_log
+        );
+    }
+
+    /// Connect is how someone moves the relay to another address. Refusing
+    /// with "TCP thread already exists" reads like a fault in the relay, and
+    /// there is no other way to do it outside the advanced panel.
+    #[test]
+    fn connecting_again_moves_the_relay_instead_of_refusing() {
+        let (first_listener, first) = listener_on_free_port();
+        let (second_listener, second) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(first).expect("tcp_connect failed");
+        let _first_conn = first_listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+
+        state.tcp_addr_field = second.clone();
+        let _ = update(&mut state, Message::ConnectTcp);
+        let _second_conn = second_listener.accept().expect("accept failed");
+
+        assert_eq!(state.tcp_addr_field, second);
+        assert!(
+            pump_until(&mut state, |s| s.tcp_connected),
+            "it never connected to the new address: {:?}",
+            state.event_log
+        );
+        assert!(
+            !state.event_log.iter().any(|line| line.contains("already exists")),
+            "it refused instead of moving: {:?}",
+            state.event_log
+        );
+    }
+
+    /// The mirror lives in the TCP thread, so taking that thread down mid
+    /// Flight ends the recording. Better to say so than to do it.
+    #[test]
+    fn connecting_somewhere_else_during_a_flight_is_refused() {
+        let (listener, addr) = listener_on_free_port();
+        let (other_listener, other) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr.clone()).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+        state.listener.status = crate::listener::ListenerStatus::Running;
+
+        state.tcp_addr_field = other;
+        let _ = update(&mut state, Message::ConnectTcp);
+
+        assert!(
+            other_listener.set_nonblocking(true).is_ok() && other_listener.accept().is_err(),
+            "it moved the connection out from under the flight"
+        );
+        assert!(
+            state
+                .error_message
+                .as_deref()
+                .is_some_and(|msg| msg.contains("Stop the flight")),
+            "no reason was given: {:?}",
+            state.error_message
+        );
+        assert!(state.is_tcp_connected(), "the flight's connection was dropped anyway");
+    }
+
+    /// Picking from the list has to connect to the address, not to the name
+    /// the list showed, which is not an address and never validates.
+    #[test]
+    fn picking_a_saved_address_by_its_name_connects_to_it() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state
+            .saved_tcp_addrs
+            .push(addr.clone());
+        let label = State::label_for_tcp_addr(&addr);
+        assert!(label.ends_with(&addr), "the name has to carry the address: {label}");
+
+        let _ = update(&mut state, Message::SavedTcpAddrSelected(label));
+        let _accepted = listener.accept().expect("accept failed");
+
+        assert_eq!(state.tcp_addr_field, addr);
+        assert!(
+            pump_until(&mut state, |s| s.tcp_connected),
+            "picking it connected nothing: {:?}",
+            state.event_log
+        );
+        assert!(state.tcp_addr_validation_error.is_none());
+    }
+
+    /// Disconnecting ends the one TCP thread there can be, so pressing
+    /// Connect afterwards starts a fresh one rather than being refused.
+    #[test]
+    fn disconnecting_leaves_nothing_behind_to_block_the_next_connection() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_addr_field = addr.clone();
+        let _ = update(&mut state, Message::ConnectTcp);
+        let _first = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.tcp_connected), "never connected");
+
+        let _ = update(&mut state, Message::DisconnectTcp);
+
+        assert!(state.tcp_thread_handle.is_none(), "the thread outlived the disconnect");
+        assert!(!state.is_tcp_connected());
+        assert!(!state.tcp_connected, "the window still claims it is connected");
+
+        let _ = update(&mut state, Message::ConnectTcp);
+        let _second = listener.accept().expect("accept failed");
+        assert!(
+            pump_until(&mut state, |s| s.tcp_connected),
+            "it could not connect again: {:?}",
+            state.event_log
+        );
+    }
+
+    /// The mirror lives in the TCP thread, so this would end the recording.
+    #[test]
+    fn disconnecting_during_a_flight_is_refused() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+        state.listener.status = crate::listener::ListenerStatus::Running;
+
+        let _ = update(&mut state, Message::DisconnectTcp);
+
+        assert!(state.is_tcp_connected(), "the flight's connection was dropped");
+        assert!(
+            state
+                .error_message
+                .as_deref()
+                .is_some_and(|msg| msg.contains("Stop the flight")),
+            "no reason was given: {:?}",
+            state.error_message
+        );
+    }
+
+    /// Pressing it means using it instead, so the connection it replaces has
+    /// to go first: `tcp_connect` refuses a second thread, and the receiver
+    /// would otherwise start with nothing connected to it.
+    #[test]
+    fn using_the_test_receiver_takes_over_from_an_existing_connection() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr.clone()).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+
+        let _ = update(&mut state, Message::UseTestReceiver);
+
+        let receiver_addr = state
+            .test_receiver
+            .as_ref()
+            .expect("no test receiver was started")
+            .addr();
+        assert_ne!(receiver_addr, addr);
+        assert_eq!(state.tcp_addr_field, receiver_addr);
+        assert!(
+            pump_until(&mut state, |s| s.is_tcp_connected()),
+            "it started the receiver but connected nothing to it"
+        );
+        assert!(
+            state
+                .event_log
+                .iter()
+                .any(|line| line.contains("to use the test receiver")),
+            "the takeover was not reported: {:?}",
+            state.event_log
+        );
+
+        let _ = update(&mut state, Message::StopTestReceiver);
+    }
+
+    #[test]
+    fn a_second_test_receiver_is_refused_rather_than_leaking_the_first() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::UseTestReceiver);
+        let first = state.test_receiver.as_ref().map(|r| r.port);
+
+        let _ = update(&mut state, Message::UseTestReceiver);
+
+        assert_eq!(state.test_receiver.as_ref().map(|r| r.port), first);
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("already running"));
+
+        let _ = update(&mut state, Message::StopTestReceiver);
+    }
+
+    /// A one row recording, written where a test may write.
+    fn one_row_recording() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join("relay-replay-tests");
+        std::fs::create_dir_all(&dir).expect("could not make a temp folder");
+        let path = dir.join(format!("one_flight_{}.csv", std::process::id()));
+        std::fs::write(
+            &path,
+            "flight_id,altitude,velocity,vertical_speed,heading\nF1,3000,120,500,270\n",
+        )
+        .expect("could not write the recording");
+        path
+    }
+
+    /// The whole replay path: a CSV becomes the same iMotions packets a live
+    /// sample does, in the same order, at the same destination.
+    #[test]
+    fn a_replayed_row_arrives_as_the_relay_s_own_packets() {
+        let path = one_row_recording();
+        let payloads = crate::replay::payloads_for(&path, Some("F1")).expect("no payloads");
+        assert_eq!(payloads.len(), 1);
+
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let (stream, _) = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+
+        // 0 Hz so the single sample goes out on the first tick.
+        state.replay = Some(crate::replay::Replay::new("F1".into(), payloads, 0.0));
+        let _ = update(&mut state, Message::Update);
+
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(5)))
+            .expect("set_read_timeout failed");
+        let mut reader = BufReader::new(stream);
+        let mut lines = Vec::new();
+        for _ in 0..8 {
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read failed");
+            lines.push(line);
+        }
+
+        assert_eq!(lines[0], "E;1;PilotDataSync;;;;;AltitudeSync;3000.000000;3000.000000\r\n");
+        assert_eq!(lines[1], "E;1;PilotDataSync;;;;;AirspeedSync;120.000000;120.000000\r\n");
+        assert_eq!(
+            lines[2],
+            "E;1;PilotDataSync;;;;;VerticalVelocitySync;500.000000;500.000000\r\n"
+        );
+        assert_eq!(lines[3], "E;1;PilotDataSync;;;;;HeadingSync;270.000000;270.000000\r\n");
+        // The columns the recording lacks are sent as zero, not skipped, so
+        // every sample is still eight packets.
+        assert!(lines[4].contains("RollSync;0.000000;0.000000"), "{}", lines[4]);
+        assert!(lines[7].contains("GForceSync;0.000000;0.000000"), "{}", lines[7]);
+
+        let _ = state.tcp_disconnect();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_replay_stops_itself_when_there_is_nowhere_to_send() {
+        let mut state = State::default();
+        state.replay = Some(crate::replay::Replay::new(
+            "F1".into(),
+            vec!["1;1;2;2;3;3;4;4;5;5;6;6;7;7;8;8".to_string()],
+            0.0,
+        ));
+
+        let _ = update(&mut state, Message::Update);
+
+        assert!(state.replay.is_none(), "it should not go on sending into nothing");
+        assert!(state
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("no connection"));
+    }
+
+    #[test]
+    fn a_replay_without_a_connection_is_refused_with_the_reason() {
+        let mut state = State::default();
+        let _ = update(&mut state, Message::StartReplay);
+        let error = state.error_message.clone().unwrap_or_default();
+        assert!(error.contains("Connect iMotions or the test receiver"), "{error}");
+        assert!(state.replay.is_none());
+    }
+
+    #[test]
+    fn a_replay_with_no_recording_picked_says_to_pick_one() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+
+        let _ = update(&mut state, Message::StartReplay);
+
+        assert_eq!(state.error_message.as_deref(), Some("Pick a recording to replay."));
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn picking_a_recording_reads_its_flights_and_offers_the_first() {
+        let dir = std::env::temp_dir()
+            .join("relay-update-tests")
+            .join(format!("picker-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("could not make a temp folder");
+        std::fs::write(
+            dir.join("two_flights.csv"),
+            "flight_id,altitude,heading\nA,3000,270\nB,5000,90\n",
+        )
+        .expect("could not write the recording");
+
+        let mut state = State::default();
+        state.recordings = crate::replay::recordings_in(&dir);
+        let label = "two_flights.csv".to_string();
+        assert!(
+            state.recordings.iter().any(|r| r.label() == label),
+            "the recording should be listed: {:?}",
+            state.recordings.iter().map(|r| r.label()).collect::<Vec<_>>()
+        );
+        // Listing does not read the flights, because that means reading the
+        // whole file and the committed recordings are large.
+        assert!(state.recordings[0].flights.is_empty());
+
+        let _ = update(&mut state, Message::RecordingSelected(label.clone()));
+
+        assert_eq!(state.selected_recording, Some(label.clone()));
+        let recording = state
+            .recordings
+            .iter()
+            .find(|r| r.label() == label)
+            .expect("the recording went missing");
+        assert_eq!(recording.flights, vec!["A", "B"], "its flights were not read");
+        assert_eq!(
+            state.selected_replay_flight.as_deref(),
+            Some("A"),
+            "the first flight should be offered rather than nothing"
+        );
+    }
+
+    /// Pump the window's tick until `condition` holds or `limit` passes.
+    fn pump_for(
+        state: &mut State,
+        limit: StdDuration,
+        mut condition: impl FnMut(&State) -> bool,
+    ) -> bool {
+        let deadline = Instant::now() + limit;
+        while Instant::now() < deadline {
+            let _ = update(state, Message::Update);
+            if condition(state) {
+                return true;
+            }
+            sleep(StdDuration::from_millis(5));
+        }
+        false
+    }
+
+    /// A whole session driven through the window's own messages, with no
+    /// terminal, no simulator and no iMotions.
+    ///
+    /// This is the claim #285 makes, so it is worth a test that makes it
+    /// rather than a list of things to click. It presses Use a test receiver,
+    /// Start flight and Replay this flight, waits out a ten second flight, and
+    /// then checks the rows reached the CSV.
+    ///
+    /// Ignored because it needs uv and spends fifteen seconds of wall clock
+    /// doing it. Run it with `cargo test -- --ignored --nocapture` after
+    /// changing anything in this path.
+    #[test]
+    #[ignore = "needs uv and binds port 5001; run manually"]
+    fn a_whole_flight_runs_from_the_window_with_nothing_but_the_window() {
+        use std::io::Write as _;
+
+        let inference = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("relay/ has a parent")
+            .join("inference");
+        assert!(inference.join("pyproject.toml").is_file(), "test needs inference/");
+
+        // A ten second flight, climbing, so the rows are telling apart.
+        let dir = std::env::temp_dir()
+            .join("relay-update-tests")
+            .join(format!("e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("could not make a temp folder");
+        let recording = dir.join("rehearsal.csv");
+        {
+            let mut file = std::fs::File::create(&recording).expect("create failed");
+            writeln!(file, "flight_id,altitude,velocity,vertical_speed,heading").unwrap();
+            for i in 0..200 {
+                writeln!(file, "REHEARSAL,{},120,500,270", 3000 + i).unwrap();
+            }
+        }
+
+        let flight_id = format!("WINDOWE2E{}", std::process::id());
+        let mut state = State::default();
+        state.recordings = crate::replay::recordings_in(&dir);
+        state.pilot_id_field = "P004".into();
+        state.flight_id_field = flight_id.clone();
+
+        // Stand in for iMotions.
+        let _ = update(&mut state, Message::UseTestReceiver);
+        assert!(
+            pump_for(&mut state, StdDuration::from_secs(10), |s| s.is_tcp_connected()),
+            "the relay never connected to its own test receiver"
+        );
+
+        // Start the flight. The window starts the listener and connects it.
+        let _ = update(&mut state, Message::StartFlight);
+        assert!(
+            state.listener.status.is_running(),
+            "the listener did not start: {:?}",
+            state.error_message
+        );
+        assert!(
+            pump_for(&mut state, StdDuration::from_secs(60), |s| s.mirror_connected),
+            "the window never connected the listener to the stream. Listener output: {:?}",
+            state.listener.recent_output(10)
+        );
+        assert!(!state.mirror_arming(), "it should stop trying once connected");
+
+        // Replay a flight into it.
+        let _ = update(&mut state, Message::RecordingSelected("rehearsal.csv".into()));
+        let _ = update(&mut state, Message::StartReplay);
+        assert!(state.replay.is_some(), "the replay did not start: {:?}", state.error_message);
+
+        assert!(
+            pump_for(&mut state, StdDuration::from_secs(30), |s| s
+                .replay
+                .as_ref()
+                .is_some_and(|r| r.finished())),
+            "the replay never finished: {:?}",
+            state.replay.as_ref().map(|r| r.describe())
+        );
+
+        // The test receiver should see eight packets per sample. Waited for
+        // rather than asserted at once: a finished replay means the last
+        // sample was handed to the TCP thread, not that it has reached the
+        // far end of a socket.
+        assert!(
+            pump_for(&mut state, StdDuration::from_secs(10), |s| s
+                .test_receiver
+                .as_ref()
+                .is_some_and(|r| r.tally.packets >= 200 * 8)),
+            "the receiver saw only {} packets of 1600",
+            state.test_receiver.as_ref().map(|r| r.tally.packets).unwrap_or(0)
+        );
+
+        // And the window knows what the logger is doing, as data rather than
+        // as text it had to scrape.
+        let status = state
+            .listener
+            .live
+            .status
+            .as_ref()
+            .unwrap_or_else(|| panic!("no status event arrived: {:?}", state.listener.recent_output(10)));
+        assert_eq!(status.state, "recording", "{}", status.headline());
+        assert!(status.rows > 0, "the logger reported no rows: {}", status.headline());
+        assert!(
+            state.listener.live.csv.contains("session_flight_data.csv"),
+            "the file it writes was not reported: {:?}",
+            state.listener.live.csv
+        );
+
+        // Let the logger write the last of what it was sent, then stop.
+        let _ = pump_for(&mut state, StdDuration::from_secs(2), |_| false);
+        let _ = update(&mut state, Message::StopFlight);
+        assert!(!state.listener.status.is_running());
+        assert!(!state.mirror_connected);
+
+        // And the rows are in the CSV, which is the point of the whole thing.
+        let csv = inference.join("data").join("session_flight_data.csv");
+        let text = std::fs::read_to_string(&csv)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", csv.display()));
+        let rows = text.lines().filter(|line| line.contains(&flight_id)).count();
+        assert!(
+            rows >= 150,
+            "only {rows} of 200 samples reached {}",
+            csv.display()
+        );
+
+        let _ = update(&mut state, Message::StopTestReceiver);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

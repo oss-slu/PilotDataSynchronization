@@ -14,3 +14,7 @@ chrono = "0.4.42"
 # For SO_SNDBUF and SO_RCVBUF on the mirror sockets, which std::net
 # does not expose. Cross-platform, so the Windows build gets them too.
 socket2 = "0.5"
+# The listeners report what they are doing as JSON events rather than console
+# text, so the window is not parsing sentences written for a human (#285).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

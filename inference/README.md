@@ -84,10 +84,16 @@ Without it the rows are written as "unknown". `--flight-id` is optional, but pas
 session: without it each relay connection gets its own generated id, so a reconnect mid-flight
 splits one flight into two. The logger writes `data/session_flight_data.csv`.
 
-Point the relay at this listener with `Connect TCP`, or, when iMotions is recording the same
+Point the relay at this listener with `Connect iMotions`, or, when iMotions is recording the same
 flight, with `Connect mirror` so both receive the stream (see the root README). A mirror reader
 must keep reading: if it stops while it does slow work it loses copies, and then the mirror
 itself, which does not reconnect on its own.
+
+Neither command has to be typed. `Start flight` in the relay window runs the same module with
+the same arguments and connects the mirror to it, which is what #285 is about; these are the
+equivalents for running one by hand. Both listeners take `--json`, which reports events as one
+JSON object per line instead of console text, for a program reading them rather than a person
+(see `pilot_inference/events.py`). Without it the console output is exactly what it always was.
 
 ## Performance groups
 
@@ -163,10 +169,14 @@ where we are the instructor:
    targets; after that a blank cell keeps the target from the instruction before, as a real
    "turn right heading 360" keeps the altitude. Headings are magnetic, as the X-Plane heading
    indicator and the plugin show them.
-2. Start `live_groups` with the brief and a `--pilot-id`, then press `Connect mirror` in the relay
-   (or `Connect TCP` with no iMotions). It replaces the capture logger for the flight, so stop
-   `data_logger` first; if the port is still taken, `live_groups` says so and exits.
-3. Press Enter at the moment each instruction is spoken. The targets it changes are not scored
+2. Choose `Live groups` in the relay window, fill in the brief, pilot and flight, and press
+   `Start flight`. The window runs this module with `--json` and connects it to the stream
+   itself. To do it by hand instead, start `live_groups` with the brief and a `--pilot-id`, then
+   press `Connect mirror` in the relay (or `Connect iMotions` with no iMotions). Either way it
+   replaces the capture logger for the flight, so stop `data_logger` first; if the port is still
+   taken, `live_groups` says so and exits.
+3. Press `Give instruction` in the window, or Enter at the console, at the moment each
+   instruction is spoken. The targets it changes are not scored
    for 30 seconds (`--settle`), so the turn or level-off does not count; targets it leaves alone,
    or restates at the same value, are scored throughout, so altitude lost in a turn counts.
    Type `q` and Enter to stop. The sidecar ends the relay connection, writes every sample it

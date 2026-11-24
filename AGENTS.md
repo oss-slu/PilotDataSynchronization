@@ -7,7 +7,7 @@ Streams pilot telemetry from X-Plane to iMotions and builds ML datasets from it.
 Data flow: `xplane_plugin` (C++) → `baton` (Rust library, compiled to C++) → `relay` (Rust GUI) → iMotions over TCP. `inference` (Python) separately logs the same TCP stream and trains a model.
 
 - `xplane_plugin/`: X-Plane plugin, built with Meson. `baton` lives in `xplane_plugin/subprojects/baton`.
-- `relay/`: Rust relay with a GUI.
+- `relay/`: Rust relay with a GUI. The window also runs the `inference` listeners as child processes, stands in for iMotions on a local port, and replays a recorded flight in place of X-Plane, so a session needs no terminal (#285).
 - `src/server/`: mock iMotions TCP server for testing without iMotions.
 - `inference/`: logging, pilot performance groups, and an out-of-scope event classification pipeline. One package, `inference/pilot_inference/`. See `inference/README.md`.
 

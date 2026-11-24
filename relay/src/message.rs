@@ -41,6 +41,31 @@ pub(crate) enum Message {
     DisconnectMirror,
 
     SendPacket,
+
+    // Listener panel (#285): run the capture logger from the relay window
+    PilotIdFieldUpdate(String),
+    FlightIdFieldUpdate(String),
+    ListenerModeSelected(crate::listener::ListenerMode),
+    BriefFieldUpdate(String),
+    GiveInstruction,
+
+    // Everything a session needs without a terminal (#285)
+    /// Start the listener and connect it to the stream, in that order.
+    StartFlight,
+    /// Stop the listener and take the mirror down with it.
+    StopFlight,
+    /// Stand in for iMotions on a local port, and connect to it.
+    UseTestReceiver,
+    StopTestReceiver,
+    /// Stand in for X-Plane by replaying a recorded flight.
+    RecordingSelected(String),
+    ReplayFlightSelected(String),
+    StartReplay,
+    StopReplay,
+    /// Build the Python environment, so a fresh clone needs no terminal.
+    SetUpPython,
+    /// Show or hide the individual connect and disconnect controls.
+    ToggleAdvanced,
 }
 
 pub(crate) enum ToIpcThreadMessage {}
