@@ -126,7 +126,8 @@ Then, in order:
    - 5050 is the port iMotions was listening on in the lab. It is a setting, not a fixed default, so check it on the machine you are using (see below).
    - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
-4. Press `Connect iMotions`.
+   - The dropdown always offers the three local addresses this project uses, before anything has been saved: `local iMotions; 127.0.0.1:5050`, `local mock server; 127.0.0.1:9999` and `local Python listener; 127.0.0.1:5001`. Picking one connects to it. Each entry is named by what is listening on it and whether it is this machine, so an entry reading `iMotions; 10.0.0.7:5050` is iMotions on another computer.
+4. Press `Connect iMotions`. Once connected it becomes `Disconnect`, which closes the connection without closing the window. Pressing `Connect iMotions` again with a different address moves the relay to it; during a flight both are refused, because the listener is sent a copy of that connection and disconnecting would end the recording.
 5. Fill in `Pilot` and `Flight`, choose `Capture` or `Live groups`, and press `Start flight`.
 6. Start X-Plane. Flight data now flows automatically.
 
@@ -226,7 +227,7 @@ cargo run              # listening on 127.0.0.1:9999
 cargo run -- 7878      # or pick another port
 ```
 
-Enter `127.0.0.1:9999` in the relay and press `Connect iMotions`.
+Pick `local mock server; 127.0.0.1:9999` from `Saved IPs` in the relay, or type the address and press `Connect iMotions`.
 
 The mock server prints every packet it receives, numbered, until the relay disconnects. It does not reply to the relay.
 

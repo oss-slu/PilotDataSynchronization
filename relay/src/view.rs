@@ -184,13 +184,22 @@ fn tcp_addr_input(state: &State) -> UIElement {
 }
 
 fn tcp_addr_dropdown(state: &State) -> UIElement {
-    pick_list(
-        state.saved_tcp_addrs.clone(),
-        state.selected_tcp_addr.clone(),
-        Message::SavedTcpAddrSelected,
-    )
-    .placeholder("Saved IPs")
-    .into()
+    // Named rather than bare, so the list says which entry is this machine
+    // and which is iMotions. The address is still shown: it is what someone
+    // reads back to whoever set the lab up.
+    let options: Vec<String> = state
+        .saved_tcp_addrs
+        .iter()
+        .map(|address| State::label_for_tcp_addr(address))
+        .collect();
+    let selected = state
+        .selected_tcp_addr
+        .as_deref()
+        .map(State::label_for_tcp_addr);
+
+    pick_list(options, selected, Message::SavedTcpAddrSelected)
+        .placeholder("Saved IPs")
+        .into()
 }
 
 fn tcp_disconnect_button() -> UIElement<'static> {
@@ -318,13 +327,18 @@ fn chain_strip(state: &State) -> UIElement {
 
 /// Where the relay sends, and a way to try it with nothing to send to.
 fn imotions_panel(state: &State) -> UIElement {
+    // One button rather than two. Connect is a dead end once it has worked,
+    // and the way to close the socket deliberately was buried in the advanced
+    // panel, where nobody running a session would look for it.
+    let connect = if state.tcp_connected {
+        button("Disconnect").on_press(Message::DisconnectTcp)
+    } else {
+        button("Connect iMotions").on_press(Message::ConnectTcp)
+    };
+
     let mut rows: Vec<UIElement> = vec![
         text("iMotions").size(14).into(),
-        row![
-            button("Connect iMotions").on_press(Message::ConnectTcp),
-            tcp_addr_input(state),
-            tcp_addr_dropdown(state),
-        ]
+        row![connect, tcp_addr_input(state), tcp_addr_dropdown(state)]
         .spacing(5)
         .align_y(iced::Alignment::Center)
         .into(),

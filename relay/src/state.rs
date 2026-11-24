@@ -47,6 +47,29 @@ pub(crate) const IMOTIONS_ADDR_HINT: &str = "<iMotions IP>:5050";
 /// machine as the relay, and 5001 is the capture logger's default port.
 pub(crate) const MIRROR_ADDR_HINT: &str = "127.0.0.1:5001";
 
+/// The ports this project sends to, used to name a saved address.
+///
+/// iMotions' port is a setting rather than a fixed default, so 5050 names an
+/// address rather than guaranteeing one. The mock's is deliberately distinct
+/// from it, so running the mock can never be mistaken for talking to iMotions.
+pub(crate) const IMOTIONS_PORT: u16 = 5050;
+pub(crate) const MOCK_SERVER_PORT: u16 = 9999;
+
+/// What the saved list offers before anyone has connected to anything.
+///
+/// An empty picker is no help to someone who does not know what to type, and
+/// these are the three addresses a session actually uses: iMotions on this
+/// machine, the mock in `src/server/`, and the Python listener on its own when
+/// there is no iMotions at all. iMotions on another machine has an IP that can
+/// only come from that machine, so it cannot be listed here.
+pub(crate) fn default_tcp_addrs() -> Vec<String> {
+    vec![
+        format!("127.0.0.1:{IMOTIONS_PORT}"),
+        format!("127.0.0.1:{}", crate::listener::DEFAULT_LISTENER_PORT),
+        format!("127.0.0.1:{MOCK_SERVER_PORT}"),
+    ]
+}
+
 /// Bounds on the mirror destination that feeds the Python side (#245).
 ///
 /// Connecting and writing both run on the mirror's own thread, so these never
@@ -221,7 +244,7 @@ impl Default for State {
             ipc_bichannel: None,
             tcp_bichannel: None,
             last_send_timestamp: None,
-            saved_tcp_addrs: Vec::new(),
+            saved_tcp_addrs: default_tcp_addrs(),
             selected_tcp_addr: None,
             tcp_addr_validation_error: None,
 
@@ -668,10 +691,14 @@ impl State {
     pub fn load_saved_tcp_addrs(&mut self) -> Result<()> {
         let path = Self::saved_tcp_addrs_path()?;
         let Ok(contents) = fs::read_to_string(path) else {
+            self.saved_tcp_addrs = default_tcp_addrs();
             return Ok(());
         };
 
-        let mut uniq = BTreeSet::new();
+        // Always offered, not only on a first run. Someone who has saved the
+        // lab's iMotions address should still find the local ones in the list
+        // when they take the relay home to test on.
+        let mut uniq: BTreeSet<String> = default_tcp_addrs().into_iter().collect();
         let trimmed = contents.trim();
         let body = trimmed
             .strip_prefix('[')
@@ -723,6 +750,43 @@ impl State {
                 anyhow!("Invalid address. Enter a literal IP and port, for example {example}")
             })?;
         Ok(())
+    }
+
+    /// What the saved list calls an address, as `name; address`.
+    ///
+    /// A column of bare IPs does not tell someone which entry is their own
+    /// machine and which is iMotions in the lab, and these are read by people
+    /// who did not set either of them up. The name is worked out from the
+    /// address rather than stored next to it, so it cannot drift out of step
+    /// with the address and the saved file stays a plain list.
+    pub fn label_for_tcp_addr(address: &str) -> String {
+        let address = address.trim();
+        let Ok(parsed) = address.parse::<SocketAddr>() else {
+            return address.to_string();
+        };
+        let what = match parsed.port() {
+            IMOTIONS_PORT => Some("iMotions"),
+            MOCK_SERVER_PORT => Some("mock server"),
+            crate::listener::DEFAULT_LISTENER_PORT => Some("Python listener"),
+            _ => None,
+        };
+        // Loopback is the thing a researcher can actually check: it is this
+        // machine, so nothing on the network has to be right for it to work.
+        let name = match (parsed.ip().is_loopback(), what) {
+            (true, Some(what)) => format!("local {what}"),
+            (false, Some(what)) => what.to_string(),
+            (true, None) => "local".to_string(),
+            (false, None) => "network".to_string(),
+        };
+        format!("{name}; {address}")
+    }
+
+    /// The address behind what the picker showed.
+    pub fn tcp_addr_for_label(&self, label: &str) -> Option<String> {
+        self.saved_tcp_addrs
+            .iter()
+            .find(|address| Self::label_for_tcp_addr(address) == label)
+            .cloned()
     }
 
     pub fn save_tcp_addr_if_new(&mut self, address: &str) -> Result<()> {
@@ -952,6 +1016,11 @@ impl State {
                 Ok(stream) => {
                     human_log("TCP", "Successfully connected to iMotions server.");
                     let _ = child_bichannel.set_is_conn_to_endpoint(true);
+                    // The window only learned about a failure, never about a
+                    // success, so the Flight path strip went on saying iMotions
+                    // was not connected while packets were arriving at the
+                    // other end.
+                    let _ = child_bichannel.send_to_parent(FromTcpThreadMessage::Connected);
                     stream
                 }
                 Err(e) => {
@@ -1158,6 +1227,10 @@ impl State {
         // The mirror lives in that thread, so it goes down with it. Without
         // this the GUI keeps claiming the mirror is connected.
         self.mirror_connected = false;
+        // Cleared here rather than at the next tick, so the window does not
+        // draw one frame still claiming iMotions is connected, with a
+        // Disconnect button on it, right after someone pressed Disconnect.
+        self.tcp_connected = false;
         
         if !was_connected {
             spawn(move || {
@@ -1217,6 +1290,67 @@ mod tests {
         )));
         assert!(state.event_log.front().unwrap().contains("event 50"));
         assert!(!state.event_log.iter().any(|e| e.ends_with("event 0")));
+    }
+
+    /// The picker is read by people who did not set the lab up, so an entry
+    /// has to say what it is, not only where it is.
+    #[test]
+    fn a_saved_address_is_named_by_what_is_listening_on_it() {
+        assert_eq!(
+            State::label_for_tcp_addr("127.0.0.1:5050"),
+            "local iMotions; 127.0.0.1:5050"
+        );
+        assert_eq!(
+            State::label_for_tcp_addr("127.0.0.1:9999"),
+            "local mock server; 127.0.0.1:9999"
+        );
+        assert_eq!(
+            State::label_for_tcp_addr("127.0.0.1:5001"),
+            "local Python listener; 127.0.0.1:5001"
+        );
+    }
+
+    /// Which machine it is on is the part someone can check for themselves,
+    /// so it is said even when the port means nothing to us.
+    #[test]
+    fn an_address_elsewhere_is_named_as_being_elsewhere() {
+        assert_eq!(
+            State::label_for_tcp_addr("10.0.0.7:5050"),
+            "iMotions; 10.0.0.7:5050"
+        );
+        assert_eq!(State::label_for_tcp_addr("10.0.0.7:4321"), "network; 10.0.0.7:4321");
+        assert_eq!(State::label_for_tcp_addr("127.0.0.1:4321"), "local; 127.0.0.1:4321");
+    }
+
+    /// The picker hands back the name it showed, and that is not an address.
+    #[test]
+    fn a_name_leads_back_to_the_address_it_was_made_from() {
+        let state = State::default();
+        for address in default_tcp_addrs() {
+            let label = State::label_for_tcp_addr(&address);
+            assert_eq!(state.tcp_addr_for_label(&label), Some(address));
+        }
+        assert_eq!(state.tcp_addr_for_label("local; 198.51.100.4:1"), None);
+    }
+
+    /// Nothing saved yet is the normal state of a fresh clone, and an empty
+    /// picker leaves someone guessing at a port number.
+    #[test]
+    fn the_addresses_this_project_uses_are_offered_before_anything_is_saved() {
+        let state = State::default();
+        assert!(state.saved_tcp_addrs.contains(&"127.0.0.1:5050".to_string()));
+        assert!(state.saved_tcp_addrs.contains(&"127.0.0.1:9999".to_string()));
+        assert!(state.saved_tcp_addrs.contains(&"127.0.0.1:5001".to_string()));
+    }
+
+    /// Every default has to survive the round trip through the file, or the
+    /// picker offers an entry that fails validation on the next run.
+    #[test]
+    fn every_offered_address_is_one_the_relay_will_accept() {
+        for address in default_tcp_addrs() {
+            State::validate_tcp_addr(&address, IMOTIONS_ADDR_HINT)
+                .unwrap_or_else(|e| panic!("{address} is offered but rejected: {e}"));
+        }
     }
 
     fn fields(values: &[&str]) -> Vec<String> {

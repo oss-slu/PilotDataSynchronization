@@ -24,12 +24,34 @@ fn connect_tcp_validated(state: &mut State, address: String, save: bool) {
     match State::validate_tcp_addr(&trimmed, IMOTIONS_ADDR_HINT) {
         Ok(()) => {
             state.tcp_addr_validation_error = None;
-            state.tcp_addr_field = trimmed.clone();
             if save {
                 if let Err(e) = state.save_tcp_addr_if_new(&trimmed) {
                     state.log_event(format!("Saving TCP address failed: {}", e));
                 }
             }
+            // Pressing Connect again is how someone moves the relay to another
+            // address, so it reconnects rather than refusing with "TCP thread
+            // already exists", which reads like a fault in the relay. Not
+            // during a Flight: the mirror lives in that thread and would go
+            // down with it, in the middle of a recording.
+            if state.tcp_thread_handle.is_some() {
+                if state.listener.status.is_running() {
+                    let msg = "Stop the flight before connecting somewhere else. The listener is \
+                               sent a copy of this connection."
+                        .to_string();
+                    state.error_message = Some(msg.clone());
+                    state.log_event(msg);
+                    return;
+                }
+                let previous = state.tcp_addr_field.clone();
+                if let Err(e) = state.tcp_disconnect() {
+                    state.log_event(format!("TCP disconnect failed: {}", e));
+                }
+                if previous != trimmed {
+                    state.log_event(format!("Disconnected from {previous}"));
+                }
+            }
+            state.tcp_addr_field = trimmed.clone();
             if let Err(e) = state.tcp_connect(trimmed.clone()) {
                 state.log_event(format!("TCP connect failed: {}", e));
             }
@@ -148,6 +170,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
 
+            // The thread keeps the live answer, and a send that fails sets it
+            // without announcing anything. Reading it every tick is what keeps
+            // the strip honest in both directions: a connection that came up,
+            // and one that went down without a Disconnected message.
+            state.tcp_connected = state.is_tcp_connected();
+
             // After the TCP messages, so a MirrorConnected that arrived this
             // tick is already in hand and the arm can finish instead of
             // retrying a connection that has already landed.
@@ -208,13 +236,31 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }
-        M::SavedTcpAddrSelected(address) => {
+        M::SavedTcpAddrSelected(label) => {
+            // The picker shows a name beside the address, so what comes back
+            // is that name rather than something to connect to.
+            let Some(address) = state.tcp_addr_for_label(&label) else {
+                return Task::none();
+            };
             connect_tcp_with_validation_and_save(state, address);
             Task::none()
         }
         M::DisconnectTcp => {
-            if let Err(e) = state.tcp_disconnect() {
-                state.log_event(format!("TCP disconnect failed: {}", e));
+            // The same reason Connect refuses mid Flight: the mirror lives in
+            // this thread, so the recording would end with it, and nobody
+            // pressing this asked for that.
+            if state.listener.status.is_running() {
+                let msg = "Stop the flight before disconnecting. The listener is sent a copy of \
+                           this connection."
+                    .to_string();
+                state.error_message = Some(msg.clone());
+                state.log_event(msg);
+                return Task::none();
+            }
+            let previous = state.tcp_addr_field.clone();
+            match state.tcp_disconnect() {
+                Ok(()) => state.log_event(format!("Disconnected from {previous}")),
+                Err(e) => state.log_event(format!("TCP disconnect failed: {}", e)),
             }
             Task::none()
         }
@@ -1779,6 +1825,156 @@ mod tests {
         let _ = update(&mut state, Message::StopTestReceiver);
         assert!(state.test_receiver.is_none());
         assert!(!state.is_tcp_connected(), "the connection to it should have gone too");
+    }
+
+    /// The Flight path strip reads `tcp_connected`, and nothing but a button
+    /// in the advanced panel ever set it true: the window said iMotions was
+    /// not connected while packets were arriving at the other end.
+    #[test]
+    fn the_window_notices_that_imotions_connected() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+
+        assert!(pump_until(&mut state, |s| s.tcp_connected), "the window never noticed");
+        assert!(
+            state.event_log.iter().any(|line| line.contains("TCP connected")),
+            "connecting was never reported: {:?}",
+            state.event_log
+        );
+    }
+
+    /// Connect is how someone moves the relay to another address. Refusing
+    /// with "TCP thread already exists" reads like a fault in the relay, and
+    /// there is no other way to do it outside the advanced panel.
+    #[test]
+    fn connecting_again_moves_the_relay_instead_of_refusing() {
+        let (first_listener, first) = listener_on_free_port();
+        let (second_listener, second) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(first).expect("tcp_connect failed");
+        let _first_conn = first_listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+
+        state.tcp_addr_field = second.clone();
+        let _ = update(&mut state, Message::ConnectTcp);
+        let _second_conn = second_listener.accept().expect("accept failed");
+
+        assert_eq!(state.tcp_addr_field, second);
+        assert!(
+            pump_until(&mut state, |s| s.tcp_connected),
+            "it never connected to the new address: {:?}",
+            state.event_log
+        );
+        assert!(
+            !state.event_log.iter().any(|line| line.contains("already exists")),
+            "it refused instead of moving: {:?}",
+            state.event_log
+        );
+    }
+
+    /// The mirror lives in the TCP thread, so taking that thread down mid
+    /// Flight ends the recording. Better to say so than to do it.
+    #[test]
+    fn connecting_somewhere_else_during_a_flight_is_refused() {
+        let (listener, addr) = listener_on_free_port();
+        let (other_listener, other) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr.clone()).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+        state.listener.status = crate::listener::ListenerStatus::Running;
+
+        state.tcp_addr_field = other;
+        let _ = update(&mut state, Message::ConnectTcp);
+
+        assert!(
+            other_listener.set_nonblocking(true).is_ok() && other_listener.accept().is_err(),
+            "it moved the connection out from under the flight"
+        );
+        assert!(
+            state
+                .error_message
+                .as_deref()
+                .is_some_and(|msg| msg.contains("Stop the flight")),
+            "no reason was given: {:?}",
+            state.error_message
+        );
+        assert!(state.is_tcp_connected(), "the flight's connection was dropped anyway");
+    }
+
+    /// Picking from the list has to connect to the address, not to the name
+    /// the list showed, which is not an address and never validates.
+    #[test]
+    fn picking_a_saved_address_by_its_name_connects_to_it() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state
+            .saved_tcp_addrs
+            .push(addr.clone());
+        let label = State::label_for_tcp_addr(&addr);
+        assert!(label.ends_with(&addr), "the name has to carry the address: {label}");
+
+        let _ = update(&mut state, Message::SavedTcpAddrSelected(label));
+        let _accepted = listener.accept().expect("accept failed");
+
+        assert_eq!(state.tcp_addr_field, addr);
+        assert!(
+            pump_until(&mut state, |s| s.tcp_connected),
+            "picking it connected nothing: {:?}",
+            state.event_log
+        );
+        assert!(state.tcp_addr_validation_error.is_none());
+    }
+
+    /// Disconnecting ends the one TCP thread there can be, so pressing
+    /// Connect afterwards starts a fresh one rather than being refused.
+    #[test]
+    fn disconnecting_leaves_nothing_behind_to_block_the_next_connection() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_addr_field = addr.clone();
+        let _ = update(&mut state, Message::ConnectTcp);
+        let _first = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.tcp_connected), "never connected");
+
+        let _ = update(&mut state, Message::DisconnectTcp);
+
+        assert!(state.tcp_thread_handle.is_none(), "the thread outlived the disconnect");
+        assert!(!state.is_tcp_connected());
+        assert!(!state.tcp_connected, "the window still claims it is connected");
+
+        let _ = update(&mut state, Message::ConnectTcp);
+        let _second = listener.accept().expect("accept failed");
+        assert!(
+            pump_until(&mut state, |s| s.tcp_connected),
+            "it could not connect again: {:?}",
+            state.event_log
+        );
+    }
+
+    /// The mirror lives in the TCP thread, so this would end the recording.
+    #[test]
+    fn disconnecting_during_a_flight_is_refused() {
+        let (listener, addr) = listener_on_free_port();
+        let mut state = State::default();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        let _accepted = listener.accept().expect("accept failed");
+        assert!(pump_until(&mut state, |s| s.is_tcp_connected()), "never connected");
+        state.listener.status = crate::listener::ListenerStatus::Running;
+
+        let _ = update(&mut state, Message::DisconnectTcp);
+
+        assert!(state.is_tcp_connected(), "the flight's connection was dropped");
+        assert!(
+            state
+                .error_message
+                .as_deref()
+                .is_some_and(|msg| msg.contains("Stop the flight")),
+            "no reason was given: {:?}",
+            state.error_message
+        );
     }
 
     /// Pressing it means using it instead, so the connection it replaces has
