@@ -7,11 +7,20 @@ import argparse
 import csv
 import os
 import socket
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pilot_inference.events import emit
 from pilot_inference.paths import DATA_DIR
+
+# How often a `--json` run reports how many samples it has written.
+#
+# The relay's window shows that number, and "recording, 412 samples" is the
+# answer to the only question anyone asks mid-session. Two seconds is often
+# enough to look live and rare enough to cost nothing against a 20 Hz stream.
+STATUS_EVERY_SECONDS = 2.0
 
 
 EVENT_TO_COLUMN = {
@@ -137,22 +146,99 @@ def append_row(csv_path: Path, row: dict[str, str]) -> None:
         os.fsync(handle.fileno())
 
 
+class ConsoleReporter:
+    """
+    What this module has always printed, unchanged.
+
+    `status` prints nothing, because it never did: the console shows the
+    connection, not a running count. Keeping it a no-op is what lets the
+    `--json` run report progress without changing a line of console output.
+    """
+
+    def started(self, host: str, port: int, csv_path: Path, pilot_id: str) -> None:
+        print(f"Listening for relay telemetry on {host}:{port}")
+        print(f"Writing CSV rows to {csv_path}")
+        print(f"Pilot id: {pilot_id}")
+        if pilot_id == DEFAULT_PILOT_ID:
+            print("Pass --pilot-id to label these rows, or they cannot be grouped per pilot.")
+
+    def connected(self, addr: tuple[str, int], flight_id: str) -> None:
+        print(f"Relay connected from {addr[0]}:{addr[1]}, flight id {flight_id}")
+
+    def status(self, state: str, rows: int, flight_id: str) -> None:
+        pass
+
+    def disconnected(self, rows: int) -> None:
+        print("Relay disconnected")
+
+
+class JsonReporter:
+    """
+    The same run, reported as events for the program running this one.
+
+    The relay's window reads these (#285). The contract lives in
+    `pilot_inference.events`.
+    """
+
+    def started(self, host: str, port: int, csv_path: Path, pilot_id: str) -> None:
+        emit(
+            "started",
+            host=host,
+            port=port,
+            csv=csv_path,
+            pilot_id=pilot_id,
+            unnamed_pilot=pilot_id == DEFAULT_PILOT_ID,
+        )
+        emit("status", state="waiting_for_relay", rows=0)
+
+    def connected(self, addr: tuple[str, int], flight_id: str) -> None:
+        emit("status", state="recording", rows=0, flight_id=flight_id, peer=addr[0])
+
+    def status(self, state: str, rows: int, flight_id: str) -> None:
+        emit("status", state=state, rows=rows, flight_id=flight_id)
+
+    def disconnected(self, rows: int) -> None:
+        emit("status", state="relay_gone", rows=rows)
+
+
 def handle_connection(
-    conn: socket.socket, csv_path: Path, pilot_id: str, flight_id: str
-) -> None:
+    conn: socket.socket,
+    csv_path: Path,
+    pilot_id: str,
+    flight_id: str,
+    reporter: ConsoleReporter | JsonReporter | None = None,
+) -> int:
+    """Write every complete sample this connection sends. Returns the count."""
     sample = SampleBuffer()
+    rows = 0
+    next_status = time.monotonic() + STATUS_EVERY_SECONDS
     with conn, conn.makefile("r", encoding="utf-8", newline="") as reader:
-        for raw_line in reader:
-            parsed = parse_packet(raw_line)
-            if parsed is None:
-                continue
+        # Caught here rather than by the caller, so a relay that drops mid
+        # flight still reports how much of it was written.
+        try:
+            for raw_line in reader:
+                parsed = parse_packet(raw_line)
+                if parsed is None:
+                    continue
 
-            event_name, value = parsed
-            sample.update(event_name, value)
+                event_name, value = parsed
+                sample.update(event_name, value)
 
-            if sample.is_complete():
-                append_row(csv_path, sample.to_row(pilot_id, flight_id))
-                sample.reset()
+                if sample.is_complete():
+                    append_row(csv_path, sample.to_row(pilot_id, flight_id))
+                    sample.reset()
+                    rows += 1
+
+                # Checked here rather than on a timer thread: this loop runs
+                # on every packet, so the clock is already being read often.
+                if reporter is not None:
+                    now = time.monotonic()
+                    if now >= next_status:
+                        reporter.status("recording", rows, flight_id)
+                        next_status = now + STATUS_EVERY_SECONDS
+        except ConnectionError:
+            pass
+    return rows
 
 
 def serve(
@@ -161,29 +247,23 @@ def serve(
     csv_path: Path,
     pilot_id: str = DEFAULT_PILOT_ID,
     flight_id: str | None = None,
+    reporter: ConsoleReporter | JsonReporter | None = None,
 ) -> None:
+    reporter = reporter if reporter is not None else ConsoleReporter()
     ensure_csv(csv_path)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
         server.listen()
-        print(f"Listening for relay telemetry on {host}:{port}")
-        print(f"Writing CSV rows to {csv_path}")
-        print(f"Pilot id: {pilot_id}")
-        if pilot_id == DEFAULT_PILOT_ID:
-            print("Pass --pilot-id to label these rows, or they cannot be grouped per pilot.")
+        reporter.started(host, port, csv_path, pilot_id)
 
         while True:
             conn, addr = server.accept()
             # Each connection is one flight unless the caller named one.
             connection_flight_id = flight_id or new_flight_id()
-            print(f"Relay connected from {addr[0]}:{addr[1]}, flight id {connection_flight_id}")
-            try:
-                handle_connection(conn, csv_path, pilot_id, connection_flight_id)
-            except ConnectionError:
-                pass
-            finally:
-                print("Relay disconnected")
+            reporter.connected(addr, connection_flight_id)
+            rows = handle_connection(conn, csv_path, pilot_id, connection_flight_id, reporter)
+            reporter.disconnected(rows)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -206,12 +286,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Identifier for this flight. Defaults to a UTC timestamp per relay connection.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Report events as one JSON object per line instead of console text, "
+        "for a program running this one (see pilot_inference.events).",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    serve(args.host, args.port, args.csv, args.pilot_id, args.flight_id)
+    reporter = JsonReporter() if args.json else ConsoleReporter()
+    try:
+        serve(args.host, args.port, args.csv, args.pilot_id, args.flight_id, reporter)
+    except KeyboardInterrupt:
+        # Ctrl-C at a console, and the nearest thing to a clean stop until
+        # #277 gives this module one. Every row is already flushed and fsynced
+        # as it arrives, so nothing written is at risk either way.
+        if args.json:
+            emit("stopped")
 
 
 if __name__ == "__main__":

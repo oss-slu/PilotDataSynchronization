@@ -134,11 +134,83 @@ pub(crate) fn checked_id(value: &str, what: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-/// Build the command that runs the capture logger.
+/// The Python environment's own interpreter, when it has been built.
 ///
-/// `python -u` matters. Python block-buffers stdout when it is a pipe rather
-/// than a console, so without it the listener's output would reach the window
-/// in silent chunks of a few kilobytes, or not until it exited.
+/// Preferred over `uv run` because it makes the listener a direct child the
+/// relay can actually stop. `uv run` spawns Python as a child of its own, so
+/// killing uv leaves that Python alive and still holding the port, and the
+/// next flight cannot bind it. On Windows there is no signal to ask it nicely
+/// either, which is how a session ends up needing Task Manager.
+pub(crate) fn venv_python(inference_dir: &Path) -> Option<PathBuf> {
+    let relative = if cfg!(windows) {
+        [".venv", "Scripts", "python.exe"]
+    } else {
+        [".venv", "bin", "python"]
+    };
+    let path = relative
+        .iter()
+        .fold(inference_dir.to_path_buf(), |path, part| path.join(part));
+    path.is_file().then_some(path)
+}
+
+/// Check the folder really is the inference project before building anything.
+fn checked_inference_dir(inference_dir: &Path) -> Result<()> {
+    if !inference_dir.join("pyproject.toml").is_file() {
+        bail!(
+            "{} is not the inference project. Point the relay at the folder that \
+             holds pyproject.toml.",
+            inference_dir.display()
+        );
+    }
+    Ok(())
+}
+
+/// Run a `pilot_inference` module, with the environment's own interpreter when
+/// there is one and `uv run` when there is not.
+///
+/// `python -u` matters either way. Python block-buffers stdout when it is a
+/// pipe rather than a console, so without it the listener's output would reach
+/// the window in silent chunks of a few kilobytes, or not until it exited.
+fn python_module_command(
+    inference_dir: &Path,
+    module: &str,
+    module_args: Vec<String>,
+) -> ListenerCommand {
+    let (program, mut args) = match venv_python(inference_dir) {
+        Some(python) => (python.to_string_lossy().into_owned(), Vec::new()),
+        None => (
+            "uv".to_string(),
+            vec!["run".to_string(), "python".to_string()],
+        ),
+    };
+    args.push("-u".to_string());
+    args.push("-m".to_string());
+    args.push(module.to_string());
+    args.extend(module_args);
+
+    ListenerCommand {
+        program,
+        args,
+        working_dir: inference_dir.to_path_buf(),
+    }
+}
+
+/// Build the command that builds the Python environment.
+///
+/// A fresh clone has no `.venv`, and `uv sync` is the one terminal command
+/// that stood between the window and a working session. The window runs it
+/// instead, through the same machinery as a listener, so its output shows in
+/// the same place.
+pub(crate) fn setup_command(inference_dir: &Path) -> Result<ListenerCommand> {
+    checked_inference_dir(inference_dir)?;
+    Ok(ListenerCommand {
+        program: "uv".to_string(),
+        args: vec!["sync".to_string()],
+        working_dir: inference_dir.to_path_buf(),
+    })
+}
+
+/// Build the command that runs the capture logger.
 pub(crate) fn capture_command(
     inference_dir: &Path,
     pilot_id: &str,
@@ -147,21 +219,12 @@ pub(crate) fn capture_command(
 ) -> Result<ListenerCommand> {
     let pilot_id = checked_id(pilot_id, "Pilot id")?;
     let flight_id = checked_id(flight_id, "Flight id")?;
-    if !inference_dir.join("pyproject.toml").is_file() {
-        bail!(
-            "{} is not the inference project. Point the relay at the folder that \
-             holds pyproject.toml.",
-            inference_dir.display()
-        );
-    }
-    Ok(ListenerCommand {
-        program: "uv".to_string(),
-        args: vec![
-            "run".into(),
-            "python".into(),
-            "-u".into(),
-            "-m".into(),
-            "pilot_inference.capture.data_logger".into(),
+    checked_inference_dir(inference_dir)?;
+    Ok(python_module_command(
+        inference_dir,
+        "pilot_inference.capture.data_logger",
+        vec![
+            "--json".into(),
             "--pilot-id".into(),
             pilot_id,
             "--flight-id".into(),
@@ -169,8 +232,7 @@ pub(crate) fn capture_command(
             "--port".into(),
             port.to_string(),
         ],
-        working_dir: inference_dir.to_path_buf(),
-    })
+    ))
 }
 
 /// Build the command that runs the live performance groups sidecar.
@@ -187,12 +249,7 @@ pub(crate) fn live_groups_command(
 ) -> Result<ListenerCommand> {
     let pilot_id = checked_id(pilot_id, "Pilot id")?;
     let flight_id = checked_id(flight_id, "Flight id")?;
-    if !inference_dir.join("pyproject.toml").is_file() {
-        bail!(
-            "{} is not the inference project. Point the relay at the folder that              holds pyproject.toml.",
-            inference_dir.display()
-        );
-    }
+    checked_inference_dir(inference_dir)?;
     // A relative brief is relative to the inference project, because that is
     // where the child runs and where briefs/ lives. Resolving it here means
     // this check and the child's own open() look at the same file.
@@ -203,18 +260,15 @@ pub(crate) fn live_groups_command(
     };
     if !brief.is_file() {
         bail!(
-            "No brief at {}. A live groups flight needs one: it is the list of              instructions and the targets each one sets.",
+            "No brief at {}. A live groups flight needs one: it is the list of \
+             instructions and the targets each one sets.",
             brief.display()
         );
     }
-    Ok(ListenerCommand {
-        program: "uv".to_string(),
-        args: vec![
-            "run".into(),
-            "python".into(),
-            "-u".into(),
-            "-m".into(),
-            "pilot_inference.performance.live_groups".into(),
+    Ok(python_module_command(
+        inference_dir,
+        "pilot_inference.performance.live_groups",
+        vec![
             "--json".into(),
             "--brief".into(),
             brief.to_string_lossy().into_owned(),
@@ -225,8 +279,7 @@ pub(crate) fn live_groups_command(
             "--port".into(),
             port.to_string(),
         ],
-        working_dir: inference_dir.to_path_buf(),
-    })
+    ))
 }
 
 /// What the live groups sidecar has reported so far.
@@ -489,8 +542,7 @@ impl Listener {
         }
 
         if let Some(child) = self.child.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_tree(child);
         }
         self.child = None;
         self.status = ListenerStatus::Stopped;
@@ -524,6 +576,27 @@ impl Listener {
         let skip = self.output.len().saturating_sub(count);
         self.output.iter().skip(skip).map(String::as_str).collect()
     }
+}
+
+/// Kill a child and anything it started, then reap it.
+///
+/// `Child::kill` kills the one process. When the listener runs under `uv run`,
+/// Python is a child of uv rather than of the relay, so killing uv leaves
+/// Python alive, still holding the port, and the next flight cannot bind it.
+/// Measured on Windows that is exactly what happened, which is why
+/// `venv_python` is preferred; this covers the fallback.
+fn kill_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Forward one of the child's streams into the channel, a line at a time.
@@ -597,11 +670,71 @@ mod tests {
     #[test]
     fn the_capture_command_runs_the_logger_unbuffered() {
         let command = capture_command(&inference_dir(), "P004", "P004-T1", 5001).unwrap();
-        assert_eq!(command.program, "uv");
         assert!(command.args.contains(&"-u".to_string()), "python must not buffer its output");
         assert!(command
             .args
             .contains(&"pilot_inference.capture.data_logger".to_string()));
+    }
+
+    /// The environment's own interpreter when it exists, because then the
+    /// listener is a direct child the relay can stop. Under `uv run` the real
+    /// Python is uv's child and survives being killed, holding the port.
+    #[test]
+    fn the_environment_s_own_interpreter_is_preferred() {
+        let dir = inference_dir();
+        let command = capture_command(&dir, "P004", "P004-T1", 5001).unwrap();
+        match venv_python(&dir) {
+            Some(python) => {
+                assert_eq!(command.program, python.to_string_lossy());
+                assert_eq!(
+                    command.args.first().map(String::as_str),
+                    Some("-u"),
+                    "no `run python` prefix is needed: {:?}",
+                    command.args
+                );
+            }
+            None => {
+                assert_eq!(command.program, "uv");
+                assert_eq!(
+                    &command.args[..2],
+                    &["run".to_string(), "python".to_string()],
+                    "{:?}",
+                    command.args
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_project_without_an_environment_falls_back_to_uv() {
+        // A folder with a pyproject and no .venv, which is a fresh clone.
+        let dir = std::env::temp_dir().join(format!("relay-listener-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("pyproject.toml"), "[project]\nname = \"x\"\n").unwrap();
+
+        assert!(venv_python(&dir).is_none());
+        let command = capture_command(&dir, "P004", "T1", 5001).unwrap();
+        assert_eq!(command.program, "uv");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_setup_command_builds_the_environment_in_the_project() {
+        let dir = inference_dir();
+        let command = setup_command(&dir).unwrap();
+        assert_eq!(command.program, "uv");
+        assert_eq!(command.args, vec!["sync".to_string()]);
+        assert_eq!(command.working_dir, dir);
+    }
+
+    #[test]
+    fn the_setup_command_is_refused_outside_the_project() {
+        let error = setup_command(std::env::temp_dir().as_path())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("pyproject.toml"), "{error}");
     }
 
     #[test]

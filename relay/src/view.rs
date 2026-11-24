@@ -19,6 +19,11 @@ type UIElement<'a> = Element<'a, Message>;
 const EVENT_LOG_VISIBLE: usize = 5;
 
 /// Compose the UI by collecting small, single-responsibility elements.
+///
+/// The order is the order a session happens in: whether the chain is whole,
+/// where iMotions is, then the flight. The individual connect and disconnect
+/// controls are recovery, so they sit behind Advanced rather than in front of
+/// someone who only wants to record a flight (#285).
 pub(crate) fn view(state: &State) -> UIElement {
     let mut elements: Vec<UIElement> = Vec::new();
 
@@ -30,34 +35,20 @@ pub(crate) fn view(state: &State) -> UIElement {
     // The whole path, so one glance says where it is broken
     elements.push(chain_strip(state));
 
-    // Informational text
-    elements.push(elapsed_time_element(state));
-    elements.push(baton_data_element(state));
-    elements.push(baton_connect_status_element(state));
-
-    // Action buttons
-    elements.push(send_packet_row(state));
-
-    // TCP controls and status
-    elements.push(tcp_connect_status_element(state));
-    elements.push(check_tcp_status_button());
-
-    // IPC controls
-    elements.push(ipc_connect_button());
-    elements.push(ipc_disconnect_button());
-
-    // TCP connect/disconnect row
-    elements.push(tcp_connect_button(state));
-    elements.push(tcp_disconnect_button());
-
-    // Second destination, read by the Python side
-    elements.push(mirror_row(state));
+    // Where the telemetry is going
+    elements.push(imotions_panel(state));
 
     // The listener the relay runs, so a Flight needs no terminal
     elements.push(listener_panel(state));
 
-    // Metrics (if enabled)
-    elements.push(metrics_block(state));
+    // A recorded flight in place of the simulator
+    elements.push(rehearse_panel(state));
+
+    // The plumbing, for when something has to be put right by hand
+    elements.push(advanced_toggle(state));
+    if state.show_advanced {
+        elements.push(advanced_panel(state));
+    }
 
     // Recent event log
     elements.push(event_log_element(state));
@@ -202,30 +193,8 @@ fn tcp_addr_dropdown(state: &State) -> UIElement {
     .into()
 }
 
-fn tcp_validation_text(state: &State) -> UIElement {
-    if let Some(err) = &state.tcp_addr_validation_error {
-        text(err).into()
-    } else {
-        text(" ").into()
-    }
-}
-
-fn tcp_connect_button(state: &State) -> UIElement {
-    column![
-        row![
-            button("Connect TCP").on_press(Message::ConnectTcp),
-            tcp_addr_input(state),
-            tcp_addr_dropdown(state),
-        ]
-        .spacing(5),
-        tcp_validation_text(state),
-    ]
-    .spacing(5)
-    .into()
-}
-
 fn tcp_disconnect_button() -> UIElement<'static> {
-    button("Disconnect TCP")
+    button("Disconnect iMotions")
         .on_press(Message::DisconnectTcp)
         .into()
 }
@@ -281,41 +250,226 @@ const LISTENER_OUTPUT_VISIBLE: usize = 4;
 /// in terms of the thing to go and do, because the people running this are
 /// researchers rather than developers.
 fn chain_strip(state: &State) -> UIElement {
-    let plugin = if state.active_baton_connection {
-        "X-Plane plugin: connected".to_string()
-    } else {
-        "X-Plane plugin: waiting. Start X-Plane, or if it is already running,          re-enable the plugin in Plugin Admin"
-            .to_string()
-    };
+    let mut lines: Vec<UIElement> = vec![text("Flight path").size(14).into()];
 
-    let imotions = if state.tcp_connected {
-        format!("iMotions: connected to {}", state.tcp_addr_field)
-    } else {
-        "iMotions: not connected. Type the address and press Connect TCP".to_string()
-    };
-
-    let listener = if state.listener.status.is_running() {
-        match (state.listener.live.ready(), state.listener_mode) {
-            (true, _) => format!(
-                "Listener: {} recording {}",
-                state.listener_mode, state.listener.live.flight_id
-            ),
-            (false, mode) => format!("Listener: {mode} starting"),
+    let source = match (&state.replay, state.active_baton_connection) {
+        (Some(replay), _) if !replay.finished() => {
+            format!("Flight data: {}", replay.describe())
         }
-    } else if state.mirror_connected {
-        "Listener: a mirror is connected, but the relay did not start it".to_string()
-    } else {
-        "Listener: not running".to_string()
+        (_, true) => "Flight data: the X-Plane plugin is connected".to_string(),
+        _ => "Flight data: waiting for X-Plane. Start the simulator, or if it is already \
+              running, re-enable the plugin in Plugin Admin. There is also a recorded flight \
+              to replay below."
+            .to_string(),
     };
+    lines.push(text(source).size(12).into());
 
+    let imotions = match (&state.test_receiver, state.tcp_connected) {
+        (Some(receiver), true) if state.tcp_addr_field == receiver.addr() => {
+            format!("iMotions: standing in with the test receiver on {}", receiver.addr())
+        }
+        (_, true) => format!("iMotions: connected to {}", state.tcp_addr_field),
+        _ => "iMotions: not connected. Enter its address and press Connect iMotions, or use \
+              the test receiver."
+            .to_string(),
+    };
+    lines.push(text(imotions).size(12).into());
+
+    let mode = state.listener_mode;
+    let flight = if state.listener.live.flight_id.is_empty() {
+        state.flight_id_field.trim().to_string()
+    } else {
+        state.listener.live.flight_id.clone()
+    };
+    let listener = if !state.listener.status.is_running() {
+        "Listener: not running. Fill in the pilot and flight, then press Start flight."
+            .to_string()
+    } else if state.mirror_connected {
+        format!("Listener: {mode} recording {flight}")
+    } else if state.mirror_arming() {
+        format!("Listener: {mode} starting, connecting it to the stream")
+    } else {
+        format!(
+            "Listener: {mode} is running but is not being sent the stream. Stop the flight and \
+             start it again."
+        )
+    };
+    lines.push(text(listener).size(12).into());
+
+    // Only when it is a problem. Said here because the listener cannot start
+    // without it and the fix is an install, not a button.
+    if state.uv_available == Some(false) {
+        lines.push(
+            text(
+                "uv is not installed, so the relay cannot start a listener. Install uv, or run \
+                 the listener from a terminal as before.",
+            )
+            .size(12)
+            .into(),
+        );
+    }
+
+    container(column(lines).spacing(2))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
+}
+
+/// Where the relay sends, and a way to try it with nothing to send to.
+fn imotions_panel(state: &State) -> UIElement {
+    let mut rows: Vec<UIElement> = vec![
+        text("iMotions").size(14).into(),
+        row![
+            button("Connect iMotions").on_press(Message::ConnectTcp),
+            tcp_addr_input(state),
+            tcp_addr_dropdown(state),
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into(),
+    ];
+
+    if let Some(err) = &state.tcp_addr_validation_error {
+        rows.push(text(err.clone()).size(12).into());
+    }
+
+    rows.push(match &state.test_receiver {
+        Some(receiver) => row![
+            button("Stop test receiver").on_press(Message::StopTestReceiver),
+            text(receiver.describe()).size(12),
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into(),
+        None => row![
+            button("Use a test receiver").on_press(Message::UseTestReceiver),
+            text("stands in for iMotions on this machine, for checking the chain").size(12),
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into(),
+    });
+
+    container(column(rows).spacing(5))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
+}
+
+/// Replay a recorded flight in place of the simulator.
+///
+/// Here rather than in a script because rehearsing a session, or checking the
+/// chain after moving a machine, is a thing the people running this do and a
+/// terminal is what stopped them doing it.
+fn rehearse_panel(state: &State) -> UIElement {
+    let mut rows: Vec<UIElement> = vec![text("Without the simulator").size(14).into()];
+
+    if state.recordings.is_empty() {
+        rows.push(
+            text("No recorded flights found in inference/data, so there is nothing to replay.")
+                .size(12)
+                .into(),
+        );
+        return container(column(rows).spacing(5))
+            .padding(10)
+            .width(Length::Fill)
+            .style(container::rounded_box)
+            .into();
+    }
+
+    let labels: Vec<String> = state.recordings.iter().map(|r| r.label()).collect();
+    rows.push(
+        row![
+            text("Recording").size(12),
+            pick_list(
+                labels,
+                state.selected_recording.clone(),
+                Message::RecordingSelected,
+            ),
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into(),
+    );
+
+    // Only once a recording has been picked, because that is when its flights
+    // are read.
+    let flights: Vec<String> = state
+        .selected_recording
+        .as_ref()
+        .and_then(|label| state.recordings.iter().find(|r| &r.label() == label))
+        .map(|recording| recording.flights.clone())
+        .unwrap_or_default();
+
+    let replaying = state.replay.as_ref().is_some_and(|r| !r.finished());
+    let mut controls: Vec<UIElement> = Vec::new();
+    if !flights.is_empty() {
+        controls.push(text("Flight").size(12).into());
+        controls.push(
+            pick_list(
+                flights,
+                state.selected_replay_flight.clone(),
+                Message::ReplayFlightSelected,
+            )
+            .into(),
+        );
+    }
+    controls.push(if replaying {
+        button("Stop replay").on_press(Message::StopReplay).into()
+    } else {
+        button("Replay this flight")
+            .on_press(Message::StartReplay)
+            .into()
+    });
+    rows.push(
+        row(controls)
+            .spacing(5)
+            .align_y(iced::Alignment::Center)
+            .into(),
+    );
+
+    if let Some(replay) = &state.replay {
+        rows.push(text(replay.describe()).size(12).into());
+    }
+
+    container(column(rows).spacing(5))
+        .padding(10)
+        .width(Length::Fill)
+        .style(container::rounded_box)
+        .into()
+}
+
+fn advanced_toggle(state: &State) -> UIElement {
+    let label = if state.show_advanced {
+        "Hide the individual controls"
+    } else {
+        "Show the individual controls"
+    };
+    button(label).on_press(Message::ToggleAdvanced).into()
+}
+
+/// Every connection on its own, for putting something right by hand.
+///
+/// Hidden by default. These are the controls the window was made of before it
+/// could run a Flight by itself, and they are still the way out when something
+/// has to be reconnected without restarting anything.
+fn advanced_panel(state: &State) -> UIElement {
     container(
         column![
-            text("Flight path").size(14),
-            text(plugin).size(12),
-            text(imotions).size(12),
-            text(listener).size(12),
+            text("Individual controls").size(14),
+            elapsed_time_element(state),
+            baton_data_element(state),
+            baton_connect_status_element(state),
+            tcp_connect_status_element(state),
+            send_packet_row(state),
+            row![check_tcp_status_button(), tcp_disconnect_button()].spacing(5),
+            row![ipc_connect_button(), ipc_disconnect_button()].spacing(5),
+            mirror_row(state),
+            metrics_block(state),
         ]
-        .spacing(2),
+        .spacing(5),
     )
     .padding(10)
     .width(Length::Fill)
@@ -377,8 +531,9 @@ fn listener_panel(state: &State) -> UIElement {
     let running = state.listener.status.is_running();
 
     let mut rows: Vec<UIElement> = vec![
+        text("Flight").size(14).into(),
         row![
-            text(state.listener.status.describe()),
+            text(state.listener.status.describe()).size(12),
             pick_list(
                 ListenerMode::ALL,
                 Some(state.listener_mode),
@@ -414,6 +569,13 @@ fn listener_panel(state: &State) -> UIElement {
             .into(),
         );
         rows.extend(live_groups_block(state));
+    } else if let Some(status) = &state.listener.live.status {
+        // The capture logger's own count. A connection being up says nothing
+        // about rows reaching the file, and the count is what gets asked.
+        rows.push(text(status.headline()).size(16).into());
+        if !state.listener.live.csv.is_empty() {
+            rows.push(text(format!("into {}", state.listener.live.csv)).size(12).into());
+        }
     }
 
     // Say this before a start fails rather than after, since the fix is to
@@ -424,6 +586,8 @@ fn listener_panel(state: &State) -> UIElement {
                 .size(12)
                 .into(),
         );
+    } else if let Some(setup) = python_setup_row(state) {
+        rows.push(setup);
     }
 
     let output = state.listener.recent_output(LISTENER_OUTPUT_VISIBLE);
@@ -442,13 +606,63 @@ fn listener_panel(state: &State) -> UIElement {
         .into()
 }
 
+/// The one-off setup, shown only while it is still needed.
+///
+/// A fresh clone has no Python environment, and `uv sync` in a terminal was
+/// the last thing standing between the window and a working session. Once the
+/// environment is there this row disappears, because it is not a thing to do
+/// twice.
+fn python_setup_row(state: &State) -> Option<UIElement> {
+    let inference = state.inference_dir.as_ref()?;
+    if crate::listener::venv_python(inference).is_some() {
+        return None;
+    }
+
+    if state.setup.status.is_running() {
+        let latest = state
+            .setup
+            .recent_output(1)
+            .first()
+            .map(|line| line.to_string())
+            .unwrap_or_else(|| "working".to_string());
+        return Some(
+            column![
+                text("Setting up the Python side. This happens once and takes a few minutes.")
+                    .size(12),
+                text(latest).size(12),
+            ]
+            .spacing(2)
+            .into(),
+        );
+    }
+
+    Some(
+        column![
+            text("The Python side has not been set up yet, so a flight cannot be recorded.")
+                .size(12),
+            row![
+                button("Set up the Python side").on_press(Message::SetUpPython),
+                text("downloads what the listener needs, once").size(12),
+            ]
+            .spacing(5)
+            .align_y(iced::Alignment::Center),
+        ]
+        .spacing(2)
+        .into(),
+    )
+}
+
 /// Start and stop are one button, because they are one decision and the panel
 /// should never offer both at once.
+///
+/// It says flight rather than listener because starting one is two steps,
+/// start the listener and connect it to the stream, and which of them is
+/// which is not something the operator should have to hold in mind.
 fn listener_button(running: bool) -> UIElement<'static> {
     if running {
-        button("Stop listener").on_press(Message::StopListener).into()
+        button("Stop flight").on_press(Message::StopFlight).into()
     } else {
-        button("Start listener").on_press(Message::StartListener).into()
+        button("Start flight").on_press(Message::StartFlight).into()
     }
 }
 

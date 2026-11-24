@@ -119,3 +119,127 @@ def test_logged_rows_carry_the_ids(tmp_path):
         assert row["flight_id"] == "flight-3"
         assert row["altitude"] == "1200.000000"
         assert row["g_force"] == "1.030000"
+
+
+# --- Reporting a run to whatever is running it (#285) ------------------------
+
+
+def test_handle_connection_counts_the_samples_it_wrote(tmp_path):
+    """The relay's window shows this number, so it has to be the real one."""
+    csv_path = tmp_path / "telemetry.csv"
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    written = []
+
+    def serve_once():
+        conn, _ = listener.accept()
+        data_logger.ensure_csv(csv_path)
+        written.append(data_logger.handle_connection(conn, csv_path, "p", "f"))
+
+    server = threading.Thread(target=serve_once, daemon=True)
+    server.start()
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+        for _ in range(3):
+            for event, value in EVENT_ORDER:
+                client.sendall(packet(event, value).encode("ascii"))
+    server.join(timeout=5)
+    listener.close()
+
+    assert written == [3]
+
+
+def test_the_console_reporter_prints_what_it_always_printed(capsys):
+    """
+    The console output is a contract with the people who read it. `--json`
+    exists so the relay does not have to scrape it, not so it can change.
+    """
+    data_logger.ConsoleReporter().started("127.0.0.1", 5001, "data/out.csv", "P004")
+    out = capsys.readouterr().out
+    assert out == (
+        "Listening for relay telemetry on 127.0.0.1:5001\n"
+        "Writing CSV rows to data/out.csv\n"
+        "Pilot id: P004\n"
+    )
+
+
+def test_the_console_reporter_still_nags_about_an_unnamed_pilot(capsys):
+    data_logger.ConsoleReporter().started(
+        "127.0.0.1", 5001, "data/out.csv", data_logger.DEFAULT_PILOT_ID
+    )
+    assert "Pass --pilot-id" in capsys.readouterr().out
+
+
+def test_the_console_reporter_says_nothing_on_a_status(capsys):
+    """It never printed a running count, and `--json` must not change that."""
+    data_logger.ConsoleReporter().status("recording", 412, "f")
+    assert capsys.readouterr().out == ""
+
+
+def _events(capsys):
+    import json
+
+    return [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+def test_the_json_reporter_says_it_is_waiting_before_the_relay_connects(capsys):
+    data_logger.JsonReporter().started("127.0.0.1", 5001, "data/out.csv", "P004")
+    started, status = _events(capsys)
+    assert started["event"] == "started"
+    assert started["port"] == 5001
+    assert started["csv"] == "data/out.csv"
+    assert started["pilot_id"] == "P004"
+    assert started["unnamed_pilot"] is False
+    assert status == {
+        "event": "status",
+        "v": started["v"],
+        "state": "waiting_for_relay",
+        "rows": 0,
+    }
+
+
+def test_the_json_reporter_reports_the_count_while_recording(capsys):
+    reporter = data_logger.JsonReporter()
+    reporter.connected(("127.0.0.1", 50505), "P004-T1")
+    reporter.status("recording", 412, "P004-T1")
+    reporter.disconnected(412)
+
+    connected, recording, gone = _events(capsys)
+    assert connected["state"] == "recording"
+    assert connected["flight_id"] == "P004-T1"
+    assert recording["rows"] == 412
+    assert gone["state"] == "relay_gone"
+    assert gone["rows"] == 412
+
+
+def test_an_unnamed_pilot_is_flagged_as_data_not_as_a_sentence(capsys):
+    data_logger.JsonReporter().started(
+        "127.0.0.1", 5001, "data/out.csv", data_logger.DEFAULT_PILOT_ID
+    )
+    started = _events(capsys)[0]
+    assert started["unnamed_pilot"] is True
+
+
+def test_json_mode_writes_nothing_but_events_to_stdout(capsys):
+    """
+    The relay routes anything it cannot parse to its raw output pane, so a
+    stray print is not fatal, but it is still noise where data is expected.
+    """
+    import json
+
+    reporter = data_logger.JsonReporter()
+    reporter.started("127.0.0.1", 5001, "data/out.csv", "P004")
+    reporter.connected(("127.0.0.1", 1), "F1")
+    reporter.status("recording", 1, "F1")
+    reporter.disconnected(1)
+
+    for line in capsys.readouterr().out.splitlines():
+        if line.strip():
+            json.loads(line)
+
+
+def test_the_logger_takes_a_json_flag():
+    args = data_logger.build_parser().parse_args(["--json", "--pilot-id", "P004"])
+    assert args.json is True
+    assert data_logger.build_parser().parse_args([]).json is False

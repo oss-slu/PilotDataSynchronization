@@ -80,6 +80,36 @@ const MIRROR_QUEUE_CAPACITY: usize = 256;
 /// either way.
 const MIRROR_SEND_BUFFER: usize = 32 * 1024;
 
+/// How often an armed mirror tries again.
+///
+/// The mirror is a TCP client and the listener binds the port, so the mirror
+/// can only connect once the listener is up. Longer than
+/// `MIRROR_CONNECT_TIMEOUT`, so each attempt gets its full chance before the
+/// next one replaces it.
+const MIRROR_ARM_RETRY: StdDuration = StdDuration::from_millis(600);
+
+/// When an armed mirror says it is taking a while.
+///
+/// It keeps trying afterwards. There is no deadline, because the thing it is
+/// waiting for is the listener, and whether that has given up is already known
+/// from whether it is still running. A first `uv run` may spend minutes
+/// building the Python environment, and a window that stopped trying at some
+/// arbitrary point would leave a listener running with nothing being sent to
+/// it, which is the worst of the three outcomes.
+const MIRROR_ARM_SLOW: StdDuration = StdDuration::from_secs(20);
+
+/// A mirror connection the window is still trying to make on its own.
+///
+/// Connecting the mirror by hand meant typing an address and knowing it had to
+/// happen after the listener started and before the flight did. None of that
+/// is the operator's problem, so the window carries it (#285).
+pub(crate) struct MirrorArm {
+    pub(crate) address: String,
+    armed_at: Instant,
+    last_try: Option<Instant>,
+    said_it_was_slow: bool,
+}
+
 // --- State definition -------------------------------------------------------
 #[allow(unused)]
 pub(crate) struct State {
@@ -127,6 +157,8 @@ pub(crate) struct State {
     // Mirror destination: the Python side reads the same packets iMotions gets
     pub mirror_addr_field: String,
     pub mirror_connected: bool,
+    /// Set while the window is connecting the mirror by itself.
+    pub mirror_arm: Option<MirrorArm>,
 
     // The pilot_inference listener the relay runs for the operator (#285), so
     // a Flight needs no terminal. The relay outlives it (docs/adr/0005).
@@ -136,6 +168,32 @@ pub(crate) struct State {
     pub flight_id_field: String,
     pub brief_field: String,
     pub inference_dir: Option<std::path::PathBuf>,
+
+    /// `uv sync`, run from the window, for a tree whose Python environment has
+    /// not been built yet. The same machinery as a listener, so its output
+    /// shows in the same place.
+    pub setup: crate::listener::Listener,
+
+    /// Whether `uv` is on PATH. `None` until something has looked.
+    ///
+    /// Checked once at startup rather than discovered when a listener fails to
+    /// spawn, because the fix is an install and that is not a thing to find out
+    /// with a pilot already in the seat.
+    pub uv_available: Option<bool>,
+
+    /// A recorded flight being sent in place of X-Plane (#285).
+    pub replay: Option<crate::replay::Replay>,
+    pub recordings: Vec<crate::replay::Recording>,
+    pub selected_recording: Option<String>,
+    pub selected_replay_flight: Option<String>,
+
+    /// A local stand-in for iMotions, so the chain can be tried at a desk.
+    pub test_receiver: Option<crate::receiver::TestReceiver>,
+
+    /// Whether the window shows the individual connect and disconnect
+    /// controls. Off by default: they are recovery, and the people running a
+    /// session should see the flight, not the plumbing.
+    pub show_advanced: bool,
 }
 
 impl Default for State {
@@ -179,6 +237,7 @@ impl Default for State {
 
             mirror_addr_field: String::new(),
             mirror_connected: false,
+            mirror_arm: None,
 
             listener: crate::listener::Listener::default(),
             listener_mode: crate::listener::ListenerMode::Capture,
@@ -188,6 +247,19 @@ impl Default for State {
             // without hunting for a file first.
             brief_field: "briefs/example_level_holds.csv".to_string(),
             inference_dir: crate::listener::find_inference_dir(),
+
+            setup: crate::listener::Listener::default(),
+
+            // Left unchecked here. `Default` is what the tests build, and they
+            // should not each spawn a process to ask about PATH.
+            uv_available: None,
+
+            replay: None,
+            recordings: Vec::new(),
+            selected_recording: None,
+            selected_replay_flight: None,
+            test_receiver: None,
+            show_advanced: false,
         }
     }
 }
@@ -981,11 +1053,95 @@ impl State {
     }
 
     pub fn mirror_disconnect(&mut self) -> Result<()> {
+        self.mirror_arm = None;
+        // Cleared here rather than when the thread confirms. Otherwise the
+        // window goes on saying the listener is recording for a tick after the
+        // flight was stopped, which is the one moment someone is looking at it
+        // to check that it has.
+        self.mirror_connected = false;
         let Some(bichannel) = self.tcp_bichannel.as_mut() else {
-            self.mirror_connected = false;
             return Ok(());
         };
         bichannel.send_to_child(ToTcpThreadMessage::SetMirror(None))
+    }
+
+    /// Start connecting the mirror, and keep trying until it lands.
+    ///
+    /// The first attempt usually fails, and that is expected rather than an
+    /// error: the listener is still starting Python and has not bound the port.
+    /// Treating the first refusal as a failure is exactly what made this a
+    /// manual step with an order to remember.
+    pub fn arm_mirror(&mut self, address: String, now: Instant) {
+        self.mirror_addr_field = address.clone();
+        self.mirror_arm = Some(MirrorArm {
+            address,
+            armed_at: now,
+            last_try: None,
+            said_it_was_slow: false,
+        });
+    }
+
+    /// Carry on connecting an armed mirror. Returns a line for the event log
+    /// when there is something worth saying, which is not on every attempt.
+    pub fn poll_mirror_arm(&mut self, now: Instant) -> Option<String> {
+        let mut arm = self.mirror_arm.take()?;
+
+        if self.mirror_connected {
+            return Some(format!("The listener is receiving the stream on {}", arm.address));
+        }
+
+        // Said once, and then it carries on trying. The listener is still
+        // starting, and saying nothing for a minute looks like a window that
+        // has stopped working.
+        let mut note = None;
+        if !arm.said_it_was_slow && now.saturating_duration_since(arm.armed_at) >= MIRROR_ARM_SLOW {
+            arm.said_it_was_slow = true;
+            note = Some(format!(
+                "Still connecting the listener to {}. A first run builds the Python \
+                 environment, which can take a few minutes.",
+                arm.address
+            ));
+        }
+
+        let due = arm
+            .last_try
+            .map(|last| now.saturating_duration_since(last) >= MIRROR_ARM_RETRY)
+            .unwrap_or(true);
+        if !due {
+            self.mirror_arm = Some(arm);
+            return note;
+        }
+
+        arm.last_try = Some(now);
+        let address = arm.address.clone();
+        match self.mirror_connect(address) {
+            Ok(()) => {
+                // Sending the target succeeded, which is not the same as the
+                // connection succeeding. Stay armed until the thread reports
+                // MirrorConnected.
+                self.mirror_arm = Some(arm);
+                note
+            }
+            Err(e) => {
+                // A missing TCP thread cannot fix itself by waiting, so this
+                // one is reported rather than retried.
+                Some(format!("Could not point the listener at the stream: {e}"))
+            }
+        }
+    }
+
+    /// Stop trying, because what it was waiting for is gone.
+    pub fn disarm_mirror(&mut self) -> Option<String> {
+        let arm = self.mirror_arm.take()?;
+        Some(format!(
+            "Stopped connecting the listener to {}: the listener is no longer running.",
+            arm.address
+        ))
+    }
+
+    /// Whether the window is still trying to connect the mirror.
+    pub fn mirror_arming(&self) -> bool {
+        self.mirror_arm.is_some()
     }
 
     pub fn tcp_disconnect(&mut self) -> Result<()> {
@@ -1208,5 +1364,113 @@ mod tests {
         state.gforce_toggle = false;
 
         assert_eq!(build_test_packet(&state), None);
+    }
+
+    // --- The mirror the window connects by itself (#285) ------------------
+
+    #[test]
+    fn arming_the_mirror_fills_the_address_in() {
+        let mut state = State::default();
+        state.arm_mirror("127.0.0.1:5001".into(), Instant::now());
+        assert!(state.mirror_arming());
+        assert_eq!(
+            state.mirror_addr_field, "127.0.0.1:5001",
+            "the address should show in the field it would have been typed into"
+        );
+    }
+
+    /// Nothing to connect through cannot come right by waiting, so it is
+    /// reported once instead of retried for half a minute.
+    #[test]
+    fn arming_without_a_tcp_thread_reports_rather_than_retrying() {
+        let mut state = State::default();
+        let now = Instant::now();
+        state.arm_mirror("127.0.0.1:5001".into(), now);
+
+        let line = state.poll_mirror_arm(now).expect("no report");
+
+        assert!(line.contains("Connect TCP first"), "{line}");
+        assert!(!state.mirror_arming(), "it should have given up");
+    }
+
+    #[test]
+    fn an_armed_mirror_waits_between_attempts() {
+        let mut state = State::default();
+        let now = Instant::now();
+        // A thread it can send to, so the attempt succeeds and it stays armed.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+
+        state.arm_mirror("127.0.0.1:5001".into(), now);
+        assert!(state.poll_mirror_arm(now).is_none(), "the first attempt reports nothing");
+        assert!(state.mirror_arming());
+
+        // Too soon: no second attempt, and still armed.
+        assert!(state
+            .poll_mirror_arm(now + StdDuration::from_millis(10))
+            .is_none());
+        assert!(state.mirror_arming());
+
+        let _ = state.tcp_disconnect();
+    }
+
+    /// It says so and keeps trying, because the thing it is waiting for is a
+    /// listener that may still be building its Python environment.
+    #[test]
+    fn an_armed_mirror_says_when_it_is_taking_a_while_and_carries_on() {
+        let mut state = State::default();
+        let now = Instant::now();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed").to_string();
+        state.tcp_connect(addr).expect("tcp_connect failed");
+        state.arm_mirror("127.0.0.1:5001".into(), now);
+
+        let late = now + MIRROR_ARM_SLOW + StdDuration::from_secs(1);
+        let line = state.poll_mirror_arm(late).expect("no report once it was slow");
+
+        assert!(line.contains("Still connecting"), "{line}");
+        assert!(state.mirror_arming(), "it must not give up on the listener");
+
+        // And it says it only once.
+        let later = late + MIRROR_ARM_RETRY + StdDuration::from_secs(1);
+        assert!(state.poll_mirror_arm(later).is_none());
+        assert!(state.mirror_arming());
+
+        let _ = state.tcp_disconnect();
+    }
+
+    #[test]
+    fn disarming_says_why_it_stopped() {
+        let mut state = State::default();
+        state.arm_mirror("127.0.0.1:5001".into(), Instant::now());
+        let line = state.disarm_mirror().expect("no reason given");
+        assert!(line.contains("no longer running"), "{line}");
+        assert!(!state.mirror_arming());
+        assert!(state.disarm_mirror().is_none(), "nothing to say twice");
+    }
+
+    #[test]
+    fn an_armed_mirror_stops_once_it_is_connected() {
+        let mut state = State::default();
+        let now = Instant::now();
+        state.arm_mirror("127.0.0.1:5001".into(), now);
+        state.mirror_connected = true;
+
+        let line = state.poll_mirror_arm(now).expect("no report");
+
+        assert!(line.contains("receiving the stream"), "{line}");
+        assert!(!state.mirror_arming());
+    }
+
+    #[test]
+    fn disconnecting_the_mirror_stops_the_window_reconnecting_it() {
+        let mut state = State::default();
+        state.arm_mirror("127.0.0.1:5001".into(), Instant::now());
+        state.mirror_disconnect().expect("mirror_disconnect failed");
+        assert!(
+            !state.mirror_arming(),
+            "pressing disconnect must not be undone a moment later"
+        );
     }
 }

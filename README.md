@@ -118,7 +118,7 @@ The relay has no log panel in its window, and every diagnostic message goes to t
 
 Then, in order:
 
-1. Start iMotions, or the mock server, first, so that something is listening.
+1. Start iMotions, or press `Use a test receiver` in the window, so that something is listening.
 2. Launch the relay. The IPC listener that the plugin connects to starts automatically. You do not need to press `Connect IPC`. That button exists only to reconnect after you have pressed `Disconnect IPC`.
 3. Type the iMotions address into the text box.
    - There is no default value. The greyed-out `<iMotions IP>:5050` is placeholder text, not a setting, and not an address that works.
@@ -126,24 +126,32 @@ Then, in order:
    - 5050 is the port iMotions was listening on in the lab. It is a setting, not a fixed default, so check it on the machine you are using (see below).
    - A literal IP address and port are required. A host name such as `localhost:5050` is rejected.
    - Addresses that connect successfully are remembered in the `Saved IPs` dropdown (stored on Windows at `%APPDATA%\PilotDataSynchronization\relay_ips.json`).
-4. Press `Connect TCP`.
-5. Press `Check TCP Connection Status` to refresh the status line. It does not update by itself. This button is the only thing that changes it.
+4. Press `Connect iMotions`.
+5. Fill in `Pilot` and `Flight`, choose `Capture` or `Live groups`, and press `Start flight`.
 6. Start X-Plane. Flight data now flows automatically.
+
+The `Flight path` panel at the top of the window is the one thing to read. It carries a line per hop, from the plugin through iMotions to the listener, and each line says what to go and do rather than true or false. It updates on its own.
+
+`Start flight` is the whole of step 5. It starts the Python listener, waits for it to come up, and connects it to the stream, so nothing in a session needs a terminal. `Stop flight` reverses both. The first `Start flight` in a fresh clone needs the Python environment, and the window offers a `Set up the Python side` button when it is missing; that is `uv sync`, it runs once and takes a few minutes.
+
+`Show the individual controls` reveals the per-connection buttons: `Connect IPC`, `Disconnect iMotions`, `Connect mirror`, `Send Packet` and the rest. They are for putting something right by hand and are not needed to run a session.
 
 > The `Send Packet` button sends one test packet of zeros, for example `E;1;PilotDataSync;;;;;AltitudeSync;0;0`, and shows the time it was sent next to the button. The sample is the first dataref toggle that is enabled, so the packet always matches a `<Sample>` in the generated `iMotions.xml`. It is a connection check and needs TCP connected, not X-Plane. Avoid pressing it during a recording, since iMotions receives the zeros as a real sample. The live data stream is automatic and does not need this button.
 
 Two more behaviors that catch people out:
 
 - The eight dataref toggles do not affect what is sent over TCP. All eight values are always transmitted. The toggles control only which `<Sample>` entries appear in the generated `iMotions.xml`.
-- Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect TCP` again.
+- Losing X-Plane also tears down the TCP connection. After restarting the simulator, press `Connect iMotions` again.
 
 ### Sending to iMotions and Python at the same time
 
-`Connect TCP` has one destination. To feed iMotions and the Python side from the same flight, use the mirror:
+`Connect iMotions` has one destination. The Python side is fed by a mirror of that stream, and `Start flight` sets it up for you: it starts the listener on port 5001 and then connects the mirror to it, retrying until the listener is up, because the mirror is a client and the listener is what binds the port.
 
-1. Connect TCP to iMotions as above.
+To do it by hand, under `Show the individual controls`:
+
+1. Connect to iMotions as above.
 2. Start the logger, which listens on port 5001 by default: `uv run python -m pilot_inference.capture.data_logger` from `inference/`.
-3. Type its address, for example `127.0.0.1:5001`, into the second box and press `Connect mirror`.
+3. Type its address, for example `127.0.0.1:5001`, into the mirror box and press `Connect mirror`.
 
 Both then receive the same packets, byte for byte. The mirror's socket is written from its own thread, so the iMotions stream never waits on it: if the Python process is missing, slow or killed, copies are dropped or the mirror is closed, a line appears in the event log, and iMotions keeps recording at full rate. Reconnect it with `Connect mirror` once Python is listening again.
 
@@ -151,7 +159,7 @@ What the mirror does not promise is every packet. A reader that falls behind los
 
 Reconnecting opens a new connection, and the logger starts a new `flight_id` for each one unless you passed `--flight-id`. Pass it for a real session, or one flight will be split across two ids in the CSV.
 
-With no iMotions to record to, skip the mirror and point `Connect TCP` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
+With no iMotions to record to, skip the mirror and point `Connect iMotions` straight at the logger instead. The mirror lives inside the iMotions connection, so it needs that connection first.
 
 `Send Packet` goes to both destinations, which makes it a check of both links. It also means the logger writes a row of zeros, so avoid it mid-recording.
 
@@ -199,9 +207,18 @@ Three other ports appear on that tab and none of them are ours: `Remote Control`
 
 > Still needs verification. How the generated `iMotions.xml` is imported into iMotions is not documented anywhere in this repository, and nobody on the team has done the import themselves. It was already registered on the lab machine. See #195.
 
+### No iMotions, no X-Plane? Use the window
+
+Two buttons stand in for the hardware, so the whole chain can be checked at a desk:
+
+- `Use a test receiver` stands in for iMotions. It binds a local port, connects the relay to it, and counts the packets it receives. The port is new each time, so it never collides with anything and is not added to `Saved IPs`.
+- `Replay this flight`, under `Without the simulator`, stands in for X-Plane. Pick a recording from `inference/data` and a flight inside it, and the relay sends it at 20 Hz into the same place baton's samples enter, so iMotions, the mirror and the listener all see a live flight.
+
+Together they run a whole session with nothing attached: press `Use a test receiver`, fill in `Pilot` and `Flight`, press `Start flight`, then `Replay this flight`. The rows land in `inference/data/session_flight_data.csv` as they would from the simulator.
+
 ### No iMotions? Use the mock server
 
-`src/server/` is a minimal TCP listener you can point the relay at to watch the data stream:
+`src/server/` is the same stand-in as a separate binary, for watching the raw packets go by:
 
 ```bash
 cd src/server
@@ -209,7 +226,7 @@ cargo run              # listening on 127.0.0.1:9999
 cargo run -- 7878      # or pick another port
 ```
 
-Enter `127.0.0.1:9999` in the relay and press `Connect TCP`.
+Enter `127.0.0.1:9999` in the relay and press `Connect iMotions`.
 
 The mock server prints every packet it receives, numbered, until the relay disconnects. It does not reply to the relay.
 
@@ -237,7 +254,10 @@ In the relay's window:
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| `Connect TCP` fails and the status stays `false` | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect TCP` again. `Disconnect TCP` first is no longer needed |
+| `Connect iMotions` fails and the `Flight path` strip still says not connected | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect iMotions` again. Disconnecting first is no longer needed |
+| `Start flight` says to connect iMotions first | The listener is sent a copy of the iMotions stream, so there has to be a stream | Connect iMotions, or press `Use a test receiver` to stand in for it |
+| `Start flight` does nothing and the window says the Python side is not set up | A fresh clone has no `.venv` | Press `Set up the Python side`. It runs once and takes a few minutes |
+| The `Flight path` strip says the listener is running but is not being sent the stream | The mirror could not reach the listener | `Stop flight`, then `Start flight` again |
 | `:( No Baton Connection` | The plugin is not loaded or not enabled | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
 | `:) Baton Connected!` but no data reaches the relay | An old plugin build is installed. Before #274 the plugin sent only while its window was drawn | On Windows or Linux, search X-Plane's `Log.txt` for `[PDS PLUGIN] Send ->`. If there are none, close X-Plane, rebuild the plugin and copy the new `PilotDataSync.xpl` over the installed one |
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |

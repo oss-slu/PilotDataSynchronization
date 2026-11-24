@@ -52,12 +52,23 @@ pub(crate) struct Status {
     pub(crate) group: Option<i64>,
     #[serde(default)]
     pub(crate) features: BTreeMap<String, Feature>,
+    /// Samples written, from the capture logger. Live groups does not send it.
+    #[serde(default)]
+    pub(crate) rows: u64,
 }
 
 impl Status {
     /// The headline the Instructor reads mid-flight.
     pub(crate) fn headline(&self) -> String {
         match self.state.as_str() {
+            // The capture logger's three states. It reports a count rather
+            // than a group, and the count is the whole question: a connection
+            // that is up says nothing about rows reaching the file.
+            "waiting_for_relay" => "Waiting for the relay to send the stream".to_string(),
+            "recording" => format!("Recording, {} samples written", self.rows),
+            "relay_gone" => {
+                format!("The stream stopped, {} samples written", self.rows)
+            }
             "waiting" => "Waiting for the first instruction".to_string(),
             "nothing_scored" => {
                 format!("Instruction {}/{}, nothing scored yet", self.given, self.total)
@@ -448,5 +459,60 @@ mod tests {
         let status = status(r#"{"event":"status","v":1,"state":"scoring"}"#);
         assert_eq!(status.given, 0);
         assert!(status.features.is_empty());
+    }
+
+    // --- The capture logger's own states (#285) ---------------------------
+    //
+    // Lines taken from a real `data_logger --json` run.
+
+    #[test]
+    fn the_capture_logger_says_it_is_waiting_for_the_stream() {
+        let status = status(r#"{"event":"status","v":1,"state":"waiting_for_relay","rows":0}"#);
+        assert_eq!(status.headline(), "Waiting for the relay to send the stream");
+    }
+
+    /// The count is the point. A connection being up says nothing about rows
+    /// reaching the file, and that is the question anyone actually asks.
+    #[test]
+    fn the_capture_logger_reports_what_it_has_written() {
+        let status = status(
+            r#"{"event":"status","v":1,"state":"recording","rows":412,"flight_id":"P004-T1"}"#,
+        );
+        assert_eq!(status.headline(), "Recording, 412 samples written");
+        assert_eq!(status.rows, 412);
+    }
+
+    #[test]
+    fn the_capture_logger_reports_the_stream_stopping() {
+        let status = status(r#"{"event":"status","v":1,"state":"relay_gone","rows":412}"#);
+        assert_eq!(status.headline(), "The stream stopped, 412 samples written");
+    }
+
+    #[test]
+    fn a_capture_started_event_carries_the_file_it_writes() {
+        let line = r#"{"event":"started","v":1,"host":"127.0.0.1","port":5001,"csv":"data\\session_flight_data.csv","pilot_id":"P004","unnamed_pilot":false}"#;
+        match parse_event(line) {
+            Some(ListenerEvent::Started { csv, pilot_id, port, .. }) => {
+                assert!(csv.contains("session_flight_data.csv"), "{csv}");
+                assert_eq!(pilot_id, "P004");
+                assert_eq!(port, 5001);
+            }
+            other => panic!("not a started event: {other:?}"),
+        }
+    }
+
+    /// The capture logger sends no brief and no instructions, so those fields
+    /// are missing rather than zero-filled by hand on the Python side.
+    #[test]
+    fn a_capture_started_event_without_a_brief_still_parses() {
+        let line = r#"{"event":"started","v":1,"port":5001,"csv":"x.csv","pilot_id":"P004"}"#;
+        match parse_event(line) {
+            Some(ListenerEvent::Started { total, next, flight_id, .. }) => {
+                assert_eq!(total, 0);
+                assert_eq!(next, None);
+                assert_eq!(flight_id, "");
+            }
+            other => panic!("not a started event: {other:?}"),
+        }
     }
 }
