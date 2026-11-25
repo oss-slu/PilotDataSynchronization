@@ -238,7 +238,7 @@ In the relay's window:
 | Symptom | Cause | What to do |
 |---|---|---|
 | `Connect TCP` fails and the status stays `false` | Nothing is listening at that address, or the address is wrong | Read the reason in the error banner and the event log, fix the address, then press `Connect TCP` again. `Disconnect TCP` first is no longer needed |
-| `:( No Baton Connection` | The plugin is not loaded or not enabled | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there |
+| `:( No Baton Connection` | The plugin is not loaded or not enabled | Check `baton_debug.log` in your temp folder (`%TEMP%` on Windows). Every connection attempt is logged there, but not every sample: once connected it logs a "Sent N samples" line every 5 seconds, and with no connection it logs one "dropping samples" line. Each start of the plugin keeps the previous log as `baton_debug.old.log` |
 | `:) Baton Connected!` but no data reaches the relay | An old plugin build is installed. Before #274 the plugin sent only while its window was drawn | On Windows or Linux, search X-Plane's `Log.txt` for `[PDS PLUGIN] Send ->`. If there are none, close X-Plane, rebuild the plugin and copy the new `PilotDataSync.xpl` over the installed one |
 | The relay runs but never picks up the plugin | The socket is already in use. A second relay instance, or a stale `baton.sock`. The relay logs this once, then gives up silently. | `Disconnect IPC`, then `Connect IPC`. Or restart the relay |
 | The plugin never connects, even after the relay is started | baton gave up after roughly 90 seconds of retries and does not re-arm | Disable and re-enable the plugin in X-Plane |
