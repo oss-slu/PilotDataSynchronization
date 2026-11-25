@@ -57,6 +57,13 @@ const MIRROR_CONNECT_TIMEOUT: StdDuration = StdDuration::from_millis(500);
 /// How long an output given on the command line waits between attempts to
 /// connect, at start-up and after a drop (#276).
 pub(crate) const RECONNECT_INTERVAL: StdDuration = StdDuration::from_millis(500);
+
+/// How long a connection must stay up before its drop is retried at once.
+/// A listener that accepts and closes straight away (a wrong port, one that
+/// rejects the relay, one that crashes on the first packet) would otherwise
+/// be reconnected to in a tight loop, so a shorter connection counts as a
+/// failed attempt and waits `RECONNECT_INTERVAL` (#276).
+pub(crate) const STABLE_CONNECTION: StdDuration = StdDuration::from_secs(3);
 const MIRROR_WRITE_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 
 /// How many packets may wait for the mirror's writer thread.
@@ -98,6 +105,13 @@ pub(crate) struct Retry {
     /// Whether the event log already has the line for the current run of
     /// failed attempts, so a retry loop adds one line, not one per attempt.
     noted: bool,
+    /// When the current connection came up. `None` while it is down.
+    up_since: Option<Instant>,
+    /// A connection in the current run of failures dropped before
+    /// `STABLE_CONNECTION`. Further connections in the run are not logged
+    /// until one stays up, so a listener that keeps closing them adds two
+    /// lines to the event log, not two per attempt.
+    flapping: bool,
 }
 
 impl Retry {
@@ -117,8 +131,7 @@ impl Retry {
         self.next_attempt = Some(Instant::now() + RECONNECT_INTERVAL);
     }
 
-    /// A connection that was up has been lost, or an attempt has just started:
-    /// the next attempt may start at once.
+    /// An attempt has just started: nothing to wait for until it reports back.
     fn retry_now(&mut self) {
         self.next_attempt = None;
     }
@@ -129,8 +142,67 @@ impl Retry {
         !std::mem::replace(&mut self.noted, true)
     }
 
-    fn restart(&mut self) {
+    /// Takes the current connection, if there was one, and reports whether
+    /// it stayed up for `STABLE_CONNECTION`.
+    fn take_up_since(&mut self, now: Instant) -> Option<bool> {
+        self.up_since
+            .take()
+            .map(|since| now.duration_since(since) >= STABLE_CONNECTION)
+    }
+
+    /// A run of failures is over: the next one gets its own log line.
+    fn end_run(&mut self) {
         self.noted = false;
+        self.flapping = false;
+    }
+
+    /// The output connected. True if the caller should log it, which it
+    /// should not while a listener keeps closing connections straight away.
+    fn connected(&mut self, now: Instant) -> bool {
+        self.up_since = Some(now);
+        self.next_attempt = None;
+        !(self.target.is_some() && self.flapping)
+    }
+
+    /// The output dropped, or an attempt failed. A connection that stayed up
+    /// for `STABLE_CONNECTION` is retried at once and starts a new run of
+    /// failures; a shorter one waits `RECONNECT_INTERVAL` like a failed
+    /// attempt. True if the caller should log it.
+    fn lost(&mut self, now: Instant) -> bool {
+        match self.take_up_since(now) {
+            Some(true) => {
+                self.end_run();
+                self.next_attempt = None;
+            }
+            Some(false) => {
+                self.flapping = true;
+                self.retry_later();
+            }
+            None => self.retry_later(),
+        }
+        self.note_once()
+    }
+
+    /// Called on every update. True once, when a connection made after
+    /// short-lived ones has now stayed up for `STABLE_CONNECTION`, so the
+    /// caller logs the connection it was told not to log.
+    fn settled(&mut self, now: Instant) -> bool {
+        let steady = self
+            .up_since
+            .is_some_and(|since| now.duration_since(since) >= STABLE_CONNECTION);
+        if self.flapping && steady {
+            self.end_run();
+            return true;
+        }
+        false
+    }
+
+    /// The output went down because the TCP thread it lives in did, which is
+    /// not its own failure: try again at once.
+    fn restart(&mut self, now: Instant) {
+        if self.take_up_since(now) == Some(true) {
+            self.end_run();
+        }
         self.next_attempt = None;
     }
 
@@ -1124,9 +1196,10 @@ impl State {
 
     /// The TCP thread connected.
     pub fn on_tcp_connected(&mut self, address: String) {
-        self.log_event(format!("TCP connected to {}", address));
+        if self.tcp_retry.connected(Instant::now()) {
+            self.log_event(format!("TCP connected to {}", address));
+        }
         self.tcp_connected = true;
-        self.tcp_retry.restart();
     }
 
     /// The TCP thread reported that it failed to connect or lost its
@@ -1134,16 +1207,12 @@ impl State {
     ///
     /// With a command-line target the run of failures gets one log line and no
     /// error banner, since the status line already says the relay is waiting.
-    /// A connection that was up is retried at once, so iMotions loses as little
-    /// as possible; failed attempts wait `RECONNECT_INTERVAL` between them.
+    /// A connection that stayed up is retried at once, so iMotions loses as
+    /// little as possible; failed attempts, and connections that dropped
+    /// straight away, wait `RECONNECT_INTERVAL` between them.
     pub fn on_tcp_lost(&mut self, reason: String) {
         if self.tcp_retry.target.is_some() {
-            if self.tcp_connected {
-                self.tcp_retry.retry_now();
-            } else {
-                self.tcp_retry.retry_later();
-            }
-            if self.tcp_retry.note_once() {
+            if self.tcp_retry.lost(Instant::now()) {
                 self.log_event(format!(
                     "TCP disconnected: {}. Retrying until it connects",
                     reason
@@ -1160,22 +1229,18 @@ impl State {
 
     /// The mirror's writer thread connected.
     pub fn on_mirror_connected(&mut self, address: String) {
-        self.log_event(format!("Python mirror connected to {}", address));
+        if self.mirror_retry.connected(Instant::now()) {
+            self.log_event(format!("Python mirror connected to {}", address));
+        }
         self.mirror_connected = true;
         self.mirror_attempt_in_flight = false;
-        self.mirror_retry.restart();
     }
 
     /// The mirror failed to connect, dropped, or was closed. Retried like the
     /// TCP output, without the error banner, which the mirror never had.
     pub fn on_mirror_lost(&mut self, reason: String) {
         if self.mirror_retry.target.is_some() {
-            if self.mirror_connected {
-                self.mirror_retry.retry_now();
-            } else {
-                self.mirror_retry.retry_later();
-            }
-            if self.mirror_retry.note_once() {
+            if self.mirror_retry.lost(Instant::now()) {
                 self.log_event(format!(
                     "Python mirror stopped: {}. Retrying until it connects",
                     reason
@@ -1198,6 +1263,19 @@ impl State {
     /// never held up (docs/adr/0003).
     pub fn retry_outputs(&mut self) {
         let now = Instant::now();
+
+        // A connection made after short-lived ones went unlogged; log it once
+        // it has stayed up.
+        if self.tcp_retry.settled(now) {
+            if let Some(address) = self.tcp_retry.target.clone() {
+                self.log_event(format!("TCP connected to {}", address));
+            }
+        }
+        if self.mirror_retry.settled(now) {
+            if let Some(address) = self.mirror_retry.target.clone() {
+                self.log_event(format!("Python mirror connected to {}", address));
+            }
+        }
 
         if self.tcp_thread_handle.is_none() && self.tcp_retry.is_due(now) {
             if let Some(address) = self.tcp_retry.target.clone() {
@@ -1298,7 +1376,7 @@ impl State {
     /// A new TCP thread gets a fresh mirror attempt, at once.
     fn reset_mirror_attempts(&mut self) {
         self.mirror_attempt_in_flight = false;
-        self.mirror_retry.restart();
+        self.mirror_retry.restart(Instant::now());
     }
 
     pub fn is_tcp_connected(&self) -> bool {

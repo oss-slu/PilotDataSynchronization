@@ -1356,6 +1356,137 @@ mod tests {
         let _ = state.tcp_disconnect();
     }
 
+    // A listener that accepts every connection and closes it at once: a wrong
+    // port, a listener that rejects the relay, or one that crashes on the
+    // first packet. Counts the connections it accepted until dropped.
+    struct SlammingListener {
+        addr: String,
+        accepted: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl SlammingListener {
+        fn start() -> SlammingListener {
+            use std::sync::atomic::Ordering;
+            let (listener, addr) = listener_on_free_port();
+            listener.set_nonblocking(true).expect("set_nonblocking failed");
+            let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (count, halt) = (accepted.clone(), stop.clone());
+            let handle = std::thread::spawn(move || {
+                while !halt.load(Ordering::Relaxed) {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            count.fetch_add(1, Ordering::Relaxed);
+                            drop(stream);
+                        }
+                        Err(_) => sleep(StdDuration::from_millis(1)),
+                    }
+                }
+            });
+            SlammingListener {
+                addr,
+                accepted,
+                stop,
+                handle: Some(handle),
+            }
+        }
+
+        fn accepted(&self) -> usize {
+            self.accepted.load(std::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    impl Drop for SlammingListener {
+        fn drop(&mut self) {
+            self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    // Pumps updates with samples flowing for `duration`.
+    fn pump_with_samples_for(state: &mut State, duration: StdDuration) {
+        let deadline = Instant::now() + duration;
+        let mut i = 0;
+        while Instant::now() < deadline {
+            offer_sample(state, &format!("{}", 900 + i));
+            let _ = update(state, Message::Update);
+            sleep(StdDuration::from_millis(10));
+            i += 1;
+        }
+    }
+
+    // How many attempts `RECONNECT_INTERVAL` allows in `duration`, plus slack
+    // for the first attempt and timer jitter.
+    fn paced_attempts(duration: StdDuration) -> usize {
+        (duration.as_millis() / RECONNECT_INTERVAL.as_millis()) as usize + 2
+    }
+
+    // A connection that drops straight after connecting is a failure, not a
+    // link that was up, so it waits like a failed attempt (review of #280).
+    #[test]
+    fn a_tcp_output_whose_listener_closes_at_once_is_not_retried_in_a_tight_loop() {
+        let slam = SlammingListener::start();
+        let mut state = State::default();
+        state.keep_connected(tcp_only(&slam.addr));
+
+        let window = StdDuration::from_secs(2);
+        pump_with_samples_for(&mut state, window);
+
+        assert!(slam.accepted() >= 1, "the relay never reached the listener");
+        assert!(
+            slam.accepted() <= paced_attempts(window),
+            "{} connections in {:?}: the relay reconnects in a tight loop",
+            slam.accepted(),
+            window
+        );
+        let lines = state.event_log.iter().filter(|e| e.contains("TCP")).count();
+        assert!(
+            lines <= 3,
+            "{lines} TCP lines in the event log for one run of short-lived connections: {:?}",
+            state.event_log
+        );
+
+        let _ = update(&mut state, Message::DisconnectTcp);
+    }
+
+    #[test]
+    fn a_mirror_output_whose_listener_closes_at_once_is_not_retried_in_a_tight_loop() {
+        let (imotions, imotions_addr) = listener_on_free_port();
+        let slam = SlammingListener::start();
+        let mut state = State::default();
+        state.keep_connected(tcp_and_mirror(&imotions_addr, &slam.addr));
+        let _imotions_stream =
+            pump_until_accepted(&mut state, &imotions).expect("iMotions never connected");
+
+        let window = StdDuration::from_secs(2);
+        pump_with_samples_for(&mut state, window);
+
+        assert!(slam.accepted() >= 1, "the mirror never reached the listener");
+        assert!(
+            slam.accepted() <= paced_attempts(window),
+            "{} mirror connections in {:?}: the mirror reconnects in a tight loop",
+            slam.accepted(),
+            window
+        );
+        let lines = state
+            .event_log
+            .iter()
+            .filter(|e| e.contains("Python mirror"))
+            .count();
+        assert!(
+            lines <= 3,
+            "{lines} mirror lines in the event log for one run of short-lived connections: {:?}",
+            state.event_log
+        );
+        assert!(state.is_tcp_connected(), "iMotions went down with the mirror");
+
+        let _ = state.tcp_disconnect();
+    }
+
     // Retrying must not fight the Instructor: Disconnect means stop.
     #[test]
     fn pressing_disconnect_tcp_stops_the_retrying() {
