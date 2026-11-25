@@ -14,16 +14,28 @@ use interprocess::local_socket::{
 };
 use std::{
     io::{prelude::*, BufReader},
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
+
+/// The log lives in the temp folder (%TEMP% on Windows), where X-Plane can write it.
+const LOG_NAME: &str = "baton_debug.log";
+/// Where the previous run's log is kept when baton starts again.
+const OLD_LOG_NAME: &str = "baton_debug.old.log";
+/// How often the send loop writes a "sent N samples" line, instead of one line per sample.
+const SAMPLE_REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 // Helper to log to a file that X-Plane can access
 fn log_to_file(message: &str) {
     use std::fs::OpenOptions;
     use std::io::Write;
     
-    let log_path = std::env::temp_dir().join("baton_debug.log");
+    let log_path = std::env::temp_dir().join(LOG_NAME);
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
@@ -37,6 +49,31 @@ fn log_to_file(message: &str) {
         } else {
             let _ = writeln!(file, "[TIME_ERROR] {}", message);
         }
+    }
+}
+
+/// Keep the previous run's log as `baton_debug.old.log` and start a fresh one.
+///
+/// Only one old log is kept, so the files cannot grow past two runs. Does
+/// nothing when there is no log yet. Failures are ignored: a log that cannot be
+/// rotated just keeps being appended to.
+fn rotate_log(dir: &Path) {
+    let current = dir.join(LOG_NAME);
+    if !current.exists() {
+        return;
+    }
+    let old = dir.join(OLD_LOG_NAME);
+    let _ = std::fs::remove_file(&old);
+    let _ = std::fs::rename(&current, &old);
+}
+
+/// Clears the "connected" flag when the send thread ends, however it ends, so
+/// `send()` goes back to dropping samples.
+struct ConnectedGuard(Arc<AtomicBool>);
+
+impl Drop for ConnectedGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
     }
 }
 
@@ -113,6 +150,12 @@ mod ffi {
 pub struct Baton {
     thread: Option<std::thread::JoinHandle<()>>,
     tx: Option<Sender<ChannelSignal>>,
+    /// True from the end of the relay handshake until the send thread ends.
+    /// While it is false, `send()` drops samples instead of queueing them.
+    connected: Arc<AtomicBool>,
+    /// Whether the "dropping samples" line has been written for this stretch
+    /// without a connection.
+    drop_logged: bool,
 }
 
 impl Baton {
@@ -123,10 +166,19 @@ impl Baton {
             return;
         };
 
+        // A fresh log for this run; the last one is kept as baton_debug.old.log.
+        rotate_log(&std::env::temp_dir());
+        self.connected.store(false, Ordering::Release);
+        self.drop_logged = false;
+        let connected = Arc::clone(&self.connected);
+
         let (tx, rx): (Sender<ChannelSignal>, Receiver<ChannelSignal>) = unbounded();
         self.tx = Some(tx);
 
         let handle: thread::JoinHandle<_> = thread::spawn(move || {
+            // Whichever way this thread ends, send() must stop queueing samples.
+            let _guard = ConnectedGuard(Arc::clone(&connected));
+
             // IMPORTANT: Give the relay time to fully initialize the named pipe listener
             log_to_file("Waiting 2 seconds for relay to initialize...");
             thread::sleep(Duration::from_secs(2));
@@ -203,6 +255,7 @@ impl Baton {
                 None => return,
             }
             buffer.clear();
+            connected.store(true, Ordering::Release);
 
             // send a bunch of data for the frequency test in one-second intervals
             log_to_file("Starting test data transmission");
@@ -222,6 +275,10 @@ impl Baton {
             }
 
             log_to_file("Entering main send loop");
+            // Samples are not logged one by one: at 20 Hz that fills the log in
+            // minutes. Count them and report every SAMPLE_REPORT_INTERVAL.
+            let mut sent_since_report: u32 = 0;
+            let mut last_report = Instant::now();
             // Continuously send values
             loop {
                 for message in rx.try_iter() {
@@ -232,7 +289,7 @@ impl Baton {
                                 Ok(_) => {
                                     match conn.get_mut().flush() {
                                         Ok(_) => {
-                                            log_to_file(&format!("Sent: {}", s.trim()));
+                                            sent_since_report += 1;
                                         }
                                         Err(e) => {
                                             log_to_file(&format!("Flush error: {} (kind: {:?})", e, e.kind()));
@@ -253,6 +310,15 @@ impl Baton {
                             return;
                         }
                     }
+                }
+                if sent_since_report > 0 && last_report.elapsed() >= SAMPLE_REPORT_INTERVAL {
+                    log_to_file(&format!(
+                        "Sent {} samples in the last {:.1?}",
+                        sent_since_report,
+                        last_report.elapsed()
+                    ));
+                    sent_since_report = 0;
+                    last_report = Instant::now();
                 }
                 // Small sleep to avoid busy-spinning and allow OS to schedule writes
                 thread::sleep(Duration::from_millis(10));
@@ -282,10 +348,21 @@ impl Baton {
     }
 
     fn send(&mut self, nums: &CxxVector<f32>) {
+        // No connection to the relay: drop the sample rather than log it or let
+        // the queue grow. One line says so; it is written again only if a
+        // connection that was up goes away.
+        if !self.connected.load(Ordering::Acquire) {
+            if !self.drop_logged {
+                log_to_file("No connection to the relay: dropping samples until it connects");
+                self.drop_logged = true;
+            }
+            return;
+        }
+        self.drop_logged = false;
+
         let s = nums
             .into_iter()
             .fold(String::new(), |acc, num| format!("{acc};{num}"));
-        log_to_file(&format!("Attempted to send {s}"));
         if let Some(tx) = &self.tx {
             let _ = tx.send(ChannelSignal::Send(s));
         }
@@ -375,5 +452,44 @@ mod tests {
     fn a_greeting_split_across_reads_is_assembled() {
         let greeting = run(vec![Ok("Hello, from "), Ok(""), Ok("the relay (Rust)!\n")], 100);
         assert_eq!(greeting.as_deref(), Some("Hello, from the relay (Rust)!"));
+    }
+
+    /// A scratch folder per test, so the tests can run in parallel.
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("baton_test_{}_{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // #262: each run starts a fresh log and keeps the last one as the old log.
+    #[test]
+    fn rotating_moves_the_log_aside() {
+        let dir = scratch_dir("moves_aside");
+        std::fs::write(dir.join(LOG_NAME), "last run").unwrap();
+        rotate_log(&dir);
+        assert!(!dir.join(LOG_NAME).exists());
+        assert_eq!(std::fs::read_to_string(dir.join(OLD_LOG_NAME)).unwrap(), "last run");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Only one old log is kept, so the files cannot grow without limit.
+    #[test]
+    fn rotating_replaces_the_previous_old_log() {
+        let dir = scratch_dir("replaces_old");
+        std::fs::write(dir.join(OLD_LOG_NAME), "two runs ago").unwrap();
+        std::fs::write(dir.join(LOG_NAME), "last run").unwrap();
+        rotate_log(&dir);
+        assert_eq!(std::fs::read_to_string(dir.join(OLD_LOG_NAME)).unwrap(), "last run");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rotating_with_no_log_does_nothing() {
+        let dir = scratch_dir("no_log");
+        rotate_log(&dir);
+        assert!(!dir.join(LOG_NAME).exists());
+        assert!(!dir.join(OLD_LOG_NAME).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
