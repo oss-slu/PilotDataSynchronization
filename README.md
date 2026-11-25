@@ -155,6 +155,30 @@ With no iMotions to record to, skip the mirror and point `Connect TCP` straight 
 
 `Send Packet` goes to both destinations, which makes it a check of both links. It also means the logger writes a row of zeros, so avoid it mid-recording.
 
+#### Two PCs: the relay on one, the Python listener on the other
+
+In the lab, X-Plane and the relay run on one PC and the Python side runs on another (the ML PC). Every example above uses `127.0.0.1:5001`, which only works when both are on the same machine. With two PCs, three things change:
+
+1. **Start the listener so other machines can reach it.** `data_logger` and `live_groups` bind to `127.0.0.1` by default (`--host`), so a relay on another PC cannot connect. On the ML PC, from `inference/`, pass `--host 0.0.0.0` (every interface) or the ML PC's own LAN address:
+```
+   uv run python -m pilot_inference.capture.data_logger --host 0.0.0.0 --pilot-id pilot-07 --flight-id 2026-10-12-leg1
+```
+
+   `live_groups` takes the same `--host` argument.
+
+2. **Allow the port through Windows Firewall on the ML PC.** Windows blocks inbound TCP 5001 until a rule allows it. Open PowerShell as administrator (right-click it, `Run as administrator`) and run:
+```
+   New-NetFirewallRule -DisplayName "PilotDataSync 5001" -Direction Inbound -Protocol TCP -LocalPort 5001 -Action Allow
+```
+
+   If you start the listener with a different `--port`, use that number here. Without the rule, `Connect mirror` fails.
+
+3. **Give the relay the ML PC's address, not `127.0.0.1`.** On the ML PC, run `ipconfig` in a terminal and read the `IPv4 Address` of the adapter on the lab network. On the relay PC, type that address and the listener's port into the mirror box, for example `192.168.1.50:5001` (use your own address), and press `Connect mirror`. `127.0.0.1` there would point at the relay's own PC. As everywhere else in the relay, a literal IP address and port are required; a host name is rejected.
+
+Start the listener on the ML PC first, then connect the mirror from the relay PC, as in the steps above. With no iMotions, type the same ML PC address into the `Connect TCP` box instead.
+
+> Not yet confirmed between two lab PCs. These steps follow from how the listeners bind and how the relay parses addresses, but nobody has run the mirror across two machines yet (#264). If you try it, please confirm it, add anything else that came up, and delete this note.
+
 ## 3. iMotions
 
 With the relay running, generate the event-source definition that iMotions needs:
