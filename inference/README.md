@@ -89,6 +89,7 @@ flight, with `Connect mirror` so both receive the stream (see the root README). 
 must keep reading: if it stops while it does slow work it loses copies, and then the mirror
 itself, which does not reconnect on its own.
 
+Both listeners bind to `127.0.0.1` by default, so they only accept a relay on the same PC. In the lab the relay runs on another PC: start the listener with `--host 0.0.0.0` and allow inbound TCP 5001 through Windows Firewall. The steps are in [Two PCs](../README.md#two-pcs-the-relay-on-one-the-python-listener-on-the-other) in the root README.
 ## Performance groups
 
 | Step | Module                                            | Purpose                                                                                      | Input                                                                               | Output                                                                                  |
