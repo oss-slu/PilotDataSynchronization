@@ -1,4 +1,5 @@
 mod bichannel;
+mod cli;
 mod message;
 mod state;
 mod update;
@@ -17,6 +18,20 @@ use iced::{
 };
 
 fn main() -> iced::Result {
+    // Before iced starts, so a mistake is reported in the console rather than
+    // after a window has opened.
+    let outputs = match cli::parse_args(std::env::args().skip(1)) {
+        Ok(outputs) => outputs,
+        Err(e) if e.downcast_ref::<cli::HelpRequested>().is_some() => {
+            println!("{}", cli::USAGE);
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("relay: {e}\n\n{}", cli::USAGE);
+            std::process::exit(2);
+        }
+    };
+
     iced::application("RELAY", update, view)
         .window_size((450.0, 300.0))
         .exit_on_close_request(false)
@@ -36,6 +51,9 @@ fn main() -> iced::Result {
                     "Error connecting to IPC during GUI initialization: {e:?}"
                 ));
             };
+
+            // Nothing happens here when no options were given.
+            state.keep_connected(outputs);
             (state, Task::none())
         })
 }

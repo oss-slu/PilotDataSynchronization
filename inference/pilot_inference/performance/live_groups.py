@@ -2,7 +2,7 @@
 Show a pilot's performance group while they fly (docs/adr/0004).
 
 Listens for the relay's mirror (or Connect TCP), assembles samples the way the
-capture logger does, attaches the brief's targets as the operator marks each
+capture logger does, attaches the brief's targets as the Instructor marks each
 instruction, and writes every sample to CSV. Every few seconds it prints the
 pilot's deviation features and the nearest group of a reference cohort. The
 cohort is synthetic until real pilots have targets, so the group demonstrates
@@ -184,15 +184,18 @@ class RelayListener:
                 pass
             except (OSError, ValueError) as error:
                 # Garbled bytes or a socket error end this connection, not the
-                # listener: the mirror never reconnects by itself (docs/adr/0003),
-                # so the next Connect mirror must still find someone listening.
+                # listener: the relay may reconnect (with --mirror it does so by
+                # itself, docs/adr/0005), and must still find someone listening.
                 if not self._closed:
                     print(f"Relay connection failed: {error}")
             with self._lock:
                 self._conn = None
                 if self._closed:
                     return
-            print("Relay disconnected. Press Connect mirror again to resume.")
+            print(
+                "Relay disconnected. A relay started with --mirror reconnects by itself; "
+                "otherwise press Connect mirror again."
+            )
 
 
 def _cell(value) -> str:

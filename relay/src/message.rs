@@ -67,8 +67,8 @@ pub(crate) enum ToTcpThreadMessage {
 }
 
 pub(crate) enum FromTcpThreadMessage {
-    /// TCP thread successfully connected to remote
-    Connected,
+    /// TCP thread successfully connected to remote (its address)
+    Connected(String),
     /// TCP thread disconnected (may include reason)
     Disconnected(String),
     /// A packet was sent to remote (In bytes)
